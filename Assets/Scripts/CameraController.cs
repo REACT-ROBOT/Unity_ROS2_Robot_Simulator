@@ -13,8 +13,6 @@ public class CameraController : MonoBehaviour
 
     void Start()
     {
-        Application.targetFrameRate = 10;
-
         cam = Camera.main;
     }
 
@@ -49,7 +47,7 @@ public class CameraController : MonoBehaviour
             lastMousePosition = Input.mousePosition;
 
             // 移動をカメラの空間で適用
-            Vector3 move = new Vector3(-mouseDelta.x, -mouseDelta.y, 0) * moveSpeed * Time.deltaTime;
+            Vector3 move = new Vector3(-mouseDelta.x, -mouseDelta.y, 0) * moveSpeed * Time.unscaledDeltaTime;
             transform.Translate(move, Space.Self);
         }
         else
