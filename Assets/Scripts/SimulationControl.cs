@@ -395,44 +395,99 @@ public class SimulationControl : MonoBehaviour
                                 maxRangeField.SetValue(lidarSensor, TryParseFloat(sensor.SelectSingleNode("ray/range/max").InnerText));
                                 var gaussianNoiseSigmaField = typeof(LiDARSensor).GetField("_gaussianNoiseSigma", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 gaussianNoiseSigmaField.SetValue(lidarSensor, TryParseFloat(sensor.SelectSingleNode("ray/noise/stddev").InnerText));
-                                var scanPattern =  ScriptableObject.CreateInstance<ScanPattern>();
-                                scanPattern.size = int.Parse(sensor.SelectSingleNode("ray/scan/horizontal/samples").InnerText);
-                                scanPattern.scans = new Unity.Mathematics.float3[scanPattern.size];
-                                scanPattern.minZenithAngle = Mathf.PI / 2.0f;
-                                scanPattern.maxZenithAngle = Mathf.PI / 2.0f;
-                                scanPattern.minAzimuthAngle = TryParseFloat(sensor.SelectSingleNode("ray/scan/horizontal/min_angle").InnerText);
-                                scanPattern.maxAzimuthAngle = TryParseFloat(sensor.SelectSingleNode("ray/scan/horizontal/max_angle").InnerText);
-                                float angleStep = (scanPattern.maxAzimuthAngle - scanPattern.minAzimuthAngle) / (scanPattern.size - 1);
-                                for (int i = 0; i < scanPattern.size; i++)
+                                if (sensor.SelectSingleNode("ray/scan/vertical") == null)
                                 {
-                                    float azimuth = scanPattern.minAzimuthAngle + i * angleStep;
-                                    // 水平面上のスキャン方向を設定 (zenithは90度固定)
-                                    scanPattern.scans[i] = new Unity.Mathematics.float3(
-                                        Mathf.Sin(azimuth), 
-                                        0.0f,  // 水平面なのでY=0
-                                        Mathf.Cos(azimuth)
-                                    );
+                                    var pointsNumPerScanField = typeof(LiDARSensor).GetField("_pointsNumPerScan", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    pointsNumPerScanField.SetValue(lidarSensor, int.Parse(sensor.SelectSingleNode("ray/scan/horizontal/samples").InnerText));
+                                    var scanPattern =  ScriptableObject.CreateInstance<ScanPattern>();
+                                    scanPattern.size = int.Parse(sensor.SelectSingleNode("ray/scan/horizontal/samples").InnerText);
+                                    scanPattern.scans = new Unity.Mathematics.float3[scanPattern.size];
+                                    scanPattern.minZenithAngle = Mathf.PI / 2.0f;
+                                    scanPattern.maxZenithAngle = Mathf.PI / 2.0f;
+                                    scanPattern.minAzimuthAngle = TryParseFloat(sensor.SelectSingleNode("ray/scan/horizontal/min_angle").InnerText);
+                                    scanPattern.maxAzimuthAngle = TryParseFloat(sensor.SelectSingleNode("ray/scan/horizontal/max_angle").InnerText);
+                                    float angleStep = (scanPattern.maxAzimuthAngle - scanPattern.minAzimuthAngle) / (scanPattern.size - 1);
+                                    for (int i = 0; i < scanPattern.size; i++)
+                                    {
+                                        float azimuth = scanPattern.minAzimuthAngle + i * angleStep;
+                                        // 水平面上のスキャン方向を設定 (zenithは90度固定)
+                                        scanPattern.scans[i] = new Unity.Mathematics.float3(
+                                            Mathf.Sin(azimuth), 
+                                            0.0f,  // 水平面なのでY=0
+                                            Mathf.Cos(azimuth)
+                                        );
+                                    }
+                                    var scanPatternField = typeof(LiDARSensor).GetField("_scanPattern", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    scanPatternField.SetValue(lidarSensor, scanPattern);
+                                    lidarSensor.Initialize();
+                                    LiDARPointCloud2MsgPublisher lidarPointCloud2MsgPublisher = targetObject.AddComponent<LiDARPointCloud2MsgPublisher>();
+                                    var lidarPointCloud2MsgPublisherSerializerField = lidarPointCloud2MsgPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    if (lidarPointCloud2MsgPublisherSerializerField != null)
+                                    {
+                                        var lidarPointCloud2MsgPublisherSerializer = new PointCloud2MsgSerializer<UnitySensors.DataType.Sensor.PointCloud.PointXYZI>();
+                                        lidarPointCloud2MsgPublisherSerializer.SetSource(lidarSensor);
+                                        var headerField = lidarPointCloud2MsgPublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        headerField.SetValue(lidarPointCloud2MsgPublisherSerializer, new HeaderSerializer());
+                                        var header = headerField.GetValue(lidarPointCloud2MsgPublisherSerializer);
+                                        var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        headerSourceField.SetValue(header, lidarSensor);
+                                        var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        headerFrameIdField.SetValue(header, "/" + sensorLinkName);
+                                        lidarPointCloud2MsgPublisherSerializerField.SetValue(lidarPointCloud2MsgPublisher, lidarPointCloud2MsgPublisherSerializer);
+                                    }
+                                    var lidarPointCloud2MsgPublisherTopicNameField = lidarPointCloud2MsgPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    lidarPointCloud2MsgPublisherTopicNameField.SetValue(lidarPointCloud2MsgPublisher, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
                                 }
-                                var scanPatternField = typeof(LiDARSensor).GetField("_scanPattern", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                scanPatternField.SetValue(lidarSensor, scanPattern);
-                                lidarSensor.Initialize();
-                                LiDARPointCloud2MsgPublisher lidarPointCloud2MsgPublisher = targetObject.AddComponent<LiDARPointCloud2MsgPublisher>();
-                                var lidarPointCloud2MsgPublisherSerializerField = lidarPointCloud2MsgPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                if (lidarPointCloud2MsgPublisherSerializerField != null)
+                                else
                                 {
-                                    var lidarPointCloud2MsgPublisherSerializer = new PointCloud2MsgSerializer<UnitySensors.DataType.Sensor.PointCloud.PointXYZI>();
-                                    lidarPointCloud2MsgPublisherSerializer.SetSource(lidarSensor);
-                                    var headerField = lidarPointCloud2MsgPublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                    headerField.SetValue(lidarPointCloud2MsgPublisherSerializer, new HeaderSerializer());
-                                    var header = headerField.GetValue(lidarPointCloud2MsgPublisherSerializer);
-                                    var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                    headerSourceField.SetValue(header, lidarSensor);
-                                    var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                    headerFrameIdField.SetValue(header, "/" + sensorLinkName);
-                                    lidarPointCloud2MsgPublisherSerializerField.SetValue(lidarPointCloud2MsgPublisher, lidarPointCloud2MsgPublisherSerializer);
+                                    int verticalSamples = int.Parse(sensor.SelectSingleNode("ray/scan/vertical/samples").InnerText);
+                                    int horizontalSamples = int.Parse(sensor.SelectSingleNode("ray/scan/horizontal/samples").InnerText);
+                                    var pointsNumPerScanField = typeof(LiDARSensor).GetField("_pointsNumPerScan", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    pointsNumPerScanField.SetValue(lidarSensor, horizontalSamples * verticalSamples);
+                                    var scanPattern =  ScriptableObject.CreateInstance<ScanPattern>();
+                                    scanPattern.size = horizontalSamples * verticalSamples;
+                                    scanPattern.scans = new Unity.Mathematics.float3[scanPattern.size];
+                                    scanPattern.minZenithAngle = TryParseFloat(sensor.SelectSingleNode("ray/scan/vertical/min_angle").InnerText);
+                                    scanPattern.maxZenithAngle = TryParseFloat(sensor.SelectSingleNode("ray/scan/vertical/max_angle").InnerText);
+                                    scanPattern.minAzimuthAngle = TryParseFloat(sensor.SelectSingleNode("ray/scan/horizontal/min_angle").InnerText);
+                                    scanPattern.maxAzimuthAngle = TryParseFloat(sensor.SelectSingleNode("ray/scan/horizontal/max_angle").InnerText);
+                                    float verticalAngleStep = (scanPattern.maxZenithAngle - scanPattern.minZenithAngle) / (verticalSamples - 1);
+                                    float horizontalAngleStep = (scanPattern.maxAzimuthAngle - scanPattern.minAzimuthAngle) / (horizontalSamples - 1);
+                                    for (int i = 0; i < horizontalSamples; i++)
+                                    {
+                                        float azimuth = scanPattern.minAzimuthAngle + i * horizontalAngleStep;
+                                        for (int j = 0; j < verticalSamples; j++)
+                                        {
+                                            float zenith = scanPattern.minZenithAngle + i * verticalAngleStep;
+                                            
+                                            scanPattern.scans[i * verticalSamples + j] = new Unity.Mathematics.float3(
+                                                Mathf.Cos(zenith) * Mathf.Sin(azimuth),
+                                                Mathf.Sin(zenith),
+                                                Mathf.Cos(zenith) * Mathf.Cos(azimuth)
+                                            );
+                                        }
+                                    }
+                                    var scanPatternField = typeof(LiDARSensor).GetField("_scanPattern", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    scanPatternField.SetValue(lidarSensor, scanPattern);
+                                    lidarSensor.Initialize();
+                                    LiDARPointCloud2MsgPublisher lidarPointCloud2MsgPublisher = targetObject.AddComponent<LiDARPointCloud2MsgPublisher>();
+                                    var lidarPointCloud2MsgPublisherSerializerField = lidarPointCloud2MsgPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    if (lidarPointCloud2MsgPublisherSerializerField != null)
+                                    {
+                                        var lidarPointCloud2MsgPublisherSerializer = new PointCloud2MsgSerializer<UnitySensors.DataType.Sensor.PointCloud.PointXYZI>();
+                                        lidarPointCloud2MsgPublisherSerializer.SetSource(lidarSensor);
+                                        var headerField = lidarPointCloud2MsgPublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        headerField.SetValue(lidarPointCloud2MsgPublisherSerializer, new HeaderSerializer());
+                                        var header = headerField.GetValue(lidarPointCloud2MsgPublisherSerializer);
+                                        var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        headerSourceField.SetValue(header, lidarSensor);
+                                        var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        headerFrameIdField.SetValue(header, "/" + sensorLinkName);
+                                        lidarPointCloud2MsgPublisherSerializerField.SetValue(lidarPointCloud2MsgPublisher, lidarPointCloud2MsgPublisherSerializer);
+                                    }
+                                    var lidarPointCloud2MsgPublisherTopicNameField = lidarPointCloud2MsgPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    lidarPointCloud2MsgPublisherTopicNameField.SetValue(lidarPointCloud2MsgPublisher, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
                                 }
-                                var lidarPointCloud2MsgPublisherTopicNameField = lidarPointCloud2MsgPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                lidarPointCloud2MsgPublisherTopicNameField.SetValue(lidarPointCloud2MsgPublisher, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
                                 break;
                             case "camera":
                                 Debug.Log("sensor type 'camera' found");
