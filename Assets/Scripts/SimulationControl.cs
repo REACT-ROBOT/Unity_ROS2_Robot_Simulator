@@ -24,6 +24,8 @@ using RosMessageTypes.SimulationInterfaces;
 using Unity.Robotics.ROSTCPConnector;
 using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 
+using UnityMeshImporter;
+
 public class FileLogger
 {
     private static string logFilePath = "debug_log.txt";
@@ -199,7 +201,19 @@ public class SimulationControl : MonoBehaviour
         // process the service request
         Debug.Log("Received request for object: " + request.name);
 
-        string urdfFilePath = request.uri;
+        string filePath;
+        Uri uri = new Uri(request.uri);
+        if (uri.IsFile)
+        {
+            filePath = uri.LocalPath;
+        }
+        else
+        {
+            Debug.LogError("Invalid URI: " + request.uri);
+            spawnEntityResponse.result.result = SpawnEntityResponse.RESOURCE_PARSE_ERROR;
+            spawnEntityResponse.result.error_message = "Invalid URI: " + request.uri;
+            return spawnEntityResponse;
+        }
         double robot_x = request.initial_pose.pose.position.x;
         double robot_y = request.initial_pose.pose.position.y;
         double robot_z = request.initial_pose.pose.position.z;
@@ -209,11 +223,39 @@ public class SimulationControl : MonoBehaviour
         double q_w = request.initial_pose.pose.orientation.w;
         bool robot_fixed = false;
 
-        Debug.Log("Received URDF path: " + urdfFilePath);
+        Debug.Log("Received path: " + filePath);
 
-        // URDF からのロボット生成 (※ URDFRobotExtensions.Create はランタイム用のコルーチン実装が前提)
+        if (!filePath.EndsWith(".urdf"))
+        {
+            var ob = MeshImporter.Load(filePath);
+            if (ob == null)
+            {
+                Debug.LogError("Failed to load object from File.");
+                spawnEntityResponse.result.result = SpawnEntityResponse.RESOURCE_PARSE_ERROR;
+                spawnEntityResponse.result.error_message = "Failed to load object from File.";
+                return spawnEntityResponse;
+            }
+            ob.name = request.name;
+
+            // オブジェクトの直下のすべての子オブジェクトを取得
+            foreach (MeshCollider meshCollider in ob.GetComponentsInChildren<MeshCollider>())
+            {
+                meshCollider.sharedMesh = meshCollider.gameObject.GetComponent<MeshFilter>().mesh;
+            }
+            m_EntityList.Add(ob);
+            // ロボットの位置・回転設定
+            Vector3 newMeshPosition = new Vector3(Convert.ToSingle(robot_x), Convert.ToSingle(robot_y), Convert.ToSingle(robot_z));
+            ob.transform.position = newMeshPosition;
+            m_EntityInitialPose[ob.name] = newMeshPosition;
+            Quaternion newMeshRotation = new Quaternion(Convert.ToSingle(q_x), Convert.ToSingle(q_y), Convert.ToSingle(q_z), Convert.ToSingle(q_w));
+            ob.transform.rotation = newMeshRotation;
+            m_EntityInitialRotation[ob.name] = newMeshRotation;
+            
+            return spawnEntityResponse;
+        }
+
         ImportSettings settings = new ImportSettings();
-        GameObject robotObject = UrdfRobotExtensions.CreateRuntime(urdfFilePath, settings);
+        GameObject robotObject = UrdfRobotExtensions.CreateRuntime(filePath, settings);
 
         if (robotObject == null)
         {
@@ -249,7 +291,7 @@ public class SimulationControl : MonoBehaviour
 
         // URDFファイルの解析
         XmlDocument xmlDoc = new XmlDocument();
-        xmlDoc.Load(urdfFilePath);
+        xmlDoc.Load(filePath);
 
         // JointState 用の Publisher/Subscriber の設定
         JointStatePub jointStatePub = robotObject.AddComponent<JointStatePub>();
@@ -295,7 +337,7 @@ public class SimulationControl : MonoBehaviour
         }
 
         // Physics Material の生成（ランタイムでは AssetDatabase は使用不可のため new で生成）
-        string directoryPath = Path.GetDirectoryName(urdfFilePath);
+        string directoryPath = Path.GetDirectoryName(filePath);
         int assetsIndex = directoryPath.IndexOf("Assets");
         if (assetsIndex >= 0)
         {
