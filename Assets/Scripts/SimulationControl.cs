@@ -244,10 +244,20 @@ public class SimulationControl : MonoBehaviour
             }
             m_EntityList.Add(ob);
             // ロボットの位置・回転設定
-            Vector3 newMeshPosition = new Vector3(Convert.ToSingle(robot_x), Convert.ToSingle(robot_y), Convert.ToSingle(robot_z));
+            // Unityの座標系は左手系で真上がY軸、URDFの座標系は右手系で真上がZ軸
+            // そのため、URDFのZ軸をUnityのY軸に変換する必要がある
+            // URDFのX軸をUnityのZ軸に変換する必要がある
+            Vector3 newMeshPosition = new Vector3(Convert.ToSingle(robot_y), Convert.ToSingle(robot_z), Convert.ToSingle(-robot_x));
             ob.transform.position = newMeshPosition;
             m_EntityInitialPose[ob.name] = newMeshPosition;
-            Quaternion newMeshRotation = new Quaternion(Convert.ToSingle(q_x), Convert.ToSingle(q_y), Convert.ToSingle(q_z), Convert.ToSingle(q_w));
+            Quaternion newMeshRotation = ConvertQuaternion(
+                new Quaternion(
+                    Convert.ToSingle(q_x),
+                    Convert.ToSingle(q_y),
+                    Convert.ToSingle(q_z),
+                    Convert.ToSingle(q_w)
+                )
+            );
             ob.transform.rotation = newMeshRotation;
             m_EntityInitialRotation[ob.name] = newMeshRotation;
             
@@ -267,10 +277,20 @@ public class SimulationControl : MonoBehaviour
         m_EntityList.Add(robotObject);
 
         // ロボットの位置・回転設定
-        Vector3 newPosition = new Vector3(Convert.ToSingle(robot_x), Convert.ToSingle(robot_y), Convert.ToSingle(robot_z));
+        // Unityの座標系は左手系で真上がY軸、URDFの座標系は右手系で真上がZ軸
+        // そのため、URDFのZ軸をUnityのY軸に変換する必要がある
+        // URDFのX軸をUnityのZ軸に変換する必要がある
+        Vector3 newPosition = new Vector3(Convert.ToSingle(robot_y), Convert.ToSingle(robot_z), Convert.ToSingle(-robot_x));
         robotObject.transform.position = newPosition;
         m_EntityInitialPose[robotObject.name] = newPosition;
-        Quaternion newRotation = new Quaternion(Convert.ToSingle(q_x), Convert.ToSingle(q_y), Convert.ToSingle(q_z), Convert.ToSingle(q_w));
+        Quaternion newRotation = ConvertQuaternion(
+                new Quaternion(
+                    Convert.ToSingle(q_x),
+                    Convert.ToSingle(q_y),
+                    Convert.ToSingle(q_z),
+                    Convert.ToSingle(q_w)
+                )
+            );
         robotObject.transform.rotation = newRotation;
         m_EntityInitialRotation[robotObject.name] = newRotation;
 
@@ -771,6 +791,18 @@ public class SimulationControl : MonoBehaviour
         parameters["damping"] = 0.0f;
         parameters["force_limit"] = 0.0f;
         return parameters;
+    }
+
+    /// <summary>
+    /// URDF(ROS)座標系のクォータニオンを Unity 座標系のクォータニオンに変換する
+    /// </summary>
+    public static Quaternion ConvertQuaternion(Quaternion qURDF)
+    {
+        return Quaternion.Euler(
+            qURDF.eulerAngles.y,
+            -qURDF.eulerAngles.z,
+            -qURDF.eulerAngles.x
+        );
     }
 
     private static float TryParseFloat(string value)
