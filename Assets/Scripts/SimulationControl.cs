@@ -482,23 +482,31 @@ public class SimulationControl : MonoBehaviour
                                     var scanPatternField = typeof(LiDARSensor).GetField("_scanPattern", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     scanPatternField.SetValue(lidarSensor, scanPattern);
                                     lidarSensor.Initialize();
-                                    LiDARPointCloud2MsgPublisher lidarPointCloud2MsgPublisher = targetObject.AddComponent<LiDARPointCloud2MsgPublisher>();
-                                    var lidarPointCloud2MsgPublisherSerializerField = lidarPointCloud2MsgPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                    if (lidarPointCloud2MsgPublisherSerializerField != null)
+                                    LaserScanMsgPublisher laserScanMsgPublisher = targetObject.AddComponent<LaserScanMsgPublisher>();
+                                    var laserScanMsgPublisherSerializerField = laserScanMsgPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    if (laserScanMsgPublisherSerializerField != null)
                                     {
-                                        var lidarPointCloud2MsgPublisherSerializer = new PointCloud2MsgSerializer<UnitySensors.DataType.Sensor.PointCloud.PointXYZI>();
-                                        lidarPointCloud2MsgPublisherSerializer.SetSource(lidarSensor);
-                                        var headerField = lidarPointCloud2MsgPublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                        headerField.SetValue(lidarPointCloud2MsgPublisherSerializer, new HeaderSerializer());
-                                        var header = headerField.GetValue(lidarPointCloud2MsgPublisherSerializer);
+                                        var laserScanMsgPublisherSerializer = new LaserScanMsgSerializer();
+                                        laserScanMsgPublisherSerializer.SetSource(lidarSensor);
+                                        var headerField = laserScanMsgPublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        headerField.SetValue(laserScanMsgPublisherSerializer, new HeaderSerializer());
+                                        var header = headerField.GetValue(laserScanMsgPublisherSerializer);
                                         var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         headerSourceField.SetValue(header, lidarSensor);
                                         var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         headerFrameIdField.SetValue(header, "/" + sensorLinkName);
-                                        lidarPointCloud2MsgPublisherSerializerField.SetValue(lidarPointCloud2MsgPublisher, lidarPointCloud2MsgPublisherSerializer);
+                                        var serializerMinRangeField = laserScanMsgPublisherSerializer.GetType().GetField("_min_range", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        serializerMinRangeField.SetValue(laserScanMsgPublisherSerializer, TryParseFloat(sensor.SelectSingleNode("ray/range/min").InnerText));
+                                        var serializerMaxRangeField = laserScanMsgPublisherSerializer.GetType().GetField("_max_range", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        serializerMaxRangeField.SetValue(laserScanMsgPublisherSerializer, TryParseFloat(sensor.SelectSingleNode("ray/range/max").InnerText));
+                                        var serializerGaussianNoiseSigmaField = laserScanMsgPublisherSerializer.GetType().GetField("_gaussian_noise_sigma", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        serializerGaussianNoiseSigmaField.SetValue(laserScanMsgPublisherSerializer, TryParseFloat(sensor.SelectSingleNode("ray/noise/stddev").InnerText));
+                                        var serializerScanPatternField = laserScanMsgPublisherSerializer.GetType().GetField("_scan_pattern", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        serializerScanPatternField.SetValue(laserScanMsgPublisherSerializer, scanPattern);
+                                        laserScanMsgPublisherSerializerField.SetValue(laserScanMsgPublisher, laserScanMsgPublisherSerializer);
                                     }
-                                    var lidarPointCloud2MsgPublisherTopicNameField = lidarPointCloud2MsgPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                    lidarPointCloud2MsgPublisherTopicNameField.SetValue(lidarPointCloud2MsgPublisher, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
+                                    var laserScanMsgPublisherTopicNameField = laserScanMsgPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    laserScanMsgPublisherTopicNameField.SetValue(laserScanMsgPublisher, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
                                 }
                                 else
                                 {
