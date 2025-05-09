@@ -221,7 +221,6 @@ public class SimulationControl : MonoBehaviour
         double q_y = request.initial_pose.pose.orientation.y;
         double q_z = request.initial_pose.pose.orientation.z;
         double q_w = request.initial_pose.pose.orientation.w;
-        bool robot_fixed = false;
 
         Debug.Log("Received path: " + filePath);
 
@@ -247,7 +246,7 @@ public class SimulationControl : MonoBehaviour
             // Unityの座標系は左手系で真上がY軸、URDFの座標系は右手系で真上がZ軸
             // そのため、URDFのZ軸をUnityのY軸に変換する必要がある
             // URDFのX軸をUnityのZ軸に変換する必要がある
-            Vector3 newMeshPosition = new Vector3(Convert.ToSingle(robot_y), Convert.ToSingle(robot_z), Convert.ToSingle(-robot_x));
+            Vector3 newMeshPosition = new Vector3(Convert.ToSingle(-robot_y), Convert.ToSingle(robot_z), Convert.ToSingle(robot_x));
             ob.transform.position = newMeshPosition;
             m_EntityInitialPose[ob.name] = newMeshPosition;
             Quaternion newMeshRotation = ConvertQuaternion(
@@ -280,7 +279,7 @@ public class SimulationControl : MonoBehaviour
         // Unityの座標系は左手系で真上がY軸、URDFの座標系は右手系で真上がZ軸
         // そのため、URDFのZ軸をUnityのY軸に変換する必要がある
         // URDFのX軸をUnityのZ軸に変換する必要がある
-        Vector3 newPosition = new Vector3(Convert.ToSingle(robot_y), Convert.ToSingle(robot_z), Convert.ToSingle(-robot_x));
+        Vector3 newPosition = new Vector3(Convert.ToSingle(-robot_y), Convert.ToSingle(robot_z), Convert.ToSingle(robot_x));
         robotObject.transform.position = newPosition;
         m_EntityInitialPose[robotObject.name] = newPosition;
         Quaternion newRotation = ConvertQuaternion(
@@ -304,7 +303,17 @@ public class SimulationControl : MonoBehaviour
             ArticulationBody body = child.GetComponent<ArticulationBody>();
             if (body != null)
             {
-                body.immovable = robot_fixed;
+                body.TeleportRoot(newPosition, newRotation);
+                if (link.name == "world")
+                {
+                    // world link の場合は immovable を true にする
+                    body.immovable = true;
+                }
+                else
+                {
+                    // それ以外のリンクは immovable を false にする
+                    body.immovable = false;
+                }
             }
             break;
         }
@@ -474,7 +483,7 @@ public class SimulationControl : MonoBehaviour
                                         float azimuth = scanPattern.minAzimuthAngle + i * angleStep;
                                         // 水平面上のスキャン方向を設定 (zenithは90度固定)
                                         scanPattern.scans[i] = new Unity.Mathematics.float3(
-                                            Mathf.Sin(azimuth), 
+                                            -Mathf.Sin(azimuth), 
                                             0.0f,  // 水平面なのでY=0
                                             Mathf.Cos(azimuth)
                                         );
@@ -494,7 +503,7 @@ public class SimulationControl : MonoBehaviour
                                         var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         headerSourceField.SetValue(header, lidarSensor);
                                         var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                        headerFrameIdField.SetValue(header, "/" + sensorLinkName);
+                                        headerFrameIdField.SetValue(header, sensorLinkName);
                                         var serializerMinRangeField = laserScanMsgPublisherSerializer.GetType().GetField("_min_range", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         serializerMinRangeField.SetValue(laserScanMsgPublisherSerializer, TryParseFloat(sensor.SelectSingleNode("ray/range/min").InnerText));
                                         var serializerMaxRangeField = laserScanMsgPublisherSerializer.GetType().GetField("_max_range", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -531,7 +540,7 @@ public class SimulationControl : MonoBehaviour
                                             float zenith = scanPattern.minZenithAngle + i * verticalAngleStep;
                                             
                                             scanPattern.scans[i * verticalSamples + j] = new Unity.Mathematics.float3(
-                                                Mathf.Cos(zenith) * Mathf.Sin(azimuth),
+                                                Mathf.Cos(zenith) * -Mathf.Sin(azimuth),
                                                 Mathf.Sin(zenith),
                                                 Mathf.Cos(zenith) * Mathf.Cos(azimuth)
                                             );
@@ -552,7 +561,7 @@ public class SimulationControl : MonoBehaviour
                                         var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         headerSourceField.SetValue(header, lidarSensor);
                                         var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                        headerFrameIdField.SetValue(header, "/" + sensorLinkName);
+                                        headerFrameIdField.SetValue(header, sensorLinkName);
                                         lidarPointCloud2MsgPublisherSerializerField.SetValue(lidarPointCloud2MsgPublisher, lidarPointCloud2MsgPublisherSerializer);
                                     }
                                     var lidarPointCloud2MsgPublisherTopicNameField = lidarPointCloud2MsgPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -589,7 +598,7 @@ public class SimulationControl : MonoBehaviour
                                     var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     headerSourceField.SetValue(header, cameraSensor);
                                     var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                    headerFrameIdField.SetValue(header, "/" + sensorLinkName);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
                                     cameraInfoPublisherSerializerField.SetValue(cameraInfoPublisher, cameraInfoPublisherSerializer);
                                 }
                                 var topicNameField = cameraInfoPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -606,7 +615,7 @@ public class SimulationControl : MonoBehaviour
                                     var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     headerSourceField.SetValue(header, cameraSensor);
                                     var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                    headerFrameIdField.SetValue(header, "/" + sensorLinkName);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
                                     cameraImagePublisherSerializerField.SetValue(cameraImagePublisher, cameraImagePublisherSerializer);
                                 }
                                 var topicNameField2 = cameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -642,7 +651,7 @@ public class SimulationControl : MonoBehaviour
                                     var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     headerSourceField.SetValue(header, depthCameraSensor);
                                     var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                    headerFrameIdField.SetValue(header, "/" + sensorLinkName);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
                                     depthCameraInfoPublisherSerializerField.SetValue(depthCameraInfoPublisher, depthCameraInfoPublisherSerializer);
                                 }
                                 var depthTopicNameField = depthCameraInfoPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -659,7 +668,7 @@ public class SimulationControl : MonoBehaviour
                                     var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     headerSourceField.SetValue(header, depthCameraSensor);
                                     var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                    headerFrameIdField.SetValue(header, "/" + sensorLinkName);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
                                     depthCameraImagePublisherSerializerField.SetValue(depthCameraImagePublisher, depthCameraImagePublisherSerializer);
                                 }
                                 var depthTopicNameField2 = depthCameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
