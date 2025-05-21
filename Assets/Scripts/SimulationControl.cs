@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using Unity.Robotics.UrdfImporter;
 using Unity.Robotics.UrdfImporter.Control;
@@ -67,6 +68,13 @@ public class SimulationControl : MonoBehaviour
     [SerializeField]
     string m_SpawnEntityServiceName = "spawn_entity";
 
+    [Header("再生/停止 Button の Image コンポーネント")]
+    public Image playStopImage;
+
+    [Header("差し替え用スプライト")]
+    public Sprite playIcon;
+    public Sprite stopIcon;
+
     private byte m_SimulationState = new byte();
     private List<GameObject> m_EntityList = new List<GameObject>();
     // Entityの初期位置姿勢を保持する辞書
@@ -75,8 +83,6 @@ public class SimulationControl : MonoBehaviour
 
     void Start()
     {
-        Application.targetFrameRate = 10;
-
         ROSConnection.GetOrCreateInstance().ImplementService<SetSimulationStateRequest, SetSimulationStateResponse>(
             m_SetSimulationStateServiceName,
             SetSimulationState);
@@ -114,6 +120,7 @@ public class SimulationControl : MonoBehaviour
         {
             m_SimulationState = request.state.state;
             Time.timeScale = 0f;
+            playStopImage.sprite = playIcon;
 
             DespawnAllEntities();
         }
@@ -121,11 +128,13 @@ public class SimulationControl : MonoBehaviour
         {
             m_SimulationState = request.state.state;
             Time.timeScale = 1f;
+            playStopImage.sprite = stopIcon;
         }
         else if (request.state.state == SimulationStateMsg.STATE_PAUSED)
         {
             m_SimulationState = request.state.state;
             Time.timeScale = 0f;
+            playStopImage.sprite = playIcon;
         }
         else if (request.state.state == SimulationStateMsg.STATE_QUITTING)
         {
@@ -139,6 +148,32 @@ public class SimulationControl : MonoBehaviour
             return response;
         }
         return response;
+    }
+
+    public void StartStopSimulation()
+    {
+        if (m_SimulationState == SimulationStateMsg.STATE_PAUSED || m_SimulationState == SimulationStateMsg.STATE_STOPPED)
+        {
+            m_SimulationState = SimulationStateMsg.STATE_PLAYING;
+            Time.timeScale = 1f;
+            playStopImage.sprite = stopIcon;
+        }
+        else
+        {
+            ResetAllEntitiesState();
+            m_SimulationState = SimulationStateMsg.STATE_PAUSED;
+            Time.timeScale = 0f;
+            playStopImage.sprite = playIcon;
+        }
+    }
+    public void PauseSimulation()
+    {
+        if (m_SimulationState == SimulationStateMsg.STATE_PLAYING)
+        {
+            m_SimulationState = SimulationStateMsg.STATE_PAUSED;
+            Time.timeScale = 0f;
+            playStopImage.sprite = playIcon;
+        }
     }
 
     private GetSimulationStateResponse GetSimulationState(GetSimulationStateRequest request)
