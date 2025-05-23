@@ -2,7 +2,8 @@ using UnityEngine;
 using TMPro;
 using UnityEngine.UI;    // Button
 using System.Collections.Generic;
-
+using Unity.Robotics.UrdfImporter;
+using UnityMeshImporter;
 public class ObjectSpawner : MonoBehaviour
 {
     [Header("UI：生成リスト")]
@@ -89,6 +90,16 @@ public class ObjectSpawner : MonoBehaviour
             }
 
             selectedObject = null;  // 選択解除
+
+            inputX.text = spawnPosition.z.ToString("F2");
+            inputY.text = (-spawnPosition.x).ToString("F2");
+            inputZ.text = spawnPosition.y.ToString("F2");
+            inputRotX.text = (-spawnRotation.z).ToString("F2");
+            inputRotY.text = spawnRotation.x.ToString("F2");
+            inputRotZ.text = (-spawnRotation.y).ToString("F2");
+            inputScaleX.text = spawnScale.z.ToString("F2");
+            inputScaleY.text = spawnScale.x.ToString("F2");
+            inputScaleZ.text = spawnScale.y.ToString("F2");
         }
         go.transform.position = spawnPosition;
         go.transform.rotation = Quaternion.Euler(spawnRotation);
@@ -100,7 +111,104 @@ public class ObjectSpawner : MonoBehaviour
     {
         string baseName = go.name;
         go.name = $"{baseName}_{spawnedObjects.Count}";
+
+        // --- マテリアル設定 ---
+        var rend = go.GetComponent<Renderer>();
+        if (rend != null)
+        {
+            // URP Lit シェーダーを使う例
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader != null)
+            {
+                rend.material = new Material(shader);
+            }
+            else
+            {
+                Debug.LogWarning("Shader URP Lit が見つかりません。");
+            }
+        }
+
         AddListItem(go);
+    }
+
+    public void SpawnMeshFile()
+    {
+        // ファイルダイアログを開いて、ファイルを選択する
+        // サポートファイルリスト
+        // - 3D Manufacturing Format (.3mf)
+        // - Collada (.dae, .xml)
+        // - Blender (.blend)
+        // - Biovision BVH (.bvh)
+        // - 3D Studio Max 3DS (.3ds)
+        // - 3D Studio Max ASE (.ase)
+        // - glTF (.glTF)
+        // - glTF2.0 (.glTF)
+        // - KHR_lights_punctual ( 5.0 )
+        // - KHR_materials_pbrSpecularGlossiness ( 5.0 )
+        // - KHR_materials_unlit ( 5.0 )
+        // - KHR_texture_transform ( 5.1 under test )
+        // - FBX-Format, as ASCII and binary (.fbx)
+        // - Stanford Polygon Library (.ply)
+        // - AutoCAD DXF (.dxf)
+        // - IFC-STEP (.ifc)
+        // - Neutral File Format (.nff)
+        // - Sense8 WorldToolkit (.nff)
+        // - Valve Model (.smd, .vta)
+        // - Quake I (.mdl)
+        // - Quake II (.md2)
+        // - Quake III (.md3)
+        // - Quake 3 BSP (.pk3)
+        // - RtCW (.mdc)
+        // - Doom 3 (.md5mesh, .md5anim, .md5camera)
+        // - DirectX X (.x)
+        // - Quick3D (.q3o, .q3s)
+        // - Raw Triangles (.raw)
+        // - AC3D (.ac, .ac3d)
+        // - Stereolithography (.stl)
+        // - Autodesk DXF (.dxf)
+        // - Irrlicht Mesh (.irrmesh, .xml)
+        // - Irrlicht Scene (.irr, .xml)
+        // - Object File Format ( .off )
+        // - Wavefront Object (.obj)
+        // - Terragen Terrain ( .ter )
+        // - 3D GameStudio Model ( .mdl )
+        // - 3D GameStudio Terrain ( .hmp )
+        // - Ogre ( .mesh.xml, .skeleton.xml, .material )
+        // - OpenGEX-Fomat (.ogex)
+        // - Milkshape 3D ( .ms3d )
+        // - LightWave Model ( .lwo )
+        // - LightWave Scene ( .lws )
+        // - Modo Model ( .lxo )
+        // - CharacterStudio Motion ( .csm )
+        // - Stanford Ply ( .ply )
+        // - TrueSpace (.cob, .scn)
+        // - XGL-3D-Format (.xgl)
+        string filePath = UnityEditor.EditorUtility.OpenFilePanel("Select Mesh File", "", "3mf,dae,blend,bvh,3ds,ase,gltf,glb,fbx,ply,dxf,ifc,nff,smd,vta,mdl,md2,md3,pk3,mdc,md5mesh,x,q3o,q3s,raw,ac,stl,irrmesh,irr,obj,ter,mdl,hmp,ogex,ms3d,lwo,lws,lxo,csm");
+        if (string.IsNullOrEmpty(filePath))
+        {
+            Debug.LogWarning("No file selected.");
+            return;
+        }
+
+        var ob = MeshImporter.Load(filePath);
+        if (ob == null)
+        {
+            Debug.LogError("Failed to load object from File.");
+            return;
+        }
+        ob.name = $"Mesh_{spawnedObjects.Count}";
+
+        // オブジェクトの直下のすべての子オブジェクトを取得
+        foreach (MeshCollider meshCollider in ob.GetComponentsInChildren<MeshCollider>())
+        {
+            meshCollider.sharedMesh = meshCollider.gameObject.GetComponent<MeshFilter>().mesh;
+        }
+
+        ob.transform.position = spawnPosition;
+        ob.transform.rotation = Quaternion.Euler(spawnRotation);
+        ob.transform.localScale = spawnScale;
+
+        AddListItem(ob);
     }
 
     /// <summary>Directional Light を生成</summary>
@@ -146,21 +254,6 @@ public class ObjectSpawner : MonoBehaviour
     // リストに行アイテムを追加して、ボタンに選択イベントを登録
     private void AddListItem(GameObject go)
     {
-        // --- マテリアル設定 ---
-        var rend = go.GetComponent<Renderer>();
-        if (rend != null)
-        {
-            // URP Lit シェーダーを使う例
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader != null)
-            {
-                rend.material = new Material(shader);
-            }
-            else
-            {
-                Debug.LogWarning("Shader URP Lit が見つかりません。");
-            }
-        }
         var item = Instantiate(listItemPrefab, listContent);
         var text = item.GetComponentInChildren<TMP_Text>();
         if (text != null) text.text = go.name;
