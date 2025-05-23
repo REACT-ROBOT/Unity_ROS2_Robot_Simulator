@@ -55,15 +55,15 @@ public class ObjectSpawner : MonoBehaviour
                 Destroy(selectedObject.button.gameObject);
                 selectedObject = null;
 
-                inputX.text = spawnPosition.x.ToString("F2");
-                inputY.text = spawnPosition.y.ToString("F2");
-                inputZ.text = spawnPosition.z.ToString("F2");
-                inputRotX.text = spawnRotation.x.ToString("F2");
-                inputRotY.text = spawnRotation.y.ToString("F2");
-                inputRotZ.text = spawnRotation.z.ToString("F2");
-                inputScaleX.text = spawnScale.x.ToString("F2");
-                inputScaleY.text = spawnScale.y.ToString("F2");
-                inputScaleZ.text = spawnScale.z.ToString("F2");
+                inputX.text = spawnPosition.z.ToString("F2");
+                inputY.text = (-spawnPosition.x).ToString("F2");
+                inputZ.text = spawnPosition.y.ToString("F2");
+                inputRotX.text = (-spawnRotation.z).ToString("F2");
+                inputRotY.text = spawnRotation.x.ToString("F2");
+                inputRotZ.text = (-spawnRotation.y).ToString("F2");
+                inputScaleX.text = spawnScale.z.ToString("F2");
+                inputScaleY.text = spawnScale.x.ToString("F2");
+                inputScaleZ.text = spawnScale.y.ToString("F2");
             }
         });
     }
@@ -146,6 +146,21 @@ public class ObjectSpawner : MonoBehaviour
     // リストに行アイテムを追加して、ボタンに選択イベントを登録
     private void AddListItem(GameObject go)
     {
+        // --- マテリアル設定 ---
+        var rend = go.GetComponent<Renderer>();
+        if (rend != null)
+        {
+            // URP Lit シェーダーを使う例
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader != null)
+            {
+                rend.material = new Material(shader);
+            }
+            else
+            {
+                Debug.LogWarning("Shader URP Lit が見つかりません。");
+            }
+        }
         var item = Instantiate(listItemPrefab, listContent);
         var text = item.GetComponentInChildren<TMP_Text>();
         if (text != null) text.text = go.name;
@@ -176,15 +191,15 @@ public class ObjectSpawner : MonoBehaviour
             {
                 selectedObject = null;  // 選択解除
 
-                inputX.text = spawnPosition.x.ToString("F2");
-                inputY.text = spawnPosition.y.ToString("F2");
-                inputZ.text = spawnPosition.z.ToString("F2");
-                inputRotX.text = spawnRotation.x.ToString("F2");
-                inputRotY.text = spawnRotation.y.ToString("F2");
-                inputRotZ.text = spawnRotation.z.ToString("F2");
-                inputScaleX.text = spawnScale.x.ToString("F2");
-                inputScaleY.text = spawnScale.y.ToString("F2");
-                inputScaleZ.text = spawnScale.z.ToString("F2");
+                inputX.text = spawnPosition.z.ToString("F2");
+                inputY.text = (-spawnPosition.x).ToString("F2");
+                inputZ.text = spawnPosition.y.ToString("F2");
+                inputRotX.text = (-spawnRotation.z).ToString("F2");
+                inputRotY.text = spawnRotation.x.ToString("F2");
+                inputRotZ.text = (-spawnRotation.y).ToString("F2");
+                inputScaleX.text = spawnScale.z.ToString("F2");
+                inputScaleY.text = spawnScale.x.ToString("F2");
+                inputScaleZ.text = spawnScale.y.ToString("F2");
 
                 return;
             }
@@ -202,15 +217,15 @@ public class ObjectSpawner : MonoBehaviour
         var pos = go.transform.position;
         var rot = go.transform.rotation.eulerAngles;
         var scale = go.transform.localScale;
-        inputX.text = pos.x.ToString("F2");
-        inputY.text = pos.y.ToString("F2");
-        inputZ.text = pos.z.ToString("F2");
-        inputRotX.text = rot.x.ToString("F2");
-        inputRotY.text = rot.y.ToString("F2");
-        inputRotZ.text = rot.z.ToString("F2");
-        inputScaleX.text = scale.x.ToString("F2");
-        inputScaleY.text = scale.y.ToString("F2");
-        inputScaleZ.text = scale.z.ToString("F2");
+        inputX.text = pos.z.ToString("F2");
+        inputY.text = (-pos.x).ToString("F2");
+        inputZ.text = pos.y.ToString("F2");
+        inputRotX.text = (-rot.z).ToString("F2");
+        inputRotY.text = rot.x.ToString("F2");
+        inputRotZ.text = (-rot.y).ToString("F2");
+        inputScaleX.text = scale.z.ToString("F2");
+        inputScaleY.text = scale.x.ToString("F2");
+        inputScaleZ.text = scale.y.ToString("F2");
     }
 
     private void OnInputXInputEnd(string value)
@@ -220,7 +235,7 @@ public class ObjectSpawner : MonoBehaviour
             var pos = selectedObject.gameObject.transform.position;
             if (float.TryParse(value, out float x))
             {
-                pos.x = x;
+                pos.z = x;
             }
             selectedObject.gameObject.transform.position = pos;
         }
@@ -228,12 +243,12 @@ public class ObjectSpawner : MonoBehaviour
         {
             if (float.TryParse(value, out float x))
             {
-                spawnPosition.x = x;
+                spawnPosition.z = x;
             }
             else
             {
                 // 不正入力時は元の値に戻す
-                inputX.text = spawnPosition.x.ToString("F2");
+                inputX.text = spawnPosition.z.ToString("F2");
             }
         }
     }
@@ -245,7 +260,7 @@ public class ObjectSpawner : MonoBehaviour
             var pos = selectedObject.gameObject.transform.position;
             if (float.TryParse(value, out float y))
             {
-                pos.y = y;
+                pos.x = -y;
             }
             selectedObject.gameObject.transform.position = pos;
         }
@@ -253,12 +268,12 @@ public class ObjectSpawner : MonoBehaviour
         {
             if (float.TryParse(value, out float y))
             {
-                spawnPosition.y = y;
+                spawnPosition.x = -y;
             }
             else
             {
                 // 不正入力時は元の値に戻す
-                inputY.text = spawnPosition.y.ToString("F2");
+                inputY.text = (-spawnPosition.x).ToString("F2");
             }
         }
     }
@@ -270,7 +285,7 @@ public class ObjectSpawner : MonoBehaviour
             var pos = selectedObject.gameObject.transform.position;
             if (float.TryParse(value, out float z))
             {
-                pos.z = z;
+                pos.y = z;
             }
             selectedObject.gameObject.transform.position = pos;
         }
@@ -278,12 +293,12 @@ public class ObjectSpawner : MonoBehaviour
         {
             if (float.TryParse(value, out float z))
             {
-                spawnPosition.z = z;
+                spawnPosition.y = z;
             }
             else
             {
                 // 不正入力時は元の値に戻す
-                inputZ.text = spawnPosition.z.ToString("F2");
+                inputZ.text = spawnPosition.y.ToString("F2");
             }
         }
     }
@@ -295,7 +310,7 @@ public class ObjectSpawner : MonoBehaviour
             var rot = selectedObject.gameObject.transform.rotation.eulerAngles;
             if (float.TryParse(value, out float x))
             {
-                rot.x = x;
+                rot.z = -x;
             }
             selectedObject.gameObject.transform.rotation = Quaternion.Euler(rot);
         }
@@ -303,12 +318,12 @@ public class ObjectSpawner : MonoBehaviour
         {
             if (float.TryParse(value, out float x))
             {
-                spawnRotation.x = x;
+                spawnRotation.z = -x;
             }
             else
             {
                 // 不正入力時は元の値に戻す
-                inputRotX.text = spawnRotation.x.ToString("F2");
+                inputRotX.text = (-spawnRotation.z).ToString("F2");
             }
         }
     }
@@ -320,7 +335,7 @@ public class ObjectSpawner : MonoBehaviour
             var rot = selectedObject.gameObject.transform.rotation.eulerAngles;
             if (float.TryParse(value, out float y))
             {
-                rot.y = y;
+                rot.x = y;
             }
             selectedObject.gameObject.transform.rotation = Quaternion.Euler(rot);
         }
@@ -328,12 +343,12 @@ public class ObjectSpawner : MonoBehaviour
         {
             if (float.TryParse(value, out float y))
             {
-                spawnRotation.y = y;
+                spawnRotation.x = y;
             }
             else
             {
                 // 不正入力時は元の値に戻す
-                inputRotY.text = spawnRotation.y.ToString("F2");
+                inputRotY.text = spawnRotation.x.ToString("F2");
             }
         }
     }
@@ -345,7 +360,7 @@ public class ObjectSpawner : MonoBehaviour
             var rot = selectedObject.gameObject.transform.rotation.eulerAngles;
             if (float.TryParse(value, out float z))
             {
-                rot.z = z;
+                rot.y = -z;
             }
             selectedObject.gameObject.transform.rotation = Quaternion.Euler(rot);
         }
@@ -353,12 +368,12 @@ public class ObjectSpawner : MonoBehaviour
         {
             if (float.TryParse(value, out float z))
             {
-                spawnRotation.z = z;
+                spawnRotation.y = -z;
             }
             else
             {
                 // 不正入力時は元の値に戻す
-                inputRotZ.text = spawnRotation.z.ToString("F2");
+                inputRotZ.text = (-spawnRotation.y).ToString("F2");
             }
         }
     }
@@ -370,7 +385,7 @@ public class ObjectSpawner : MonoBehaviour
             var scale = selectedObject.gameObject.transform.localScale;
             if (float.TryParse(value, out float x))
             {
-                scale.x = x;
+                scale.z = x;
             }
             selectedObject.gameObject.transform.localScale = scale;
         }
@@ -378,12 +393,12 @@ public class ObjectSpawner : MonoBehaviour
         {
             if (float.TryParse(value, out float x))
             {
-                spawnScale.x = x;
+                spawnScale.z = x;
             }
             else
             {
                 // 不正入力時は元の値に戻す
-                inputScaleX.text = spawnScale.x.ToString("F2");
+                inputScaleX.text = spawnScale.z.ToString("F2");
             }
         }
     }
@@ -395,7 +410,7 @@ public class ObjectSpawner : MonoBehaviour
             var scale = selectedObject.gameObject.transform.localScale;
             if (float.TryParse(value, out float y))
             {
-                scale.y = y;
+                scale.x = y;
             }
             selectedObject.gameObject.transform.localScale = scale;
         }
@@ -403,12 +418,12 @@ public class ObjectSpawner : MonoBehaviour
         {
             if (float.TryParse(value, out float y))
             {
-                spawnScale.y = y;
+                spawnScale.x = y;
             }
             else
             {
                 // 不正入力時は元の値に戻す
-                inputScaleY.text = spawnScale.y.ToString("F2");
+                inputScaleY.text = spawnScale.x.ToString("F2");
             }
         }
     }
@@ -420,7 +435,7 @@ public class ObjectSpawner : MonoBehaviour
             var scale = selectedObject.gameObject.transform.localScale;
             if (float.TryParse(value, out float z))
             {
-                scale.z = z;
+                scale.y = z;
             }
             selectedObject.gameObject.transform.localScale = scale;
         }
@@ -428,12 +443,12 @@ public class ObjectSpawner : MonoBehaviour
         {
             if (float.TryParse(value, out float z))
             {
-                spawnScale.z = z;
+                spawnScale.y = z;
             }
             else
             {
                 // 不正入力時は元の値に戻す
-                inputScaleZ.text = spawnScale.z.ToString("F2");
+                inputScaleZ.text = spawnScale.y.ToString("F2");
             }
         }
     }
