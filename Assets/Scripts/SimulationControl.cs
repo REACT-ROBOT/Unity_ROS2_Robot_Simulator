@@ -160,9 +160,9 @@ public class SimulationControl : MonoBehaviour
         }
         else
         {
-            ResetAllEntitiesState();
             m_SimulationState = SimulationStateMsg.STATE_PAUSED;
             Time.timeScale = 0f;
+            ResetAllEntitiesState();
             playStopImage.sprite = playIcon;
         }
     }
@@ -339,6 +339,7 @@ public class SimulationControl : MonoBehaviour
             if (body != null)
             {
                 body.TeleportRoot(newPosition, newRotation);
+                body.PublishTransform();
                 if (link.name == "world")
                 {
                     // world link の場合は immovable を true にする
@@ -870,6 +871,21 @@ public class SimulationControl : MonoBehaviour
             {
                 entity.transform.position = m_EntityInitialPose[entity.name];
                 entity.transform.rotation = m_EntityInitialRotation[entity.name];
+
+                List<GameObject> childObjectsWithUrdfLink = GetChildObjectsWithComponent<UrdfLink>(entity);
+                foreach (GameObject child in childObjectsWithUrdfLink)
+                {
+                    UrdfLink link = child.GetComponent<UrdfLink>();
+                    link.IsBaseLink = true;
+
+                    ArticulationBody body = child.GetComponent<ArticulationBody>();
+                    if (body != null)
+                    {
+                        body.TeleportRoot(m_EntityInitialPose[entity.name], m_EntityInitialRotation[entity.name]);
+                        body.PublishTransform();
+                    }
+                    break;
+                }
             }
         }
     }
