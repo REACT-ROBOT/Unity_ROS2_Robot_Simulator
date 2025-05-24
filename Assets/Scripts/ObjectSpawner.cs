@@ -1,9 +1,30 @@
 using UnityEngine;
 using TMPro;
 using UnityEngine.UI;    // Button
+using System;
 using System.Collections.Generic;
+using System.IO;
 using Unity.Robotics.UrdfImporter;
 using UnityMeshImporter;
+using SFB; // StandaloneFileBrowser
+
+[Serializable]
+public class SavedObjectData
+{
+    public string type;
+    public float[] position;      // {x,y,z}
+    public float[] rotationEuler; // {x,y,z}
+    public float[] scale;         // {x,y,z}
+    public string meshPath;       // メッシュファイルのパス
+    public bool isActive;
+}
+
+[Serializable]
+public class SavedSceneData
+{
+    public List<SavedObjectData> objects = new List<SavedObjectData>();
+}
+
 public class ObjectSpawner : MonoBehaviour
 {
     [Header("UI：生成リスト")]
@@ -26,6 +47,7 @@ public class ObjectSpawner : MonoBehaviour
     {
         public GameObject gameObject;
         public Button button;
+        public string meshPath;
     }
 
     private Vector3 spawnPosition;
@@ -69,8 +91,112 @@ public class ObjectSpawner : MonoBehaviour
         });
     }
 
+    public void SaveSpawnedObjects()
+    {
+        SavedSceneData savedSceneData = new SavedSceneData();
+        foreach (var obj in spawnedObjects)
+        {
+            SavedObjectData savedObjectData = new SavedObjectData
+            {
+                type = obj.gameObject.name.Split('_')[0], // 名前からタイプを取得
+                position = new float[] { obj.gameObject.transform.position.x, obj.gameObject.transform.position.y, obj.gameObject.transform.position.z },
+                rotationEuler = new float[] { obj.gameObject.transform.rotation.eulerAngles.x, obj.gameObject.transform.rotation.eulerAngles.y, obj.gameObject.transform.rotation.eulerAngles.z },
+                scale = new float[] { obj.gameObject.transform.localScale.x, obj.gameObject.transform.localScale.y, obj.gameObject.transform.localScale.z },
+                meshPath = obj.meshPath,
+                isActive = obj.gameObject.activeSelf
+            };
+            savedSceneData.objects.Add(savedObjectData);
+        }
+        string json = JsonUtility.ToJson(savedSceneData, prettyPrint: true);
+        string path = StandaloneFileBrowser.SaveFilePanel("Save Scene", "", "scene.json", "json");
+        if (string.IsNullOrEmpty(path))
+        {
+            Debug.LogWarning("No file selected.");
+            return;
+        }
+        File.WriteAllText(path, json);
+        Debug.Log($"Scene saved to {path}");
+    }
+
+    public void LoadSpawnedObjects()
+    {
+        string path = StandaloneFileBrowser.OpenFilePanel("Load Scene", "", "json", false)[0];
+        if (string.IsNullOrEmpty(path))
+        {
+            Debug.LogWarning("No file selected.");
+            return;
+        }
+        string json = File.ReadAllText(path);
+        SavedSceneData savedSceneData = JsonUtility.FromJson<SavedSceneData>(json);
+        foreach (var objData in savedSceneData.objects)
+        {
+            if (objData.type == "Mesh")
+            {
+                var ob = MeshImporter.Load(objData.meshPath);
+                if (ob == null)
+                {
+                    Debug.LogError("Failed to load object from File.");
+                    return;
+                }
+                ob.name = $"Mesh_{spawnedObjects.Count}";
+                ob.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
+                ob.transform.rotation = Quaternion.Euler(objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
+                ob.transform.localScale = new Vector3(objData.scale[0], objData.scale[1], objData.scale[2]);
+                ob.SetActive(objData.isActive);
+                AddListItem(ob, objData.meshPath);
+                continue;
+            }
+            if (objData.type == "Directional Light")
+            {
+                var ob = new GameObject($"DirectionalLight_{spawnedObjects.Count}");
+                var light = ob.AddComponent<Light>();
+                light.type = LightType.Directional;
+                light.shadows = LightShadows.Soft;
+                ob.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
+                ob.transform.rotation = Quaternion.Euler(objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
+                ob.SetActive(objData.isActive);
+                AddListItem(ob);
+                continue;
+            }
+            if (objData.type == "Point Light")
+            {
+                var ob = new GameObject($"PointLight_{spawnedObjects.Count}");
+                var light = ob.AddComponent<Light>();
+                light.type = LightType.Point;
+                light.shadows = LightShadows.Soft;
+                light.range = 10f;
+                light.intensity = 20f;
+                ob.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
+                ob.SetActive(objData.isActive);
+                AddListItem(ob);
+                continue;
+            }
+            if (objData.type == "Spot Light")
+            {
+                var ob = new GameObject($"SpotLight_{spawnedObjects.Count}");
+                var light = ob.AddComponent<Light>();
+                light.type = LightType.Spot;
+                light.shadows = LightShadows.Soft;
+                light.range = 15f;
+                light.intensity = 1f;
+                light.spotAngle = 30f;
+                ob.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
+                ob.transform.rotation = Quaternion.Euler(objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
+                ob.SetActive(objData.isActive);
+                AddListItem(ob);
+                continue;
+            }
+            GameObject go = GameObject.CreatePrimitive((PrimitiveType)System.Enum.Parse(typeof(PrimitiveType), objData.type));
+            go.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
+            go.transform.rotation = Quaternion.Euler(objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
+            go.transform.localScale = new Vector3(objData.scale[0], objData.scale[1], objData.scale[2]);
+            go.SetActive(objData.isActive);
+            RegisterSpawn(go);
+        }
+    }
+
     // === 公開メソッド：ボタンから呼び出し ===
-    public void SpawnCube()   => SpawnPrimitive(PrimitiveType.Cube);
+    public void SpawnCube() => SpawnPrimitive(PrimitiveType.Cube);
     public void SpawnSphere() => SpawnPrimitive(PrimitiveType.Sphere);
     public void SpawnCylinder() => SpawnPrimitive(PrimitiveType.Cylinder);
 
@@ -183,7 +309,14 @@ public class ObjectSpawner : MonoBehaviour
         // - Stanford Ply ( .ply )
         // - TrueSpace (.cob, .scn)
         // - XGL-3D-Format (.xgl)
-        string filePath = UnityEditor.EditorUtility.OpenFilePanel("Select Mesh File", "", "3mf,dae,blend,bvh,3ds,ase,gltf,glb,fbx,ply,dxf,ifc,nff,smd,vta,mdl,md2,md3,pk3,mdc,md5mesh,x,q3o,q3s,raw,ac,stl,irrmesh,irr,obj,ter,mdl,hmp,ogex,ms3d,lwo,lws,lxo,csm");
+        var extensionList = new [] {
+            "3mf", "dae", "blend", "bvh", "3ds", "ase", "gltf", "glb",
+            "fbx", "ply", "dxf", "ifc", "nff", "smd", "vta", "mdl",
+            "md2", "md3", "pk3", "mdc", "md5mesh", "x",
+            "q3o", "q3s", "raw", "ac", "stl",
+            // 追加の拡張子をここに追加
+        };
+        string filePath = StandaloneFileBrowser.OpenFilePanel("Select Mesh File", "", string.Join(",", extensionList), false)[0];
         if (string.IsNullOrEmpty(filePath))
         {
             Debug.LogWarning("No file selected.");
@@ -208,7 +341,7 @@ public class ObjectSpawner : MonoBehaviour
         ob.transform.rotation = Quaternion.Euler(spawnRotation);
         ob.transform.localScale = spawnScale;
 
-        AddListItem(ob);
+        AddListItem(ob, filePath);
     }
 
     /// <summary>Directional Light を生成</summary>
@@ -230,7 +363,7 @@ public class ObjectSpawner : MonoBehaviour
         var light = go.AddComponent<Light>();
         light.type = LightType.Point;
         light.shadows = LightShadows.Soft;
-        light.range     = 10f;
+        light.range = 10f;
         light.intensity = 20f;
         go.transform.position = spawnPosition;
         AddListItem(go);
@@ -241,18 +374,18 @@ public class ObjectSpawner : MonoBehaviour
     {
         var go = new GameObject($"SpotLight_{spawnedObjects.Count}");
         var light = go.AddComponent<Light>();
-        light.type       = LightType.Spot;
+        light.type = LightType.Spot;
         light.shadows = LightShadows.Soft;
-        light.range      = 15f;
-        light.intensity  = 1f;
-        light.spotAngle  = 30f;
+        light.range = 15f;
+        light.intensity = 1f;
+        light.spotAngle = 30f;
         go.transform.position = spawnPosition;
         go.transform.rotation = Quaternion.Euler(spawnRotation);
         AddListItem(go);
     }
 
     // リストに行アイテムを追加して、ボタンに選択イベントを登録
-    private void AddListItem(GameObject go)
+    private void AddListItem(GameObject go, string meshPath = null)
     {
         var item = Instantiate(listItemPrefab, listContent);
         var text = item.GetComponentInChildren<TMP_Text>();
@@ -261,7 +394,7 @@ public class ObjectSpawner : MonoBehaviour
         var btn = item.GetComponent<Button>();
         if (btn != null)
         {
-            spawnedObjects.Add(new SpawnedObject { gameObject = go, button = btn });
+            spawnedObjects.Add(new SpawnedObject { gameObject = go, button = btn, meshPath = meshPath });
             btn.onClick.AddListener(() => OnSelectObject(go, btn));
         }
     }
