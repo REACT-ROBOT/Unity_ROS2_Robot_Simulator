@@ -412,7 +412,12 @@ public class SimulationControl : MonoBehaviour
         List<PhysicsMaterial> physicsMaterialList = new List<PhysicsMaterial>();
         if (robotNode != null)
         {
-            XmlNodeList physicsMaterials = robotNode.SelectNodes("physics_material");
+            XmlNodeList physicsMaterials = robotNode.SelectNodes("collsion_material");
+            if (physicsMaterials.Count == 0)
+            {
+                Debug.LogWarning("<physics_material> is deprecated. Use <collision_material> instead.");
+                physicsMaterials = robotNode.SelectNodes("physics_material");
+            }
             foreach (XmlNode physicsMaterial in physicsMaterials)
             {
                 string materialName = physicsMaterial.Attributes["name"]?.Value;
@@ -436,7 +441,11 @@ public class SimulationControl : MonoBehaviour
                 XmlNode collisionNode = link.SelectSingleNode("collision");
                 if (collisionNode != null)
                 {
-                    XmlNode physicsMaterial = collisionNode.SelectSingleNode("physics_material");
+                    XmlNode physicsMaterial = collisionNode.SelectSingleNode("collision_material");
+                    if (physicsMaterial == null)
+                    {
+                        physicsMaterial = collisionNode.SelectSingleNode("physics_material");
+                    }
                     if (physicsMaterial != null)
                     {
                         string materialName = physicsMaterial.Attributes["name"]?.Value;
@@ -457,7 +466,7 @@ public class SimulationControl : MonoBehaviour
                                         Collider meshCollider = targetCollision.gameObject.GetComponent<Collider>();
                                         if (meshCollider != null)
                                         {
-                                            foreach(PhysicsMaterial material in physicsMaterialList)
+                                            foreach (PhysicsMaterial material in physicsMaterialList)
                                             {
                                                 if (material.name == materialName)
                                                 {
@@ -475,14 +484,19 @@ public class SimulationControl : MonoBehaviour
             }
         }
 
-        // センサ設定 (URDF 内の <unity> 要素に基づく)
+        // センサ設定 (URDF 内の <simulation> 要素に基づく)
         int next_display_number = 1;
         if (robotNode != null)
         {
-            XmlNode unityNode = robotNode.SelectSingleNode("unity");
-            if (unityNode != null)
+            XmlNode simulationNode = robotNode.SelectSingleNode("simulation");
+            if (simulationNode == null)
             {
-                XmlNodeList unitySensors = unityNode.SelectNodes("sensor");
+                Debug.LogWarning("<unity> is deprecated. Use <simulation> instead.");
+                simulationNode = robotNode.SelectSingleNode("unity");
+            }
+            if (simulationNode != null)
+            {
+                XmlNodeList unitySensors = simulationNode.SelectNodes("sensor");
                 foreach (XmlNode sensor in unitySensors)
                 {
                     string sensorType = sensor.Attributes["type"]?.Value;
@@ -506,7 +520,7 @@ public class SimulationControl : MonoBehaviour
                                 {
                                     var pointsNumPerScanField = typeof(LiDARSensor).GetField("_pointsNumPerScan", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     pointsNumPerScanField.SetValue(lidarSensor, int.Parse(sensor.SelectSingleNode("ray/scan/horizontal/samples").InnerText));
-                                    var scanPattern =  ScriptableObject.CreateInstance<ScanPattern>();
+                                    var scanPattern = ScriptableObject.CreateInstance<ScanPattern>();
                                     scanPattern.size = int.Parse(sensor.SelectSingleNode("ray/scan/horizontal/samples").InnerText);
                                     scanPattern.scans = new Unity.Mathematics.float3[scanPattern.size];
                                     scanPattern.minZenithAngle = Mathf.PI / 2.0f;
@@ -519,7 +533,7 @@ public class SimulationControl : MonoBehaviour
                                         float azimuth = scanPattern.minAzimuthAngle + i * angleStep;
                                         // 水平面上のスキャン方向を設定 (zenithは90度固定)
                                         scanPattern.scans[i] = new Unity.Mathematics.float3(
-                                            -Mathf.Sin(azimuth), 
+                                            -Mathf.Sin(azimuth),
                                             0.0f,  // 水平面なのでY=0
                                             Mathf.Cos(azimuth)
                                         );
@@ -559,7 +573,7 @@ public class SimulationControl : MonoBehaviour
                                     int horizontalSamples = int.Parse(sensor.SelectSingleNode("ray/scan/horizontal/samples").InnerText);
                                     var pointsNumPerScanField = typeof(LiDARSensor).GetField("_pointsNumPerScan", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     pointsNumPerScanField.SetValue(lidarSensor, horizontalSamples * verticalSamples);
-                                    var scanPattern =  ScriptableObject.CreateInstance<ScanPattern>();
+                                    var scanPattern = ScriptableObject.CreateInstance<ScanPattern>();
                                     scanPattern.size = horizontalSamples * verticalSamples;
                                     scanPattern.scans = new Unity.Mathematics.float3[scanPattern.size];
                                     scanPattern.minZenithAngle = TryParseFloat(sensor.SelectSingleNode("ray/scan/vertical/min_angle").InnerText);
@@ -574,7 +588,7 @@ public class SimulationControl : MonoBehaviour
                                         for (int j = 0; j < verticalSamples; j++)
                                         {
                                             float zenith = scanPattern.minZenithAngle + i * verticalAngleStep;
-                                            
+
                                             scanPattern.scans[i * verticalSamples + j] = new Unity.Mathematics.float3(
                                                 Mathf.Cos(zenith) * -Mathf.Sin(azimuth),
                                                 Mathf.Sin(zenith),
@@ -816,19 +830,44 @@ public class SimulationControl : MonoBehaviour
             {
                 if (jointNode.Attributes["name"]?.Value == targetJointName)
                 {
-                    XmlNode unityDriveApiNode = jointNode.SelectSingleNode("unity_drive_api");
-                    if (unityDriveApiNode != null)
+                    if (jointNode.Attributes["stiffness"]?.Value != null)
                     {
-                        parameters["stiffness"] = TryParseFloat(unityDriveApiNode.Attributes["stiffness"]?.Value);
-                        parameters["damping"] = TryParseFloat(unityDriveApiNode.Attributes["damping"]?.Value);
-                        parameters["force_limit"] = TryParseFloat(unityDriveApiNode.Attributes["force_limit"]?.Value);
+                        parameters["stiffness"] = TryParseFloat(jointNode.Attributes["stiffness"].Value);
                     }
                     else
                     {
-                        Debug.Log("unity_drive_api element not found.");
+                        Debug.Log("Joint stiffness attribute not found.");
                         parameters["stiffness"] = 0.0f;
+                    }
+                    if (jointNode.Attributes["damping"]?.Value != null)
+                    {
+                        parameters["damping"] = TryParseFloat(jointNode.Attributes["damping"].Value);
+                    }
+                    else
+                    {
+                        Debug.Log("Joint damping attribute not found.");
                         parameters["damping"] = 0.0f;
-                        parameters["force_limit"] = 0.0f;
+                    }
+                    if (jointNode.Attributes["stiffness"]?.Value != null || jointNode.Attributes["damping"]?.Value != null)
+                    {
+                        parameters["force_limit"] = 1000000.0f; // デフォルトの力制限値
+                    }
+                    else
+                    {
+                        XmlNode unityDriveApiNode = jointNode.SelectSingleNode("unity_drive_api");
+                        if (unityDriveApiNode != null)
+                        {
+                            parameters["stiffness"] = TryParseFloat(unityDriveApiNode.Attributes["stiffness"]?.Value);
+                            parameters["damping"] = TryParseFloat(unityDriveApiNode.Attributes["damping"]?.Value);
+                            parameters["force_limit"] = TryParseFloat(unityDriveApiNode.Attributes["force_limit"]?.Value);
+                        }
+                        else
+                        {
+                            Debug.Log("unity_drive_api element not found.");
+                            parameters["stiffness"] = 0.0f;
+                            parameters["damping"] = 0.0f;
+                            parameters["force_limit"] = 0.0f;
+                        }
                     }
                     return parameters;
                 }
