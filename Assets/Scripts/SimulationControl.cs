@@ -361,6 +361,7 @@ public class SimulationControl : MonoBehaviour
         // JointState 用の Publisher/Subscriber の設定
         JointStatePub jointStatePub = robotObject.AddComponent<JointStatePub>();
         JointStateSub jointStateSub = robotObject.AddComponent<JointStateSub>();
+        GroundTruthPub groundTruthPub = robotObject.AddComponent<GroundTruthPub>();
         List<GameObject> childObjectsWithArticulationBody = FindArticulationBodyObjectsInChildren(robotObject);
         List<ArticulationBody> articulationBodyList = new List<ArticulationBody>();
         List<string> jointNameList = new List<string>();
@@ -399,6 +400,13 @@ public class SimulationControl : MonoBehaviour
         if (jointCommandParam != null)
         {
             jointStateSub.topicName = jointCommandParam.InnerText;
+        }
+
+        groundTruthPub.targetObject = childObjectsWithUrdfLink[0];
+        XmlNode groundTruthParam = xmlDoc.SelectSingleNode("//robot/ros2_control/hardware/param[@name='ground_truth_topic']");
+        if (groundTruthParam != null)
+        {
+            groundTruthPub.topicName = groundTruthParam.InnerText;
         }
 
         // Physics Material の生成（ランタイムでは AssetDatabase は使用不可のため new で生成）
