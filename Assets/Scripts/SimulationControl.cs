@@ -679,6 +679,59 @@ public class SimulationControl : MonoBehaviour
                                 var topicNameField2 = cameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 topicNameField2.SetValue(cameraImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/image_raw");
                                 break;
+                            case "wideanglecamera":
+                                Debug.Log("sensor type 'wideanglecamera' found");
+                                FisheyeCameraSensor fisheyeCameraSensor = targetObject.AddComponent<FisheyeCameraSensor>();
+                                var fisheyeFovField = fisheyeCameraSensor.GetType().GetField("_fov", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                fisheyeFovField.SetValue(fisheyeCameraSensor, TryParseFloat(sensor.SelectSingleNode("horizontal_fov").InnerText) * 180.0f / 3.14f);
+                                var fisheyeResolutionField = fisheyeCameraSensor.GetType().GetField("_resolution", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                int fisheye_image_width, fisheye_image_height;
+                                int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out fisheye_image_width);
+                                int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out fisheye_image_height);
+                                fisheyeResolutionField.SetValue(fisheyeCameraSensor, new Vector2Int(fisheye_image_width, fisheye_image_height));
+                                UnityEngine.Camera fisheyeCameraComponent = targetObject.GetComponent<UnityEngine.Camera>();
+                                if (fisheyeCameraComponent != null)
+                                {
+                                    fisheyeCameraComponent.targetDisplay = next_display_number;
+                                    next_display_number++;
+                                }
+                                CameraInfoMsgPublisher fisheyeCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
+                                CompressedImageMsgPublisher fisheyeCameraImagePublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                var fisheyeCameraInfoPublisherSerializerField = fisheyeCameraInfoPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (fisheyeCameraInfoPublisherSerializerField != null)
+                                {
+                                    var fisheyeCameraInfoPublisherSerializer = new CameraInfoMsgSerializer();
+                                    var sourceField = fisheyeCameraInfoPublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceField.SetValue(fisheyeCameraInfoPublisherSerializer, fisheyeCameraSensor);
+                                    var headerField = fisheyeCameraInfoPublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerField.SetValue(fisheyeCameraInfoPublisherSerializer, new HeaderSerializer());
+                                    var header = headerField.GetValue(fisheyeCameraInfoPublisherSerializer);
+                                    var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerSourceField.SetValue(header, fisheyeCameraSensor);
+                                    var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
+                                    fisheyeCameraInfoPublisherSerializerField.SetValue(fisheyeCameraInfoPublisher, fisheyeCameraInfoPublisherSerializer);
+                                }
+                                var fisheyeTopicNameField = fisheyeCameraInfoPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                fisheyeTopicNameField.SetValue(fisheyeCameraInfoPublisher, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_camera_info");
+                                var fisheyeCameraImagePublisherSerializerField = fisheyeCameraImagePublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (fisheyeCameraImagePublisherSerializerField != null)
+                                {
+                                    var fisheyeCameraImagePublisherSerializer = new CompressedImageMsgSerializer();
+                                    var sourceField = fisheyeCameraImagePublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceField.SetValue(fisheyeCameraImagePublisherSerializer, fisheyeCameraSensor);
+                                    var headerField = fisheyeCameraImagePublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerField.SetValue(fisheyeCameraImagePublisherSerializer, new HeaderSerializer());
+                                    var header = headerField.GetValue(fisheyeCameraImagePublisherSerializer);
+                                    var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerSourceField.SetValue(header, fisheyeCameraSensor);
+                                    var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
+                                    fisheyeCameraImagePublisherSerializerField.SetValue(fisheyeCameraImagePublisher, fisheyeCameraImagePublisherSerializer);
+                                }
+                                var fisheyeTopicNameField2 = fisheyeCameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                fisheyeTopicNameField2.SetValue(fisheyeCameraImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_image_raw");
+                                break;
                             case "depth_camera":
                                 Debug.Log("sensor type 'depth_camera' found");
                                 DepthCameraSensor depthCameraSensor = targetObject.AddComponent<DepthCameraSensor>();
