@@ -562,13 +562,13 @@ public class SimulationControl : MonoBehaviour
                                         headerSourceField.SetValue(header, lidarSensor);
                                         var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         headerFrameIdField.SetValue(header, sensorLinkName);
-                                        var serializerMinRangeField = laserScanMsgPublisherSerializer.GetType().GetField("_min_range", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        var serializerMinRangeField = laserScanMsgPublisherSerializer.GetType().GetField("_minRange", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         serializerMinRangeField.SetValue(laserScanMsgPublisherSerializer, TryParseFloat(sensor.SelectSingleNode("ray/range/min").InnerText));
-                                        var serializerMaxRangeField = laserScanMsgPublisherSerializer.GetType().GetField("_max_range", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        var serializerMaxRangeField = laserScanMsgPublisherSerializer.GetType().GetField("_maxRange", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         serializerMaxRangeField.SetValue(laserScanMsgPublisherSerializer, TryParseFloat(sensor.SelectSingleNode("ray/range/max").InnerText));
-                                        var serializerGaussianNoiseSigmaField = laserScanMsgPublisherSerializer.GetType().GetField("_gaussian_noise_sigma", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        var serializerGaussianNoiseSigmaField = laserScanMsgPublisherSerializer.GetType().GetField("_gaussianNoiseSigma", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         serializerGaussianNoiseSigmaField.SetValue(laserScanMsgPublisherSerializer, TryParseFloat(sensor.SelectSingleNode("ray/noise/stddev").InnerText));
-                                        var serializerScanPatternField = laserScanMsgPublisherSerializer.GetType().GetField("_scan_pattern", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        var serializerScanPatternField = laserScanMsgPublisherSerializer.GetType().GetField("_scanPattern", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                         serializerScanPatternField.SetValue(laserScanMsgPublisherSerializer, scanPattern);
                                         laserScanMsgPublisherSerializerField.SetValue(laserScanMsgPublisher, laserScanMsgPublisherSerializer);
                                     }
