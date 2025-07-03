@@ -549,7 +549,20 @@ public class SimulationControl : MonoBehaviour
                                     var scanPatternField = typeof(LiDARSensor).GetField("_scanPattern", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     scanPatternField.SetValue(lidarSensor, scanPattern);
                                     lidarSensor.Initialize();
+                                    // Set update rate from URDF
+                                    var lidarUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                    if (lidarUpdateRateNode != null)
+                                    {
+                                        float updateRate = TryParseFloat(lidarUpdateRateNode.InnerText);
+                                        var lidarFrequencyField = lidarSensor.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        if (lidarFrequencyField != null)
+                                            lidarFrequencyField.SetValue(lidarSensor, updateRate);
+                                    }
                                     LaserScanMsgPublisher laserScanMsgPublisher = targetObject.AddComponent<LaserScanMsgPublisher>();
+                                    // Disable publisher frequency control - use sensor-driven updates
+                                    var laserScanFrequencyField = laserScanMsgPublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    if (laserScanFrequencyField != null)
+                                        laserScanFrequencyField.SetValue(laserScanMsgPublisher, float.MaxValue);
                                     var laserScanMsgPublisherSerializerField = laserScanMsgPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     if (laserScanMsgPublisherSerializerField != null)
                                     {
@@ -607,7 +620,20 @@ public class SimulationControl : MonoBehaviour
                                     var scanPatternField = typeof(LiDARSensor).GetField("_scanPattern", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     scanPatternField.SetValue(lidarSensor, scanPattern);
                                     lidarSensor.Initialize();
+                                    // Set update rate from URDF
+                                    var lidar3DUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                    if (lidar3DUpdateRateNode != null)
+                                    {
+                                        float updateRate = TryParseFloat(lidar3DUpdateRateNode.InnerText);
+                                        var lidar3DFrequencyField = lidarSensor.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                        if (lidar3DFrequencyField != null)
+                                            lidar3DFrequencyField.SetValue(lidarSensor, updateRate);
+                                    }
                                     LiDARPointCloud2MsgPublisher lidarPointCloud2MsgPublisher = targetObject.AddComponent<LiDARPointCloud2MsgPublisher>();
+                                    // Disable publisher frequency control - use sensor-driven updates
+                                    var lidarPointCloud2FrequencyField = lidarPointCloud2MsgPublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    if (lidarPointCloud2FrequencyField != null)
+                                        lidarPointCloud2FrequencyField.SetValue(lidarPointCloud2MsgPublisher, float.MaxValue);
                                     var lidarPointCloud2MsgPublisherSerializerField = lidarPointCloud2MsgPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     if (lidarPointCloud2MsgPublisherSerializerField != null)
                                     {
@@ -636,6 +662,15 @@ public class SimulationControl : MonoBehaviour
                                 int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out image_width);
                                 int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out image_height);
                                 resolutionField.SetValue(cameraSensor, new Vector2Int(image_width, image_height));
+                                // Set update rate from URDF
+                                var updateRateNode = sensor.SelectSingleNode("update_rate");
+                                if (updateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(updateRateNode.InnerText);
+                                    var cameraFrequencyField = cameraSensor.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    if (cameraFrequencyField != null)
+                                        cameraFrequencyField.SetValue(cameraSensor, updateRate);
+                                }
                                 UnityEngine.Camera cameraComponent = targetObject.GetComponent<UnityEngine.Camera>();
                                 if (cameraComponent != null)
                                 {
@@ -644,6 +679,13 @@ public class SimulationControl : MonoBehaviour
                                 }
                                 CameraInfoMsgPublisher cameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
                                 CompressedImageMsgPublisher cameraImagePublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                // Disable publisher frequency control - use sensor-driven updates
+                                var cameraInfoFrequencyField = cameraInfoPublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                var cameraImageFrequencyField = cameraImagePublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (cameraInfoFrequencyField != null)
+                                    cameraInfoFrequencyField.SetValue(cameraInfoPublisher, float.MaxValue);
+                                if (cameraImageFrequencyField != null)
+                                    cameraImageFrequencyField.SetValue(cameraImagePublisher, float.MaxValue);
                                 var cameraInfoPublisherSerializerField = cameraInfoPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 if (cameraInfoPublisherSerializerField != null)
                                 {
@@ -689,6 +731,15 @@ public class SimulationControl : MonoBehaviour
                                 int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out fisheye_image_width);
                                 int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out fisheye_image_height);
                                 fisheyeResolutionField.SetValue(fisheyeCameraSensor, new Vector2Int(fisheye_image_width, fisheye_image_height));
+                                // Set update rate from URDF
+                                var fisheyeUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                if (fisheyeUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(fisheyeUpdateRateNode.InnerText);
+                                    var fisheyeFrequencyField = fisheyeCameraSensor.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    if (fisheyeFrequencyField != null)
+                                        fisheyeFrequencyField.SetValue(fisheyeCameraSensor, updateRate);
+                                }
                                 UnityEngine.Camera fisheyeCameraComponent = targetObject.GetComponent<UnityEngine.Camera>();
                                 if (fisheyeCameraComponent != null)
                                 {
@@ -697,6 +748,13 @@ public class SimulationControl : MonoBehaviour
                                 }
                                 CameraInfoMsgPublisher fisheyeCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
                                 CompressedImageMsgPublisher fisheyeCameraImagePublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                // Disable publisher frequency control - use sensor-driven updates
+                                var fisheyeInfoFrequencyField = fisheyeCameraInfoPublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                var fisheyeImageFrequencyField = fisheyeCameraImagePublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (fisheyeInfoFrequencyField != null)
+                                    fisheyeInfoFrequencyField.SetValue(fisheyeCameraInfoPublisher, float.MaxValue);
+                                if (fisheyeImageFrequencyField != null)
+                                    fisheyeImageFrequencyField.SetValue(fisheyeCameraImagePublisher, float.MaxValue);
                                 var fisheyeCameraInfoPublisherSerializerField = fisheyeCameraInfoPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 if (fisheyeCameraInfoPublisherSerializerField != null)
                                 {
@@ -742,6 +800,15 @@ public class SimulationControl : MonoBehaviour
                                 int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out panoramic_image_width);
                                 int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out panoramic_image_height);
                                 panoramicResolutionField.SetValue(panoramicCameraSensor, new Vector2Int(panoramic_image_width, panoramic_image_height));
+                                // Set update rate from URDF
+                                var panoramicUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                if (panoramicUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(panoramicUpdateRateNode.InnerText);
+                                    var panoramicFrequencyField = panoramicCameraSensor.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    if (panoramicFrequencyField != null)
+                                        panoramicFrequencyField.SetValue(panoramicCameraSensor, updateRate);
+                                }
                                 UnityEngine.Camera panoramicCameraComponent = targetObject.GetComponent<UnityEngine.Camera>();
                                 if (panoramicCameraComponent != null)
                                 {
@@ -750,6 +817,13 @@ public class SimulationControl : MonoBehaviour
                                 }
                                 CameraInfoMsgPublisher panoramicCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
                                 CompressedImageMsgPublisher panoramicCameraImagePublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                // Disable publisher frequency control - use sensor-driven updates
+                                var panoramicInfoFrequencyField = panoramicCameraInfoPublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                var panoramicImageFrequencyField = panoramicCameraImagePublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (panoramicInfoFrequencyField != null)
+                                    panoramicInfoFrequencyField.SetValue(panoramicCameraInfoPublisher, float.MaxValue);
+                                if (panoramicImageFrequencyField != null)
+                                    panoramicImageFrequencyField.SetValue(panoramicCameraImagePublisher, float.MaxValue);
                                 var panoramicCameraInfoPublisherSerializerField = panoramicCameraInfoPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 if (panoramicCameraInfoPublisherSerializerField != null)
                                 {
@@ -795,6 +869,15 @@ public class SimulationControl : MonoBehaviour
                                 int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out depth_image_width);
                                 int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out depth_image_height);
                                 depthResolutionField.SetValue(depthCameraSensor, new Vector2Int(depth_image_width, depth_image_height));
+                                // Set update rate from URDF
+                                var depthUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                if (depthUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(depthUpdateRateNode.InnerText);
+                                    var depthFrequencyField = depthCameraSensor.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    if (depthFrequencyField != null)
+                                        depthFrequencyField.SetValue(depthCameraSensor, updateRate);
+                                }
                                 UnityEngine.Camera depthCameraComponent = targetObject.GetComponent<UnityEngine.Camera>();
                                 if (depthCameraComponent != null)
                                 {
@@ -803,6 +886,13 @@ public class SimulationControl : MonoBehaviour
                                 }
                                 CameraInfoMsgPublisher depthCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
                                 CompressedImageMsgPublisher depthCameraImagePublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                // Disable publisher frequency control - use sensor-driven updates
+                                var depthInfoFrequencyField = depthCameraInfoPublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                var depthImageFrequencyField = depthCameraImagePublisher.GetType().GetField("_frequency", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (depthInfoFrequencyField != null)
+                                    depthInfoFrequencyField.SetValue(depthCameraInfoPublisher, float.MaxValue);
+                                if (depthImageFrequencyField != null)
+                                    depthImageFrequencyField.SetValue(depthCameraImagePublisher, float.MaxValue);
                                 var depthCameraInfoPublisherSerializerField = depthCameraInfoPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 if (depthCameraInfoPublisherSerializerField != null)
                                 {
