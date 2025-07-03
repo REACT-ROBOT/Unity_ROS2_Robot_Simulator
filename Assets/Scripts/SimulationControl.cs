@@ -732,6 +732,59 @@ public class SimulationControl : MonoBehaviour
                                 var fisheyeTopicNameField2 = fisheyeCameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 fisheyeTopicNameField2.SetValue(fisheyeCameraImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_image_raw");
                                 break;
+                            case "panoramiccamera":
+                                Debug.Log("sensor type 'panoramiccamera' found");
+                                PanoramicCameraSensor panoramicCameraSensor = targetObject.AddComponent<PanoramicCameraSensor>();
+                                var panoramicFovField = panoramicCameraSensor.GetType().GetField("_fov", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                panoramicFovField.SetValue(panoramicCameraSensor, TryParseFloat(sensor.SelectSingleNode("horizontal_fov").InnerText) * 180.0f / 3.14f);
+                                var panoramicResolutionField = panoramicCameraSensor.GetType().GetField("_resolution", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                int panoramic_image_width, panoramic_image_height;
+                                int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out panoramic_image_width);
+                                int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out panoramic_image_height);
+                                panoramicResolutionField.SetValue(panoramicCameraSensor, new Vector2Int(panoramic_image_width, panoramic_image_height));
+                                UnityEngine.Camera panoramicCameraComponent = targetObject.GetComponent<UnityEngine.Camera>();
+                                if (panoramicCameraComponent != null)
+                                {
+                                    panoramicCameraComponent.targetDisplay = next_display_number;
+                                    next_display_number++;
+                                }
+                                CameraInfoMsgPublisher panoramicCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
+                                CompressedImageMsgPublisher panoramicCameraImagePublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                var panoramicCameraInfoPublisherSerializerField = panoramicCameraInfoPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (panoramicCameraInfoPublisherSerializerField != null)
+                                {
+                                    var panoramicCameraInfoPublisherSerializer = new CameraInfoMsgSerializer();
+                                    var sourceField = panoramicCameraInfoPublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceField.SetValue(panoramicCameraInfoPublisherSerializer, panoramicCameraSensor);
+                                    var headerField = panoramicCameraInfoPublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerField.SetValue(panoramicCameraInfoPublisherSerializer, new HeaderSerializer());
+                                    var header = headerField.GetValue(panoramicCameraInfoPublisherSerializer);
+                                    var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerSourceField.SetValue(header, panoramicCameraSensor);
+                                    var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
+                                    panoramicCameraInfoPublisherSerializerField.SetValue(panoramicCameraInfoPublisher, panoramicCameraInfoPublisherSerializer);
+                                }
+                                var panoramicTopicNameField = panoramicCameraInfoPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                panoramicTopicNameField.SetValue(panoramicCameraInfoPublisher, "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_camera_info");
+                                var panoramicCameraImagePublisherSerializerField = panoramicCameraImagePublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (panoramicCameraImagePublisherSerializerField != null)
+                                {
+                                    var panoramicCameraImagePublisherSerializer = new CompressedImageMsgSerializer();
+                                    var sourceField = panoramicCameraImagePublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceField.SetValue(panoramicCameraImagePublisherSerializer, panoramicCameraSensor);
+                                    var headerField = panoramicCameraImagePublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerField.SetValue(panoramicCameraImagePublisherSerializer, new HeaderSerializer());
+                                    var header = headerField.GetValue(panoramicCameraImagePublisherSerializer);
+                                    var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerSourceField.SetValue(header, panoramicCameraSensor);
+                                    var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
+                                    panoramicCameraImagePublisherSerializerField.SetValue(panoramicCameraImagePublisher, panoramicCameraImagePublisherSerializer);
+                                }
+                                var panoramicTopicNameField2 = panoramicCameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                panoramicTopicNameField2.SetValue(panoramicCameraImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_image_raw");
+                                break;
                             case "depth_camera":
                                 Debug.Log("sensor type 'depth_camera' found");
                                 DepthCameraSensor depthCameraSensor = targetObject.AddComponent<DepthCameraSensor>();
