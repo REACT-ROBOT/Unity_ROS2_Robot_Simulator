@@ -420,7 +420,7 @@ public class SimulationControl : MonoBehaviour
         List<PhysicsMaterial> physicsMaterialList = new List<PhysicsMaterial>();
         if (robotNode != null)
         {
-            XmlNodeList physicsMaterials = robotNode.SelectNodes("collsion_material");
+            XmlNodeList physicsMaterials = robotNode.SelectNodes("collision_material");
             if (physicsMaterials.Count == 0)
             {
                 Debug.LogWarning("<physics_material> is deprecated. Use <collision_material> instead.");
@@ -1034,25 +1034,28 @@ public class SimulationControl : MonoBehaviour
             {
                 if (jointNode.Attributes["name"]?.Value == targetJointName)
                 {
-                    if (jointNode.Attributes["stiffness"]?.Value != null)
+                    XmlNode stiffnessNode = jointNode.SelectSingleNode("stiffness");
+                    XmlNode dampingNode = jointNode.SelectSingleNode("damping");
+                    
+                    if (stiffnessNode != null)
                     {
-                        parameters["stiffness"] = TryParseFloat(jointNode.Attributes["stiffness"].Value);
+                        parameters["stiffness"] = TryParseFloat(stiffnessNode.InnerText);
                     }
                     else
                     {
-                        Debug.Log("Joint stiffness attribute not found.");
+                        Debug.Log("Joint stiffness element not found.");
                         parameters["stiffness"] = 0.0f;
                     }
-                    if (jointNode.Attributes["damping"]?.Value != null)
+                    if (dampingNode != null)
                     {
-                        parameters["damping"] = TryParseFloat(jointNode.Attributes["damping"].Value);
+                        parameters["damping"] = TryParseFloat(dampingNode.InnerText);
                     }
                     else
                     {
-                        Debug.Log("Joint damping attribute not found.");
+                        Debug.Log("Joint damping element not found.");
                         parameters["damping"] = 0.0f;
                     }
-                    if (jointNode.Attributes["stiffness"]?.Value != null || jointNode.Attributes["damping"]?.Value != null)
+                    if (stiffnessNode != null || dampingNode != null)
                     {
                         parameters["force_limit"] = 1000000.0f; // デフォルトの力制限値
                     }
