@@ -21,6 +21,7 @@ using UnitySensors.ROS.Publisher.Sensor;
 using UnitySensors.ROS.Serializer.Sensor;
 using UnitySensors.ROS.Serializer.Std;
 using UnitySensors.ROS.Serializer.PointCloud;
+using UnitySensors.ROS.Serializer.Image;
 
 using RosMessageTypes.SimulationInterfaces;
 using Unity.Robotics.ROSTCPConnector;
@@ -883,7 +884,7 @@ public class SimulationControl : MonoBehaviour
                                     next_display_number++;
                                 }
                                 CameraInfoMsgPublisher depthCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
-                                CompressedImageMsgPublisher depthCameraImagePublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                ImageMsgPublisher depthCameraImagePublisher = targetObject.AddComponent<ImageMsgPublisher>();
                                 // Set publisher update rate to match sensor
                                 if (depthUpdateRateNode != null)
                                 {
@@ -911,9 +912,15 @@ public class SimulationControl : MonoBehaviour
                                 var depthCameraImagePublisherSerializerField = depthCameraImagePublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 if (depthCameraImagePublisherSerializerField != null)
                                 {
-                                    var depthCameraImagePublisherSerializer = new CompressedImageMsgSerializer();
+                                    var depthCameraImagePublisherSerializer = new ImageMsgSerializer();
                                     var sourceField = depthCameraImagePublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     sourceField.SetValue(depthCameraImagePublisherSerializer, depthCameraSensor);
+                                    var sourceTextureField = depthCameraImagePublisherSerializer.GetType().GetField("_sourceTexture", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceTextureField.SetValue(depthCameraImagePublisherSerializer, 0); // SourceTexture.Texture0
+                                    var encodingField = depthCameraImagePublisherSerializer.GetType().GetField("_encoding", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    // Use 32FC1 encoding for depth data (Encoding._32FC1 = 1)
+                                    var encodingType = typeof(ImageMsgSerializer).Assembly.GetType("UnitySensors.ROS.Serializer.Image.Encoding");
+                                    encodingField.SetValue(depthCameraImagePublisherSerializer, System.Enum.ToObject(encodingType, 1));
                                     var headerField = depthCameraImagePublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     headerField.SetValue(depthCameraImagePublisherSerializer, new HeaderSerializer());
                                     var header = headerField.GetValue(depthCameraImagePublisherSerializer);
@@ -922,6 +929,8 @@ public class SimulationControl : MonoBehaviour
                                     var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     headerFrameIdField.SetValue(header, sensorLinkName);
                                     depthCameraImagePublisherSerializerField.SetValue(depthCameraImagePublisher, depthCameraImagePublisherSerializer);
+                                    // Initialize the serializer manually since it was set via reflection
+                                    depthCameraImagePublisherSerializer.Init();
                                 }
                                 var depthTopicNameField2 = depthCameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 depthTopicNameField2.SetValue(depthCameraImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/depth_image_raw");
