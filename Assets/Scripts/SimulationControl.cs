@@ -874,6 +874,20 @@ public class SimulationControl : MonoBehaviour
                                 int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out depth_image_width);
                                 int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out depth_image_height);
                                 depthResolutionField.SetValue(depthCameraSensor, new Vector2Int(depth_image_width, depth_image_height));
+                                // Set min/max range for depth camera
+                                var depthMinRangeNode = sensor.SelectSingleNode("clip/near");
+                                var depthMaxRangeNode = sensor.SelectSingleNode("clip/far");
+                                if (depthMinRangeNode != null)
+                                {
+                                    var depthMinRangeField = depthCameraSensor.GetType().GetField("_minRange", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    depthMinRangeField.SetValue(depthCameraSensor, TryParseFloat(depthMinRangeNode.InnerText));
+                                }
+                                if (depthMaxRangeNode != null)
+                                {
+                                    var depthMaxRangeField = depthCameraSensor.GetType().GetField("_maxRange", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    depthMaxRangeField.SetValue(depthCameraSensor, TryParseFloat(depthMaxRangeNode.InnerText));
+                                }
+
                                 // Set update rate from URDF
                                 var depthUpdateRateNode = sensor.SelectSingleNode("update_rate");
                                 if (depthUpdateRateNode != null)
@@ -886,6 +900,9 @@ public class SimulationControl : MonoBehaviour
                                 {
                                     depthCameraComponent.targetDisplay = next_display_number;
                                     next_display_number++;
+                                    Debug.Log("Depth camera component configured");
+                                    // Note: Depth rendering is now handled internally by UnitySensors DepthCameraSensor
+                                    // No need to add DepthCameraRenderer - UnitySensors handles Unity 6000+ compatibility
                                 }
                                 CameraInfoMsgPublisher depthCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
                                 ImageMsgPublisher depthCameraImagePublisher = targetObject.AddComponent<ImageMsgPublisher>();
