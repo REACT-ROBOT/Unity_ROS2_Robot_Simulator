@@ -1,7 +1,7 @@
 {
   "dependencies": {
-    "com.frj.unity-sensors": "https://github.com/hijimasa/UnitySensors.git?path=/Assets/UnitySensors#feature/CameraForStandaloneSimulator",
-    "com.frj.unity-sensors-ros": "https://github.com/hijimasa/UnitySensors.git?path=/Assets/UnitySensorsROS#feature/CameraForStandaloneSimulator",
+    "com.frj.unity-sensors": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#c32eedbd60ab65bfb83e8886666d02320b06f5fd",
+    "com.frj.unity-sensors-ros": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#c32eedbd60ab65bfb83e8886666d02320b06f5fd",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.ai.navigation": "2.0.9",
     "com.unity.collab-proxy": "2.9.3",
