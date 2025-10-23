@@ -683,7 +683,7 @@ public class SimulationControl : MonoBehaviour
                                     next_display_number++;
                                 }
                                 CameraInfoMsgPublisher cameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
-                                CompressedImageMsgPublisher cameraImagePublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                ImageMsgPublisher cameraImagePublisher = targetObject.AddComponent<ImageMsgPublisher>();
                                 // Set publisher update rate to match sensor
                                 if (updateRateNode != null)
                                 {
@@ -711,7 +711,7 @@ public class SimulationControl : MonoBehaviour
                                 var cameraImagePublisherSerializerField = cameraImagePublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 if (cameraImagePublisherSerializerField != null)
                                 {
-                                    var cameraImagePublisherSerializer = new CompressedImageMsgSerializer();
+                                    var cameraImagePublisherSerializer = new ImageMsgSerializer();
                                     var sourceField = cameraImagePublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     sourceField.SetValue(cameraImagePublisherSerializer, cameraSensor);
                                     var headerField = cameraImagePublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -722,6 +722,8 @@ public class SimulationControl : MonoBehaviour
                                     var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     headerFrameIdField.SetValue(header, sensorLinkName);
                                     cameraImagePublisherSerializerField.SetValue(cameraImagePublisher, cameraImagePublisherSerializer);
+                                    // Initialize the serializer manually since it was set via reflection
+                                    cameraImagePublisherSerializer.Init();
                                 }
                                 var topicNameField2 = cameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 topicNameField2.SetValue(cameraImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/image_raw");
@@ -750,7 +752,7 @@ public class SimulationControl : MonoBehaviour
                                     next_display_number++;
                                 }
                                 CameraInfoMsgPublisher fisheyeCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
-                                CompressedImageMsgPublisher fisheyeCameraImagePublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                ImageMsgPublisher fisheyeCameraImagePublisher = targetObject.AddComponent<ImageMsgPublisher>();
                                 // Set publisher update rate to match sensor
                                 if (fisheyeUpdateRateNode != null)
                                 {
@@ -778,7 +780,7 @@ public class SimulationControl : MonoBehaviour
                                 var fisheyeCameraImagePublisherSerializerField = fisheyeCameraImagePublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 if (fisheyeCameraImagePublisherSerializerField != null)
                                 {
-                                    var fisheyeCameraImagePublisherSerializer = new CompressedImageMsgSerializer();
+                                    var fisheyeCameraImagePublisherSerializer = new ImageMsgSerializer();
                                     var sourceField = fisheyeCameraImagePublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     sourceField.SetValue(fisheyeCameraImagePublisherSerializer, fisheyeCameraSensor);
                                     var headerField = fisheyeCameraImagePublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -789,6 +791,8 @@ public class SimulationControl : MonoBehaviour
                                     var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                     headerFrameIdField.SetValue(header, sensorLinkName);
                                     fisheyeCameraImagePublisherSerializerField.SetValue(fisheyeCameraImagePublisher, fisheyeCameraImagePublisherSerializer);
+                                    // Initialize the serializer manually since it was set via reflection
+                                    fisheyeCameraImagePublisherSerializer.Init();
                                 }
                                 var fisheyeTopicNameField2 = fisheyeCameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 fisheyeTopicNameField2.SetValue(fisheyeCameraImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_image_raw");
