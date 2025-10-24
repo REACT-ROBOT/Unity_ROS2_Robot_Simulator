@@ -956,6 +956,150 @@ public class SimulationControl : MonoBehaviour
                                 var depthTopicNameField2 = depthCameraImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                                 depthTopicNameField2.SetValue(depthCameraImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/depth_image_raw");
                                 break;
+                            case "rgbd_camera":
+                                Debug.Log("sensor type 'rgbd_camera' found");
+                                RGBDCameraSensor rgbdCameraSensor = targetObject.AddComponent<RGBDCameraSensor>();
+                                var rgbdFovField = rgbdCameraSensor.GetType().GetField("_fov", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                rgbdFovField.SetValue(rgbdCameraSensor, TryParseFloat(sensor.SelectSingleNode("horizontal_fov").InnerText) * 180.0f / 3.14f);
+                                var rgbdResolutionField = rgbdCameraSensor.GetType().GetField("_resolution", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                int rgbd_image_width, rgbd_image_height;
+                                int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out rgbd_image_width);
+                                int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out rgbd_image_height);
+                                rgbdResolutionField.SetValue(rgbdCameraSensor, new Vector2Int(rgbd_image_width, rgbd_image_height));
+                                // Set min/max range for RGBD camera
+                                var rgbdMinRangeNode = sensor.SelectSingleNode("clip/near");
+                                var rgbdMaxRangeNode = sensor.SelectSingleNode("clip/far");
+                                if (rgbdMinRangeNode != null)
+                                {
+                                    var rgbdMinRangeField = rgbdCameraSensor.GetType().GetField("_minRange", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    rgbdMinRangeField.SetValue(rgbdCameraSensor, TryParseFloat(rgbdMinRangeNode.InnerText));
+                                }
+                                if (rgbdMaxRangeNode != null)
+                                {
+                                    var rgbdMaxRangeField = rgbdCameraSensor.GetType().GetField("_maxRange", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    rgbdMaxRangeField.SetValue(rgbdCameraSensor, TryParseFloat(rgbdMaxRangeNode.InnerText));
+                                }
+                                
+                                Debug.Log("RGBD camera component configured");
+                                
+                                // Set update rate from URDF
+                                var rgbdUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                if (rgbdUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(rgbdUpdateRateNode.InnerText);
+                                    SetSensorUpdateRate(rgbdCameraSensor, updateRate, "RGBDCamera:" + sensorLinkName);
+                                }
+                                UnityEngine.Camera rgbdCameraComponent = targetObject.GetComponent<UnityEngine.Camera>();
+                                if (rgbdCameraComponent != null)
+                                {
+                                    rgbdCameraComponent.targetDisplay = next_display_number;
+                                    next_display_number++;
+                                }
+                                
+                                // Setup publishers for both depth and color
+                                CameraInfoMsgPublisher rgbdDepthCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
+                                ImageMsgPublisher rgbdDepthImagePublisher = targetObject.AddComponent<ImageMsgPublisher>();
+                                CameraInfoMsgPublisher rgbdColorCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
+                                ImageMsgPublisher rgbdColorImagePublisher = targetObject.AddComponent<ImageMsgPublisher>();
+                                
+                                // Set publisher update rates to match sensor
+                                if (rgbdUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(rgbdUpdateRateNode.InnerText);
+                                    SetPublisherUpdateRate(rgbdDepthCameraInfoPublisher, updateRate, "RGBDDepthCameraInfo:" + sensorLinkName);
+                                    SetPublisherUpdateRate(rgbdDepthImagePublisher, updateRate, "RGBDDepthImage:" + sensorLinkName);
+                                    SetPublisherUpdateRate(rgbdColorCameraInfoPublisher, updateRate, "RGBDColorCameraInfo:" + sensorLinkName);
+                                    SetPublisherUpdateRate(rgbdColorImagePublisher, updateRate, "RGBDColorImage:" + sensorLinkName);
+                                }
+                                
+                                // Configure depth camera info publisher
+                                var rgbdDepthCameraInfoPublisherSerializerField = rgbdDepthCameraInfoPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (rgbdDepthCameraInfoPublisherSerializerField != null)
+                                {
+                                    var rgbdDepthCameraInfoPublisherSerializer = new CameraInfoMsgSerializer();
+                                    var sourceField = rgbdDepthCameraInfoPublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceField.SetValue(rgbdDepthCameraInfoPublisherSerializer, rgbdCameraSensor);
+                                    var headerField = rgbdDepthCameraInfoPublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerField.SetValue(rgbdDepthCameraInfoPublisherSerializer, new HeaderSerializer());
+                                    var header = headerField.GetValue(rgbdDepthCameraInfoPublisherSerializer);
+                                    var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerSourceField.SetValue(header, rgbdCameraSensor);
+                                    var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
+                                    rgbdDepthCameraInfoPublisherSerializerField.SetValue(rgbdDepthCameraInfoPublisher, rgbdDepthCameraInfoPublisherSerializer);
+                                }
+                                var rgbdDepthTopicNameField = rgbdDepthCameraInfoPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                rgbdDepthTopicNameField.SetValue(rgbdDepthCameraInfoPublisher, "/" + robotObject.name + "/" + sensorLinkName + "/depth/camera_info");
+                                
+                                // Configure depth image publisher
+                                var rgbdDepthImagePublisherSerializerField = rgbdDepthImagePublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (rgbdDepthImagePublisherSerializerField != null)
+                                {
+                                    var rgbdDepthImagePublisherSerializer = new ImageMsgSerializer();
+                                    var sourceField = rgbdDepthImagePublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceField.SetValue(rgbdDepthImagePublisherSerializer, rgbdCameraSensor);
+                                    var sourceTextureField = rgbdDepthImagePublisherSerializer.GetType().GetField("_sourceTexture", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceTextureField.SetValue(rgbdDepthImagePublisherSerializer, 0); // SourceTexture.Texture0 (depth)
+                                    var encodingField = rgbdDepthImagePublisherSerializer.GetType().GetField("_encoding", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    var encodingType = typeof(ImageMsgSerializer).Assembly.GetType("UnitySensors.ROS.Serializer.Image.Encoding");
+                                    encodingField.SetValue(rgbdDepthImagePublisherSerializer, System.Enum.ToObject(encodingType, 1)); // 32FC1
+                                    var headerField = rgbdDepthImagePublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerField.SetValue(rgbdDepthImagePublisherSerializer, new HeaderSerializer());
+                                    var header = headerField.GetValue(rgbdDepthImagePublisherSerializer);
+                                    var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerSourceField.SetValue(header, rgbdCameraSensor);
+                                    var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
+                                    rgbdDepthImagePublisherSerializerField.SetValue(rgbdDepthImagePublisher, rgbdDepthImagePublisherSerializer);
+                                    rgbdDepthImagePublisherSerializer.Init();
+                                }
+                                var rgbdDepthTopicNameField2 = rgbdDepthImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                rgbdDepthTopicNameField2.SetValue(rgbdDepthImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/depth/image_raw");
+                                
+                                // Configure color camera info publisher
+                                var rgbdColorCameraInfoPublisherSerializerField = rgbdColorCameraInfoPublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (rgbdColorCameraInfoPublisherSerializerField != null)
+                                {
+                                    var rgbdColorCameraInfoPublisherSerializer = new CameraInfoMsgSerializer();
+                                    var sourceField = rgbdColorCameraInfoPublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceField.SetValue(rgbdColorCameraInfoPublisherSerializer, rgbdCameraSensor);
+                                    var headerField = rgbdColorCameraInfoPublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerField.SetValue(rgbdColorCameraInfoPublisherSerializer, new HeaderSerializer());
+                                    var header = headerField.GetValue(rgbdColorCameraInfoPublisherSerializer);
+                                    var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerSourceField.SetValue(header, rgbdCameraSensor);
+                                    var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
+                                    rgbdColorCameraInfoPublisherSerializerField.SetValue(rgbdColorCameraInfoPublisher, rgbdColorCameraInfoPublisherSerializer);
+                                }
+                                var rgbdColorTopicNameField = rgbdColorCameraInfoPublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                rgbdColorTopicNameField.SetValue(rgbdColorCameraInfoPublisher, "/" + robotObject.name + "/" + sensorLinkName + "/color/camera_info");
+                                
+                                // Configure color image publisher
+                                var rgbdColorImagePublisherSerializerField = rgbdColorImagePublisher.GetType().GetField("_serializer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                if (rgbdColorImagePublisherSerializerField != null)
+                                {
+                                    var rgbdColorImagePublisherSerializer = new ImageMsgSerializer();
+                                    var sourceField = rgbdColorImagePublisherSerializer.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceField.SetValue(rgbdColorImagePublisherSerializer, rgbdCameraSensor);
+                                    var sourceTextureField = rgbdColorImagePublisherSerializer.GetType().GetField("_sourceTexture", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    sourceTextureField.SetValue(rgbdColorImagePublisherSerializer, 1); // SourceTexture.Texture1 (color)
+                                    var encodingField = rgbdColorImagePublisherSerializer.GetType().GetField("_encoding", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    var encodingType = typeof(ImageMsgSerializer).Assembly.GetType("UnitySensors.ROS.Serializer.Image.Encoding");
+                                    encodingField.SetValue(rgbdColorImagePublisherSerializer, System.Enum.ToObject(encodingType, 0)); // RGB8
+                                    var headerField = rgbdColorImagePublisherSerializer.GetType().GetField("_header", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerField.SetValue(rgbdColorImagePublisherSerializer, new HeaderSerializer());
+                                    var header = headerField.GetValue(rgbdColorImagePublisherSerializer);
+                                    var headerSourceField = header.GetType().GetField("_source", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerSourceField.SetValue(header, rgbdCameraSensor);
+                                    var headerFrameIdField = header.GetType().GetField("_frame_id", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                    headerFrameIdField.SetValue(header, sensorLinkName);
+                                    rgbdColorImagePublisherSerializerField.SetValue(rgbdColorImagePublisher, rgbdColorImagePublisherSerializer);
+                                    rgbdColorImagePublisherSerializer.Init();
+                                }
+                                var rgbdColorTopicNameField2 = rgbdColorImagePublisher.GetType().GetField("_topicName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                rgbdColorTopicNameField2.SetValue(rgbdColorImagePublisher, "/" + robotObject.name + "/" + sensorLinkName + "/color/image_raw");
+                                break;
                             case "imu":
                                 Debug.Log("sensor type 'imu' found");
                                 // Add IMU sensor component

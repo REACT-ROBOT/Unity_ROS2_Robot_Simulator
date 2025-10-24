@@ -1,23 +1,23 @@
 {
   "dependencies": {
     "com.frj.unity-sensors": {
-      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#c3e7b0eb5a7d4cda94b5e5b58629b94a5732dc98",
+      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#28068d5cc4d7e698009cd8fec4867a119e08d698",
       "depth": 0,
       "source": "git",
       "dependencies": {
         "com.unity.burst": "1.6.6"
       },
-      "hash": "c3e7b0eb5a7d4cda94b5e5b58629b94a5732dc98"
+      "hash": "28068d5cc4d7e698009cd8fec4867a119e08d698"
     },
     "com.frj.unity-sensors-ros": {
-      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#c3e7b0eb5a7d4cda94b5e5b58629b94a5732dc98",
+      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#28068d5cc4d7e698009cd8fec4867a119e08d698",
       "depth": 0,
       "source": "git",
       "dependencies": {
         "com.frj.unity-sensors": "3.0.0",
         "com.unity.robotics.ros-tcp-connector": "0.7.0-preview"
       },
-      "hash": "c3e7b0eb5a7d4cda94b5e5b58629b94a5732dc98"
+      "hash": "28068d5cc4d7e698009cd8fec4867a119e08d698"
     },
     "com.unity.2d.sprite": {
       "version": "1.0.0",
