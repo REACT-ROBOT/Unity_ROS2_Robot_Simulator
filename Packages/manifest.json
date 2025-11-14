@@ -14,7 +14,7 @@
     "com.unity.robotics.urdf-importer": "https://github.com/hijimasa/URDF-Importer.git?path=/com.unity.robotics.urdf-importer#dev-hijimasa",
     "com.unity.test-framework": "1.6.0",
     "com.unity.timeline": "1.8.9",
-    "com.unity.toolchain.linux-x86_64": "2.0.10",
+    "com.unity.toolchain.linux-x86_64": "2.0.11",
     "com.unity.ugui": "2.0.0",
     "com.unity.visualscripting": "1.9.7",
     "com.unity.modules.accessibility": "1.0.0",
