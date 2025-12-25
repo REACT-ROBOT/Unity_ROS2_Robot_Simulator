@@ -395,7 +395,12 @@ public class ObjectSpawner : MonoBehaviour
     private void ApplyDoubleSidedMaterial(GameObject obj)
     {
         // カスタム両面シェーダー（Shader Graph）を優先的に使用
-        Shader shader = Shader.Find("Shader Graphs/DoubleSidedLit");
+        // Resourcesフォルダからの読み込みも試みる（ビルド時の確実性向上）
+        Shader shader = Resources.Load<Shader>("Shaders/DoubleSidedLit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Shader Graphs/DoubleSidedLit");
+        }
         if (shader == null)
         {
             shader = Shader.Find("Custom/DoubleSidedLit");
