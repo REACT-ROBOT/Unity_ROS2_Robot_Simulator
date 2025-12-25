@@ -142,6 +142,8 @@ public class ObjectSpawner : MonoBehaviour
                 ob.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
                 ob.transform.rotation = Quaternion.Euler(objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
                 ob.transform.localScale = new Vector3(objData.scale[0], objData.scale[1], objData.scale[2]);
+                // 両面レンダリング用の白いマテリアルを作成して適用
+                ApplyDoubleSidedMaterial(ob);
                 ob.SetActive(objData.isActive);
                 AddListItem(ob, objData.meshPath);
                 continue;
@@ -337,6 +339,9 @@ public class ObjectSpawner : MonoBehaviour
             meshCollider.sharedMesh = meshCollider.gameObject.GetComponent<MeshFilter>().mesh;
         }
 
+        // 両面レンダリング用の白いマテリアルを作成して適用
+        ApplyDoubleSidedMaterial(ob);
+
         ob.transform.position = spawnPosition;
         ob.transform.rotation = Quaternion.Euler(spawnRotation);
         ob.transform.localScale = spawnScale;
@@ -382,6 +387,107 @@ public class ObjectSpawner : MonoBehaviour
         go.transform.position = spawnPosition;
         go.transform.rotation = Quaternion.Euler(spawnRotation);
         AddListItem(go);
+    }
+
+    /// <summary>
+    /// メッシュに両面レンダリング用の白いマテリアルを適用
+    /// </summary>
+    private void ApplyDoubleSidedMaterial(GameObject obj)
+    {
+        // カスタム両面シェーダー（Shader Graph）を優先的に使用
+        Shader shader = Shader.Find("Shader Graphs/DoubleSidedLit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Custom/DoubleSidedLit");
+        }
+        if (shader == null)
+        {
+            Debug.LogWarning("Custom DoubleSided shader not found. Using URP Lit shader.");
+            shader = Shader.Find("Universal Render Pipeline/Lit");
+        }
+        if (shader == null)
+        {
+            Debug.LogWarning("URP Lit shader not found. Trying Standard shader.");
+            shader = Shader.Find("Standard");
+        }
+        
+        if (shader != null)
+        {
+            Material doubleSidedMaterial = new Material(shader);
+            doubleSidedMaterial.color = Color.white;
+            // 両面レンダリングを有効化
+            doubleSidedMaterial.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+            
+            // 表裏で似た見え方にするための設定
+            // Smoothnessを適度に設定（拡散反射を強めにする）
+            if (doubleSidedMaterial.HasProperty("_Smoothness"))
+            {
+                doubleSidedMaterial.SetFloat("_Smoothness", 0.3f);
+            }
+            // Metallicは0のままで非金属に
+            if (doubleSidedMaterial.HasProperty("_Metallic"))
+            {
+                doubleSidedMaterial.SetFloat("_Metallic", 0.0f);
+            }
+            // 環境光の影響を強めて表裏の陰影差を軽減
+            if (doubleSidedMaterial.HasProperty("_EnvironmentReflections"))
+            {
+                doubleSidedMaterial.SetFloat("_EnvironmentReflections", 1.0f);
+            }
+            // 裏面の法線を反転（URPで利用可能な場合）
+            if (doubleSidedMaterial.HasProperty("_DoubleSidedNormalMode"))
+            {
+                // Mirror mode: 裏面で法線を反転
+                doubleSidedMaterial.SetFloat("_DoubleSidedNormalMode", 2.0f);
+            }
+            if (doubleSidedMaterial.HasProperty("_DoubleSidedEnable"))
+            {
+                doubleSidedMaterial.SetFloat("_DoubleSidedEnable", 1.0f);
+            }
+            
+            // すべてのMeshRendererに適用
+            MeshRenderer[] renderers = obj.GetComponentsInChildren<MeshRenderer>();
+            foreach (MeshRenderer renderer in renderers)
+            {
+                Material[] materials = new Material[renderer.sharedMaterials.Length];
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    // 元のマテリアルから新しいマテリアルを作成
+                    Material newMaterial = new Material(doubleSidedMaterial);
+                    Material originalMaterial = renderer.sharedMaterials[i];
+                    
+                    if (originalMaterial != null)
+                    {
+                        // 元のマテリアルの色を保持
+                        if (originalMaterial.HasProperty("_Color"))
+                        {
+                            newMaterial.color = originalMaterial.color;
+                        }
+                        if (originalMaterial.HasProperty("_BaseColor"))
+                        {
+                            newMaterial.SetColor("_BaseColor", originalMaterial.GetColor("_BaseColor"));
+                        }
+                        
+                        // 元のマテリアルのメインテクスチャを保持
+                        if (originalMaterial.mainTexture != null && newMaterial.HasProperty("_BaseMap"))
+                        {
+                            newMaterial.SetTexture("_BaseMap", originalMaterial.mainTexture);
+                        }
+                        else if (originalMaterial.mainTexture != null && newMaterial.HasProperty("_MainTex"))
+                        {
+                            newMaterial.SetTexture("_MainTex", originalMaterial.mainTexture);
+                        }
+                    }
+                    
+                    materials[i] = newMaterial;
+                }
+                renderer.materials = materials;
+            }
+        }
+        else
+        {
+            Debug.LogError("No suitable shader found for double-sided material.");
+        }
     }
 
     // リストに行アイテムを追加して、ボタンに選択イベントを登録
