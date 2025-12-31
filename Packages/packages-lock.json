@@ -1,23 +1,23 @@
 {
   "dependencies": {
     "com.frj.unity-sensors": {
-      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#28068d5cc4d7e698009cd8fec4867a119e08d698",
+      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#b8ba6ea405cdad7d1967cdf78a617e64aab86c30",
       "depth": 0,
       "source": "git",
       "dependencies": {
         "com.unity.burst": "1.6.6"
       },
-      "hash": "28068d5cc4d7e698009cd8fec4867a119e08d698"
+      "hash": "b8ba6ea405cdad7d1967cdf78a617e64aab86c30"
     },
     "com.frj.unity-sensors-ros": {
-      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#28068d5cc4d7e698009cd8fec4867a119e08d698",
+      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#b8ba6ea405cdad7d1967cdf78a617e64aab86c30",
       "depth": 0,
       "source": "git",
       "dependencies": {
         "com.frj.unity-sensors": "3.0.0",
         "com.unity.robotics.ros-tcp-connector": "0.7.0-preview"
       },
-      "hash": "28068d5cc4d7e698009cd8fec4867a119e08d698"
+      "hash": "b8ba6ea405cdad7d1967cdf78a617e64aab86c30"
     },
     "com.unity.2d.sprite": {
       "version": "1.0.0",
@@ -58,8 +58,8 @@
       "dependencies": {
         "com.unity.burst": "1.8.19",
         "com.unity.mathematics": "1.3.2",
-        "com.unity.nuget.mono-cecil": "1.11.5",
         "com.unity.test-framework": "1.4.6",
+        "com.unity.nuget.mono-cecil": "1.11.5",
         "com.unity.test-framework.performance": "3.0.3"
       },
       "url": "https://packages.unity.com"
@@ -170,11 +170,11 @@
       }
     },
     "com.unity.robotics.ros-tcp-connector": {
-      "version": "https://github.com/hijimasa/ROS-TCP-Connector.git?path=/com.unity.robotics.ros-tcp-connector#dev-hijimasa",
+      "version": "https://github.com/hijimasa/ROS-TCP-Connector.git?path=/com.unity.robotics.ros-tcp-connector#31a149d8b62fc763eac30868f3c0193801f14f80",
       "depth": 0,
       "source": "git",
       "dependencies": {},
-      "hash": "b8fe52929a01955aa07ca560f4c80d5ea7c14d3c"
+      "hash": "31a149d8b62fc763eac30868f3c0193801f14f80"
     },
     "com.unity.robotics.urdf-importer": {
       "version": "https://github.com/hijimasa/URDF-Importer.git?path=/com.unity.robotics.urdf-importer#dev-hijimasa",
@@ -242,9 +242,9 @@
       "depth": 0,
       "source": "registry",
       "dependencies": {
+        "com.unity.modules.audio": "1.0.0",
         "com.unity.modules.director": "1.0.0",
         "com.unity.modules.animation": "1.0.0",
-        "com.unity.modules.audio": "1.0.0",
         "com.unity.modules.particlesystem": "1.0.0"
       },
       "url": "https://packages.unity.com"

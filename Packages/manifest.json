@@ -1,7 +1,7 @@
 {
   "dependencies": {
-    "com.frj.unity-sensors": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#28068d5cc4d7e698009cd8fec4867a119e08d698",
-    "com.frj.unity-sensors-ros": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#28068d5cc4d7e698009cd8fec4867a119e08d698",
+    "com.frj.unity-sensors": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#b8ba6ea405cdad7d1967cdf78a617e64aab86c30",
+    "com.frj.unity-sensors-ros": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#b8ba6ea405cdad7d1967cdf78a617e64aab86c30",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.ai.navigation": "2.0.9",
     "com.unity.collab-proxy": "2.9.3",
@@ -10,7 +10,7 @@
     "com.unity.inputsystem": "1.14.2",
     "com.unity.multiplayer.center": "1.0.0",
     "com.unity.render-pipelines.universal": "17.2.0",
-    "com.unity.robotics.ros-tcp-connector": "https://github.com/hijimasa/ROS-TCP-Connector.git?path=/com.unity.robotics.ros-tcp-connector#dev-hijimasa",
+    "com.unity.robotics.ros-tcp-connector": "https://github.com/hijimasa/ROS-TCP-Connector.git?path=/com.unity.robotics.ros-tcp-connector#31a149d8b62fc763eac30868f3c0193801f14f80",
     "com.unity.robotics.urdf-importer": "https://github.com/hijimasa/URDF-Importer.git?path=/com.unity.robotics.urdf-importer#dev-hijimasa",
     "com.unity.test-framework": "1.6.0",
     "com.unity.timeline": "1.8.9",
