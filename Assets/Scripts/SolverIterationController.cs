@@ -20,7 +20,9 @@ public class SolverIterationController : MonoBehaviour
         {
             iter = Mathf.Max(1, iter);
             Physics.defaultSolverIterations = iter;
-            Physics.defaultSolverVelocityIterations = iter;
+            int velocity_iter = Mathf.Max(1, iter / 4);
+            velocity_iter = Mathf.Min(velocity_iter, 8);
+            Physics.defaultSolverVelocityIterations = velocity_iter;
             Debug.Log($"SolverIterations = {iter}");
         }
         else

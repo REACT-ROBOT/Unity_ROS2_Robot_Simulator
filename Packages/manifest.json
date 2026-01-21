@@ -1,7 +1,7 @@
 {
   "dependencies": {
-    "com.frj.unity-sensors": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#b8ba6ea405cdad7d1967cdf78a617e64aab86c30",
-    "com.frj.unity-sensors-ros": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#b8ba6ea405cdad7d1967cdf78a617e64aab86c30",
+    "com.frj.unity-sensors": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#ca638b6bbd406955e188c5f5a7115c35a914c48e",
+    "com.frj.unity-sensors-ros": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#ca638b6bbd406955e188c5f5a7115c35a914c48e",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.ai.navigation": "2.0.9",
     "com.unity.collab-proxy": "2.9.3",
