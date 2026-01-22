@@ -20,8 +20,10 @@ public class SolverIterationController : MonoBehaviour
         {
             iter = Mathf.Max(1, iter);
             Physics.defaultSolverIterations = iter;
-            int velocity_iter = Mathf.Max(1, iter / 4);
-            velocity_iter = Mathf.Min(velocity_iter, 8);
+	    // For TGS solver, velocity_iter of 1 is sufficient.
+	    int velocity_iter = 1;
+            //int velocity_iter = Mathf.Max(1, iter / 4);
+            //velocity_iter = Mathf.Min(velocity_iter, 8);
             Physics.defaultSolverVelocityIterations = velocity_iter;
             Debug.Log($"SolverIterations = {iter}");
         }
