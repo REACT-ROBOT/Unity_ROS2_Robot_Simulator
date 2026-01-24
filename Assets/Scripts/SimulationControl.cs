@@ -28,6 +28,7 @@ using Unity.Robotics.ROSTCPConnector;
 using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 
 using UnityMeshImporter;
+using NaughtyWaterBuoyancy;
 
 public class FileLogger
 {
@@ -488,6 +489,87 @@ public class SimulationControl : MonoBehaviour
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Buoyancy Material の収集と ArticulationFloatingObject の付与
+        Dictionary<string, float> buoyancyMaterialDict = new Dictionary<string, float>();
+        if (robotNode != null)
+        {
+            XmlNodeList buoyancyMaterials = robotNode.SelectNodes("buoyancy_material");
+            foreach (XmlNode buoyancyMaterial in buoyancyMaterials)
+            {
+                string materialName = buoyancyMaterial.Attributes["name"]?.Value;
+                float density = 1.0f; // デフォルト密度
+                XmlNode densityNode = buoyancyMaterial.SelectSingleNode("density");
+                if (densityNode != null)
+                {
+                    density = TryParseFloat(densityNode.Attributes["value"]?.Value, 1.0f);
+                }
+                if (!string.IsNullOrEmpty(materialName))
+                {
+                    buoyancyMaterialDict[materialName] = density;
+                }
+            }
+        }
+
+        // 全リンクに ArticulationFloatingObject を付与
+        if (robotNode != null)
+        {
+            XmlNodeList links = robotNode.SelectNodes("link");
+            foreach (XmlNode link in links)
+            {
+                string linkName = link.Attributes["name"]?.Value;
+                GameObject targetObject = FindInChildrenByName(robotObject.transform, linkName);
+                if (targetObject != null)
+                {
+                    ArticulationBody artBody = targetObject.GetComponent<ArticulationBody>();
+                    Collider linkCollider = targetObject.GetComponentInChildren<Collider>();
+
+                    if (artBody != null && linkCollider != null)
+                    {
+                        // Colliderがあるオブジェクトを探す
+                        GameObject colliderObject = linkCollider.gameObject;
+
+                        // ArticulationBodyがあるか確認、なければ親から取得
+                        ArticulationBody targetArtBody = colliderObject.GetComponent<ArticulationBody>();
+                        if (targetArtBody == null)
+                        {
+                            targetArtBody = colliderObject.GetComponentInParent<ArticulationBody>();
+                        }
+
+                        if (targetArtBody != null)
+                        {
+                            // ArticulationFloatingObjectを追加
+                            ArticulationFloatingObject floatingObj = colliderObject.GetComponent<ArticulationFloatingObject>();
+                            if (floatingObj == null)
+                            {
+                                floatingObj = colliderObject.AddComponent<ArticulationFloatingObject>();
+                            }
+
+                            // デフォルト密度は1.0
+                            float density = 1.0f;
+
+                            // buoyancy_materialが指定されていれば、その密度を使用
+                            XmlNode collisionNode = link.SelectSingleNode("collision");
+                            if (collisionNode != null)
+                            {
+                                XmlNode buoyancyMaterialNode = collisionNode.SelectSingleNode("buoyancy_material");
+                                if (buoyancyMaterialNode != null)
+                                {
+                                    string materialName = buoyancyMaterialNode.Attributes["name"]?.Value;
+                                    if (!string.IsNullOrEmpty(materialName) && buoyancyMaterialDict.ContainsKey(materialName))
+                                    {
+                                        density = buoyancyMaterialDict[materialName];
+                                    }
+                                }
+                            }
+
+                            floatingObj.Density = density;
+                            Debug.Log($"Added ArticulationFloatingObject to {linkName} with density {density}");
                         }
                     }
                 }
@@ -1217,6 +1299,11 @@ public class SimulationControl : MonoBehaviour
     private static float TryParseFloat(string value)
     {
         return float.TryParse(value, out float result) ? result : 0f;
+    }
+
+    private static float TryParseFloat(string value, float defaultValue)
+    {
+        return float.TryParse(value, out float result) ? result : defaultValue;
     }
 
     private void ResetAllEntitiesState()

@@ -19,6 +19,13 @@
       },
       "hash": "ca638b6bbd406955e188c5f5a7115c35a914c48e"
     },
+    "com.naughtyattributes.waterbuoyancy": {
+      "version": "https://github.com/hijimasa/NaughtyWaterBuoyancy.git?path=/Assets/NaughtyWaterBuoyancy#fb0bd431aa33a18e7fa8ed702ccfc12aa2aadb2d",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "fb0bd431aa33a18e7fa8ed702ccfc12aa2aadb2d"
+    },
     "com.unity.2d.sprite": {
       "version": "1.0.0",
       "depth": 0,
