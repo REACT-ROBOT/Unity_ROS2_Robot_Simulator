@@ -29,6 +29,7 @@ using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 
 using UnityMeshImporter;
 using NaughtyWaterBuoyancy;
+using Hydrodynamics;
 
 public class FileLogger
 {
@@ -495,8 +496,11 @@ public class SimulationControl : MonoBehaviour
             }
         }
 
-        // Buoyancy Material の収集と ArticulationFloatingObject の付与
+        // Buoyancy Material の収集と ArticulationFloatingObject/HydrodynamicFloatingObject の付与
         Dictionary<string, float> buoyancyMaterialDict = new Dictionary<string, float>();
+        bool useHydrodynamics = false; // URDFでuse_hydrodynamics="true"が指定されているか
+        HydrodynamicParameters hydrodynamicParams = null;
+
         if (robotNode != null)
         {
             XmlNodeList buoyancyMaterials = robotNode.SelectNodes("buoyancy_material");
@@ -514,9 +518,18 @@ public class SimulationControl : MonoBehaviour
                     buoyancyMaterialDict[materialName] = density;
                 }
             }
+
+            // hydrodynamics要素をチェック (MARUS連携の水力学モデル) - ロボット全体のデフォルトパラメータ
+            XmlNode defaultHydrodynamicsNode = robotNode.SelectSingleNode("hydrodynamics");
+            if (defaultHydrodynamicsNode != null)
+            {
+                useHydrodynamics = true;
+                hydrodynamicParams = ParseHydrodynamicsNode(defaultHydrodynamicsNode, null);
+                Debug.Log($"[Hydrodynamics] Default params loaded: water_density={hydrodynamicParams.waterDensity}");
+            }
         }
 
-        // 全リンクに ArticulationFloatingObject を付与
+        // 全リンクに ArticulationFloatingObject または HydrodynamicFloatingObject を付与
         if (robotNode != null)
         {
             XmlNodeList links = robotNode.SelectNodes("link");
@@ -543,13 +556,6 @@ public class SimulationControl : MonoBehaviour
 
                         if (targetArtBody != null)
                         {
-                            // ArticulationFloatingObjectを追加
-                            ArticulationFloatingObject floatingObj = colliderObject.GetComponent<ArticulationFloatingObject>();
-                            if (floatingObj == null)
-                            {
-                                floatingObj = colliderObject.AddComponent<ArticulationFloatingObject>();
-                            }
-
                             // デフォルト密度は1.0
                             float density = 1.0f;
 
@@ -568,8 +574,48 @@ public class SimulationControl : MonoBehaviour
                                 }
                             }
 
-                            floatingObj.Density = density;
-                            Debug.Log($"Added ArticulationFloatingObject to {linkName} with density {density}");
+                            // リンク固有のhydrodynamicsパラメータをチェック
+                            XmlNode linkHydrodynamicsNode = collisionNode?.SelectSingleNode("hydrodynamics");
+                            bool linkHasHydrodynamics = linkHydrodynamicsNode != null;
+
+                            if (useHydrodynamics || linkHasHydrodynamics)
+                            {
+                                // HydrodynamicFloatingObjectを追加 (MARUS水力学モデル)
+                                HydrodynamicFloatingObject hydroObj = colliderObject.GetComponent<HydrodynamicFloatingObject>();
+                                if (hydroObj == null)
+                                {
+                                    hydroObj = colliderObject.AddComponent<HydrodynamicFloatingObject>();
+                                }
+                                hydroObj.Density = density;
+
+                                // リンク固有のパラメータがあれば、デフォルトを上書きしてマージ
+                                if (linkHasHydrodynamics)
+                                {
+                                    HydrodynamicParameters linkParams = ParseHydrodynamicsNode(linkHydrodynamicsNode, hydrodynamicParams);
+                                    hydroObj.Parameters = linkParams;
+                                    Debug.Log($"Added HydrodynamicFloatingObject to {linkName} with density {density} (link-specific params)");
+                                }
+                                else if (hydrodynamicParams != null)
+                                {
+                                    hydroObj.Parameters = hydrodynamicParams;
+                                    Debug.Log($"Added HydrodynamicFloatingObject to {linkName} with density {density} (default params)");
+                                }
+                                else
+                                {
+                                    Debug.Log($"Added HydrodynamicFloatingObject to {linkName} with density {density} (built-in defaults)");
+                                }
+                            }
+                            else
+                            {
+                                // ArticulationFloatingObjectを追加 (従来の浮力のみ)
+                                ArticulationFloatingObject floatingObj = colliderObject.GetComponent<ArticulationFloatingObject>();
+                                if (floatingObj == null)
+                                {
+                                    floatingObj = colliderObject.AddComponent<ArticulationFloatingObject>();
+                                }
+                                floatingObj.Density = density;
+                                Debug.Log($"Added ArticulationFloatingObject to {linkName} with density {density}");
+                            }
                         }
                     }
                 }
@@ -1294,6 +1340,124 @@ public class SimulationControl : MonoBehaviour
             -qURDF.eulerAngles.z,
             -qURDF.eulerAngles.x
         );
+    }
+
+    /// <summary>
+    /// XMLノードからHydrodynamicParametersを解析する
+    /// </summary>
+    /// <param name="node">hydrodynamics XMLノード</param>
+    /// <param name="defaults">デフォルト値（nullの場合は組み込みデフォルトを使用）</param>
+    /// <returns>解析されたパラメータ</returns>
+    private HydrodynamicParameters ParseHydrodynamicsNode(XmlNode node, HydrodynamicParameters defaults)
+    {
+        // デフォルト値を設定（指定がなければ組み込みデフォルト）
+        var p = new HydrodynamicParameters();
+        if (defaults != null)
+        {
+            // デフォルト値をコピー
+            p.waterDensity = defaults.waterDensity;
+            p.airDensity = defaults.airDensity;
+            p.waterViscosity = defaults.waterViscosity;
+            p.velocityReference = defaults.velocityReference;
+            p.C_PD1 = defaults.C_PD1;
+            p.C_PD2 = defaults.C_PD2;
+            p.f_P = defaults.f_P;
+            p.C_SD1 = defaults.C_SD1;
+            p.C_SD2 = defaults.C_SD2;
+            p.f_S = defaults.f_S;
+            p.slammingPower = defaults.slammingPower;
+            p.maxAcceleration = defaults.maxAcceleration;
+            p.slammingMultiplier = defaults.slammingMultiplier;
+            p.airResistanceCoefficient = defaults.airResistanceCoefficient;
+            p.enableViscousResistance = defaults.enableViscousResistance;
+            p.enablePressureDrag = defaults.enablePressureDrag;
+            p.enableSlammingForce = defaults.enableSlammingForce;
+            p.enableAirResistance = defaults.enableAirResistance;
+        }
+
+        if (node == null) return p;
+
+        // 各パラメータを読み込み（指定があれば上書き）
+        var waterDensityNode = node.SelectSingleNode("water_density");
+        if (waterDensityNode != null)
+            p.waterDensity = TryParseFloat(waterDensityNode.InnerText, p.waterDensity);
+
+        var airDensityNode = node.SelectSingleNode("air_density");
+        if (airDensityNode != null)
+            p.airDensity = TryParseFloat(airDensityNode.InnerText, p.airDensity);
+
+        var velocityRefNode = node.SelectSingleNode("velocity_reference");
+        if (velocityRefNode != null)
+            p.velocityReference = TryParseFloat(velocityRefNode.InnerText, p.velocityReference);
+
+        // Pressure Drag
+        var pressureDragNode = node.SelectSingleNode("pressure_drag");
+        if (pressureDragNode != null)
+        {
+            var cpd1 = pressureDragNode.SelectSingleNode("C_PD1");
+            if (cpd1 != null) p.C_PD1 = TryParseFloat(cpd1.InnerText, p.C_PD1);
+
+            var cpd2 = pressureDragNode.SelectSingleNode("C_PD2");
+            if (cpd2 != null) p.C_PD2 = TryParseFloat(cpd2.InnerText, p.C_PD2);
+
+            var fp = pressureDragNode.SelectSingleNode("f_P");
+            if (fp != null) p.f_P = TryParseFloat(fp.InnerText, p.f_P);
+        }
+
+        // Suction Drag
+        var suctionDragNode = node.SelectSingleNode("suction_drag");
+        if (suctionDragNode != null)
+        {
+            var csd1 = suctionDragNode.SelectSingleNode("C_SD1");
+            if (csd1 != null) p.C_SD1 = TryParseFloat(csd1.InnerText, p.C_SD1);
+
+            var csd2 = suctionDragNode.SelectSingleNode("C_SD2");
+            if (csd2 != null) p.C_SD2 = TryParseFloat(csd2.InnerText, p.C_SD2);
+
+            var fs = suctionDragNode.SelectSingleNode("f_S");
+            if (fs != null) p.f_S = TryParseFloat(fs.InnerText, p.f_S);
+        }
+
+        // Slamming
+        var slammingNode = node.SelectSingleNode("slamming");
+        if (slammingNode != null)
+        {
+            var power = slammingNode.SelectSingleNode("power");
+            if (power != null) p.slammingPower = TryParseFloat(power.InnerText, p.slammingPower);
+
+            var maxAcc = slammingNode.SelectSingleNode("max_acceleration");
+            if (maxAcc != null) p.maxAcceleration = TryParseFloat(maxAcc.InnerText, p.maxAcceleration);
+
+            var mult = slammingNode.SelectSingleNode("multiplier");
+            if (mult != null) p.slammingMultiplier = TryParseFloat(mult.InnerText, p.slammingMultiplier);
+        }
+
+        // Air Resistance
+        var airResNode = node.SelectSingleNode("air_resistance");
+        if (airResNode != null)
+        {
+            var coeff = airResNode.SelectSingleNode("coefficient");
+            if (coeff != null) p.airResistanceCoefficient = TryParseFloat(coeff.InnerText, p.airResistanceCoefficient);
+        }
+
+        // Enable/Disable flags
+        var enableNode = node.SelectSingleNode("enable");
+        if (enableNode != null)
+        {
+            var viscous = enableNode.SelectSingleNode("viscous_resistance");
+            if (viscous != null) p.enableViscousResistance = viscous.InnerText.ToLower() == "true";
+
+            var pressure = enableNode.SelectSingleNode("pressure_drag");
+            if (pressure != null) p.enablePressureDrag = pressure.InnerText.ToLower() == "true";
+
+            var slamming = enableNode.SelectSingleNode("slamming_force");
+            if (slamming != null) p.enableSlammingForce = slamming.InnerText.ToLower() == "true";
+
+            var air = enableNode.SelectSingleNode("air_resistance");
+            if (air != null) p.enableAirResistance = air.InnerText.ToLower() == "true";
+        }
+
+        return p;
     }
 
     private static float TryParseFloat(string value)

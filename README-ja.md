@@ -50,3 +50,10 @@ Unity をベースとした ROS2（Robot Operating System 2）と連携するロ
 
 ## ライセンス
 このプロジェクトは Apache 2.0 ライセンスの下で提供されています - 詳細はライセンスファイルをご覧ください。
+
+## 謝辞
+
+本プロジェクトの開発にあたり、以下のオープンソースプロジェクトに感謝します。
+
+* **[dbrizov/NaughtyWaterBuoyancy](https://github.com/dbrizov/NaughtyWaterBuoyancy)**：オブジェクトの**浮力計算**に利用しています。 
+* **[MARUSimulator/marus-core](https://github.com/MARUSimulator/marus-core)**：浮力以外の**水力学パラメータを適用する設計・実装方法**の参考にさせていただきました。

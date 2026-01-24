@@ -50,3 +50,10 @@ Note: The services are based on [simulation_interfaces](https://github.com/ros-s
 
 ## License
 This project is licensed under the Apache 2.0 License - see the LICENSE file for details.
+
+## Acknowledgements
+
+I would like to thank the following open-source projects that helped this repository.
+
+* **[dbrizov/NaughtyWaterBuoyancy](https://github.com/dbrizov/NaughtyWaterBuoyancy)**: used for **buoyancy calculations** in this project.
+* **[MARUSimulator/marus-core](https://github.com/MARUSimulator/marus-core)**: referenced for approaches on applying **hydrodynamic parameters beyond buoyancy**.
