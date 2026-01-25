@@ -19,6 +19,8 @@
 - [URDF設定](#urdf設定)
 - [パラメータリファレンス](#パラメータリファレンス)
 - [力の計算](#力の計算)
+- [Blade Element理論 (BET)](#blade-element理論-bet)
+- [非定常空力効果](#非定常空力効果)
 - [制御面の設定](#制御面の設定)
 - [使用例](#使用例)
 
@@ -143,6 +145,24 @@ Cl_corrected = Cl_slope × AR / (AR + 2×(AR+4)/(AR+2))
   <!-- キャビテーション（水中のみ） -->
   <enable_cavitation>false</enable_cavitation>
   <cavitation_threshold>0.5</cavitation_threshold>
+
+  <!-- Blade Element理論（オプション - 精度向上用） -->
+  <blade_element_theory>
+    <num_elements>8</num_elements>           <!-- スパン方向要素数（1=従来方式） -->
+    <induced_velocity_model>prandtl</induced_velocity_model>  <!-- none/prandtl/momentum/simpleWake -->
+    <taper_ratio>1.0</taper_ratio>           <!-- 翼端コード/翼根コード -->
+    <twist_root>0</twist_root>               <!-- 翼根のツイスト（度） -->
+    <twist_tip>-3</twist_tip>                <!-- 翼端のツイスト（度） -->
+    <sweep_angle>0</sweep_angle>             <!-- 後退角（度） -->
+  </blade_element_theory>
+
+  <!-- 非定常空力学（オプション - 羽ばたき/機動飛行用） -->
+  <unsteady_effects enable="true">
+    <enable_added_mass>true</enable_added_mass>
+    <added_mass_coefficient>0.75</added_mass_coefficient>  <!-- 0.75=楕円翼、1.0=平板 -->
+    <enable_wagner_lag>true</enable_wagner_lag>
+    <wagner_time_constant>4.0</wagner_time_constant>
+  </unsteady_effects>
 </aerodynamic_surface>
 ```
 
@@ -211,6 +231,36 @@ Cl_corrected = Cl_slope × AR / (AR + 2×(AR+4)/(AR+2))
 | `enable_cavitation` | false | 高速時のキャビテーション効果を有効化 |
 | `cavitation_threshold` | 0.5 | キャビテーション数閾値（0.2-1.0） |
 
+### Blade Element理論パラメータ
+
+| パラメータ | デフォルト | 範囲 | 説明 |
+|-----------|-----------|------|------|
+| `num_elements` | 1 | 1-32 | スパン方向の要素数（1 = 従来の準定常） |
+| `induced_velocity_model` | prandtl | - | 誘導速度モデル: `none`, `prandtl`, `momentum`, `simpleWake` |
+| `taper_ratio` | 1.0 | 0.1-1.5 | 翼端コード / 翼根コード（1.0 = 矩形翼） |
+| `twist_root` | 0 | - | 翼根の幾何学的ツイスト（度） |
+| `twist_tip` | 0 | - | 翼端の幾何学的ツイスト（度）（負 = ウォッシュアウト） |
+| `sweep_angle` | 0 | - | 後退角（度）（正 = 後退） |
+
+**誘導速度モデル:**
+
+| モデル | 用途 | 説明 |
+|--------|------|------|
+| `none` | デバッグ用 | 誘導速度補正なし |
+| `prandtl` | 固定翼 | プラントル翼端損失補正（航空機に推奨） |
+| `momentum` | 回転翼 | プロペラ/ローター用運動量理論 |
+| `simpleWake` | 羽ばたき | 時間遅れを伴う単純ウェイクモデル |
+
+### 非定常空力パラメータ
+
+| パラメータ | デフォルト | 範囲 | 説明 |
+|-----------|-----------|------|------|
+| `enable`（属性） | false | - | 非定常空力効果を有効化 |
+| `enable_added_mass` | true | - | 付加質量（仮想質量）効果を有効化 |
+| `added_mass_coefficient` | 0.75 | 0.5-1.5 | 付加質量係数（楕円翼:0.75、平板:1.0） |
+| `enable_wagner_lag` | true | - | Wagner関数循環遅れを有効化 |
+| `wagner_time_constant` | 4.0 | 1-10 | Wagner時定数乗数 |
+
 ---
 
 ## 力の計算
@@ -258,6 +308,126 @@ Cn = Cf_90 × sin(α_eff) × (1/(0.56 + 0.44×|sin(α_eff)|) - 0.41×(1 - exp(-1
 3. **失速角**: 揚力係数変化に基づき調整
 
 大きな偏角では効果が減少（小角度で80%、±50°で40%）。
+
+---
+
+## Blade Element理論 (BET)
+
+Blade Element理論は翼を複数のスパン方向要素に分割し、各要素を独立して計算することで空力学的精度を向上させます。これにより以下が可能になります：
+
+- **スパン方向荷重分布** - 翼根から翼端までの揚力の変化を捉える
+- **翼端損失効果** - 有限翼の誘導抗力を正確にモデリング
+- **幾何学的変化** - テーパー、ツイスト、後退角の効果
+- **要素ごとの誘導速度** - より正確な渦/ウェイクモデリング
+
+### BETを使用するタイミング
+
+| 構成 | num_elements | モデル |
+|------|--------------|--------|
+| シンプルな航空機（高速シミュレーション） | 1 | - |
+| 固定翼航空機（高精度） | 4-8 | `prandtl` |
+| プロペラ/ローター | 8-16 | `momentum` |
+| 羽ばたき翼 | 8-16 | `simpleWake` |
+
+### テーパーとツイスト
+
+**テーパー比** はスパン方向のコード変化を定義：
+- `taper_ratio = 1.0`: 矩形翼（コード一定）
+- `taper_ratio = 0.5`: 翼端コードは翼根コードの半分
+- `taper_ratio < 1.0`: テーパー翼（航空機で一般的）
+
+**ツイスト分布**（ウォッシュアウト）：
+- `twist_root = 0°, twist_tip = -3°`: 典型的なウォッシュアウト
+- ウォッシュアウトは翼端失速を遅らせ、操縦特性を改善
+- 翼根と翼端間の線形補間
+
+### 誘導速度モデル
+
+#### Prandtl（固定翼航空機）
+
+翼端損失補正を伴うプラントルの揚力線理論に基づく：
+
+```
+F = (2/π) × acos(exp(-f))
+f = (AR/2) × (1 - r/R) / (r/R × |sin(φ)|)
+```
+
+最適な用途：
+- 従来型固定翼航空機
+- グライダー
+- 高アスペクト比翼
+
+#### Momentum（ローター/プロペラ）
+
+アクチュエータディスク運動量理論に基づく：
+
+```
+v_i = √(T / (2 × ρ × A))
+```
+
+最適な用途：
+- ヘリコプターローター
+- マルチコプタープロペラ
+- ダクテッドファン
+
+#### SimpleWake（羽ばたき翼）
+
+時間遅れを伴うウェイク効果の準定常近似：
+
+```
+v_i(t) = α × v_i_qs + (1-α) × v_i(t-Δt)
+```
+
+最適な用途：
+- 羽ばたきロボット
+- バイオインスパイアドスイマー
+- 振動フォイル
+
+---
+
+## 非定常空力効果
+
+急激に変化する飛行条件（羽ばたき、機動飛行）では、非定常効果が重要になります。2つの主要な効果がモデル化されています：
+
+### 付加質量（仮想質量）
+
+物体が流体中で加速すると、周囲の流体も加速しなければなりません。これにより「付加質量」効果が生じます：
+
+```
+F_added = -m_added × a
+m_added = (π/4) × ρ × c² × b × k
+```
+
+ここで：
+- `c` = コード長
+- `b` = スパン長
+- `k` = 付加質量係数（楕円翼:0.75、平板:1.0）
+- `a` = 加速度
+
+### Wagner関数（循環遅れ）
+
+迎角が急激に変化すると、循環（および揚力）は瞬時には応答しません。Wagner関数はこの遅れをモデル化：
+
+```
+Φ(s) = 1 - 0.165×exp(-0.0455×s) - 0.335×exp(-0.3×s)
+```
+
+ここで `s = 2×V×t/c` は移動した半コード数。
+
+**効果：**
+- 急激な迎角増加 → 揚力は徐々に上昇（瞬時ではない）
+- 急激な機動中の揚力オーバーシュートを低減
+- 羽ばたき翼の解析で重要
+
+### 非定常効果を有効にするタイミング
+
+| アプリケーション | 付加質量 | Wagner遅れ |
+|------------------|----------|-----------|
+| 定常巡航飛行 | 不要 | 不要 |
+| 積極的な機動飛行 | 必要 | オプション |
+| 羽ばたき翼 | 必要 | 必要 |
+| 突風応答 | オプション | 必要 |
+| 水中振動フィン | 必要 | 必要 |
 
 ---
 
@@ -512,6 +682,133 @@ aeroController.ThrustPercent = 0.8f;
 </robot>
 ```
 
+### 例4: Blade Element理論を使用した固定翼機
+
+```xml
+<?xml version="1.0"?>
+<robot name="accurate_aircraft">
+  <aerodynamics>
+    <fluid_density>1.225</fluid_density>
+  </aerodynamics>
+
+  <link name="main_wing">
+    <collision>
+      <aerodynamic_surface>
+        <chord>1.5</chord>
+        <span>6.0</span>
+        <lift_slope>6.28</lift_slope>
+        <zero_lift_aoa>-2</zero_lift_aoa>
+        <stall_angle_high>15</stall_angle_high>
+        <stall_angle_low>-15</stall_angle_low>
+        <skin_friction>0.02</skin_friction>
+        <flap_fraction>0.2</flap_fraction>
+        <control_surface type="roll" multiplier="1"/>
+
+        <!-- 正確なスパン方向分布のためのBlade Element理論 -->
+        <blade_element_theory>
+          <num_elements>8</num_elements>
+          <induced_velocity_model>prandtl</induced_velocity_model>
+          <taper_ratio>0.6</taper_ratio>
+          <twist_root>2</twist_root>
+          <twist_tip>-2</twist_tip>
+        </blade_element_theory>
+      </aerodynamic_surface>
+      <geometry>
+        <box size="1.5 0.1 6.0"/>
+      </geometry>
+    </collision>
+  </link>
+</robot>
+```
+
+### 例5: 羽ばたき翼ロボット
+
+```xml
+<?xml version="1.0"?>
+<robot name="flapping_wing">
+  <aerodynamics>
+    <fluid_medium>auto</fluid_medium>
+    <air_density>1.225</air_density>
+    <water_density>1027</water_density>
+  </aerodynamics>
+
+  <link name="left_wing">
+    <collision>
+      <aerodynamic_surface>
+        <chord>0.08</chord>
+        <span>0.15</span>
+        <lift_slope>5.5</lift_slope>
+        <zero_lift_aoa>0</zero_lift_aoa>
+        <!-- 動的失速用の高い失速角 -->
+        <stall_angle_high_air>25</stall_angle_high_air>
+        <stall_angle_low_air>-25</stall_angle_low_air>
+        <stall_angle_high_water>20</stall_angle_high_water>
+        <stall_angle_low_water>-20</stall_angle_low_water>
+        <skin_friction_air>0.015</skin_friction_air>
+        <skin_friction_water>0.008</skin_friction_water>
+
+        <!-- 羽ばたき用のBlade Element理論 -->
+        <blade_element_theory>
+          <num_elements>12</num_elements>
+          <induced_velocity_model>simpleWake</induced_velocity_model>
+          <taper_ratio>0.4</taper_ratio>
+          <twist_root>0</twist_root>
+          <twist_tip>-5</twist_tip>
+        </blade_element_theory>
+
+        <!-- 羽ばたきには非定常効果が重要 -->
+        <unsteady_effects enable="true">
+          <enable_added_mass>true</enable_added_mass>
+          <added_mass_coefficient>0.75</added_mass_coefficient>
+          <enable_wagner_lag>true</enable_wagner_lag>
+          <wagner_time_constant>4.0</wagner_time_constant>
+        </unsteady_effects>
+      </aerodynamic_surface>
+      <geometry>
+        <box size="0.08 0.005 0.15"/>
+      </geometry>
+    </collision>
+  </link>
+</robot>
+```
+
+### 例6: 運動量理論を使用したプロペラ
+
+```xml
+<?xml version="1.0"?>
+<robot name="quadcopter">
+  <aerodynamics>
+    <fluid_density>1.225</fluid_density>
+  </aerodynamics>
+
+  <link name="propeller_1">
+    <collision>
+      <aerodynamic_surface>
+        <chord>0.02</chord>
+        <span>0.127</span>  <!-- 5インチプロペラ半径 -->
+        <lift_slope>5.7</lift_slope>
+        <zero_lift_aoa>0</zero_lift_aoa>
+        <stall_angle_high>12</stall_angle_high>
+        <stall_angle_low>-12</stall_angle_low>
+        <skin_friction>0.02</skin_friction>
+
+        <!-- ローター用のBlade Element理論 -->
+        <blade_element_theory>
+          <num_elements>16</num_elements>
+          <induced_velocity_model>momentum</induced_velocity_model>
+          <taper_ratio>0.7</taper_ratio>
+          <twist_root>25</twist_root>
+          <twist_tip>5</twist_tip>
+        </blade_element_theory>
+      </aerodynamic_surface>
+      <geometry>
+        <cylinder radius="0.127" length="0.005"/>
+      </geometry>
+    </collision>
+  </link>
+</robot>
+```
+
 ---
 
 ## ベストプラクティス
@@ -541,6 +838,24 @@ aeroController.ThrustPercent = 0.8f;
    - 高速水中運用ではキャビテーションを有効化を検討
    - システムは遷移時（部分的に水没）にパラメータを自動補間
 
+7. **Blade Element理論:**
+   - シンプルなテスト用に`num_elements=1`から開始し、精度向上のために増加
+   - 固定翼航空機には4-8要素を使用（精度とパフォーマンスのバランス良好）
+   - ローター/プロペラや羽ばたき翼には8-16要素を使用
+   - 適切な誘導速度モデルを選択：
+     - `prandtl`：従来型航空機用（翼端損失補正）
+     - `momentum`：ローター/プロペラ用（アクチュエータディスク理論）
+     - `simpleWake`：羽ばたき/振動運動用
+   - 典型的なテーパー比：効率的な翼に0.4-0.8
+   - 典型的なウォッシュアウト（ツイスト）：翼根に対して翼端-2°〜-5°
+
+8. **非定常効果:**
+   - 急激に変化する条件（羽ばたき、積極的な機動飛行）でのみ有効化
+   - 付加質量は低速・高加速度時に最も重要
+   - Wagner遅れは迎角が急激に変化する場合に重要
+   - 高い`wagner_time_constant` = 遅い揚力応答（遅れが大きい）
+   - `added_mass_coefficient`はほとんどの翼型で0.75を維持
+
 ---
 
 ## トラブルシューティング
@@ -564,6 +879,21 @@ aeroController.ThrustPercent = 0.8f;
 - 失速遷移パディングは自動（5-15°）
 - 翼型タイプに対して失速角が現実的か確認
 
+### BET結果が単一要素と異なる
+- これは正常 - BETは単一要素では捉えられないスパン方向効果を捕捉
+- テーパー/ツイストのない矩形翼では結果は約5%以内であるべき
+- 誘導速度モデルがアプリケーションに適切か確認
+
+### 羽ばたき翼の揚力が遅れている
+- Wagner遅れが正しく機能している - 揚力は数コード長にわたって増大
+- 遅れが大きすぎる場合は`wagner_time_constant`を減少
+- 高周波羽ばたきにはタイムステップが十分小さいことを確認
+
+### プロペラ/ローターの推力が低すぎる
+- 誘導速度モデルが`momentum`に設定されているか確認
+- ツイスト分布が正しいか確認（翼根で大、翼端で小）
+- 半径方向の変化を捕捉するのに十分な要素数を確保（8-16推奨）
+
 ---
 
 ## 参考文献
@@ -571,3 +901,7 @@ aeroController.ThrustPercent = 0.8f;
 - Khan, W. & Nahon, M. (2015). Real-time modeling of agile fixed-wing UAV aerodynamics
 - Anderson, J.D. (2016). Fundamentals of Aerodynamics
 - Aircraft-Physics Unity Package by JoeBrow
+- Leishman, J.G. (2006). Principles of Helicopter Aerodynamics（Blade Element理論）
+- Wagner, H. (1925). Über die Entstehung des dynamischen Auftriebes von Tragflügeln
+- Jones, R.T. (1938). Operational treatment of the non-uniform lift theory（Wagner関数近似）
+- Theodorsen, T. (1935). General theory of aerodynamic instability and the mechanism of flutter

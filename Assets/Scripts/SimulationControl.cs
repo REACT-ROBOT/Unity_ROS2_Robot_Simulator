@@ -1790,6 +1790,71 @@ public class SimulationControl : MonoBehaviour
         if (cavitationThresholdNode != null)
             p.cavitationThreshold = TryParseFloat(cavitationThresholdNode.InnerText, p.cavitationThreshold);
 
+        // Blade Element Theory 設定
+        var betNode = node.SelectSingleNode("blade_element_theory");
+        if (betNode != null)
+        {
+            var numElementsNode = betNode.SelectSingleNode("num_elements");
+            if (numElementsNode != null)
+                p.numElements = Mathf.Clamp((int)TryParseFloat(numElementsNode.InnerText, p.numElements), 1, 32);
+
+            var inducedModelNode = betNode.SelectSingleNode("induced_velocity_model");
+            if (inducedModelNode != null)
+            {
+                string modelStr = inducedModelNode.InnerText.ToLower();
+                p.inducedVelocityModel = modelStr switch
+                {
+                    "none" => InducedVelocityModelType.None,
+                    "prandtl" => InducedVelocityModelType.Prandtl,
+                    "momentum" => InducedVelocityModelType.Momentum,
+                    "simplewake" or "simple_wake" => InducedVelocityModelType.SimpleWake,
+                    _ => InducedVelocityModelType.Prandtl
+                };
+            }
+
+            var taperNode = betNode.SelectSingleNode("taper_ratio");
+            if (taperNode != null)
+                p.taperRatio = TryParseFloat(taperNode.InnerText, p.taperRatio);
+
+            var twistRootNode = betNode.SelectSingleNode("twist_root");
+            if (twistRootNode != null)
+                p.twistRoot = TryParseFloat(twistRootNode.InnerText, p.twistRoot);
+
+            var twistTipNode = betNode.SelectSingleNode("twist_tip");
+            if (twistTipNode != null)
+                p.twistTip = TryParseFloat(twistTipNode.InnerText, p.twistTip);
+
+            var sweepNode = betNode.SelectSingleNode("sweep_angle");
+            if (sweepNode != null)
+                p.sweepAngle = TryParseFloat(sweepNode.InnerText, p.sweepAngle);
+        }
+
+        // 非定常効果設定
+        var unsteadyNode = node.SelectSingleNode("unsteady_effects");
+        if (unsteadyNode != null)
+        {
+            // enable属性をチェック
+            var enableAttr = unsteadyNode.Attributes?["enable"];
+            if (enableAttr != null)
+                p.enableUnsteadyEffects = enableAttr.Value.ToLower() == "true";
+
+            var addedMassCoeffNode = unsteadyNode.SelectSingleNode("added_mass_coefficient");
+            if (addedMassCoeffNode != null)
+                p.addedMassCoefficient = TryParseFloat(addedMassCoeffNode.InnerText, p.addedMassCoefficient);
+
+            var enableAddedMassNode = unsteadyNode.SelectSingleNode("enable_added_mass");
+            if (enableAddedMassNode != null)
+                p.enableAddedMass = enableAddedMassNode.InnerText.ToLower() == "true";
+
+            var enableWagnerNode = unsteadyNode.SelectSingleNode("enable_wagner_lag");
+            if (enableWagnerNode != null)
+                p.enableWagnerLag = enableWagnerNode.InnerText.ToLower() == "true";
+
+            var wagnerConstNode = unsteadyNode.SelectSingleNode("wagner_time_constant");
+            if (wagnerConstNode != null)
+                p.wagnerTimeConstant = TryParseFloat(wagnerConstNode.InnerText, p.wagnerTimeConstant);
+        }
+
         return p;
     }
 

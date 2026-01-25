@@ -4,9 +4,11 @@
 // Aerodynamic surface physics calculations
 // Based on Aircraft-Physics by JoeBrow (MIT License) and Khan & Nahon 2015
 // Extended for underwater compatibility with automatic medium detection
+// Extended with Blade Element Theory for improved accuracy on discretized wings
 
 using UnityEngine;
 using Hydrodynamics;
+using Aerodynamics.BladeElement;
 
 namespace Aerodynamics
 {
@@ -70,6 +72,12 @@ namespace Aerodynamics
         private BiVector3 lastCalculatedForces;
         private float lastReynoldsNumber;
 
+        // Blade Element Theory components
+        private BladeElementState[] bladeElements;
+        private IInducedVelocityModel inducedVelocityModel;
+        private UnsteadyEffects unsteadyEffects;
+        private bool betInitialized = false;
+
         /// <summary>
         /// Gets the active parameters (from asset or inline)
         /// </summary>
@@ -121,6 +129,235 @@ namespace Aerodynamics
         /// Gets the current flap angle in radians
         /// </summary>
         public float GetFlapAngle() => flapAngle;
+
+        /// <summary>
+        /// Gets the blade element states (for debugging/visualization)
+        /// </summary>
+        public BladeElementState[] BladeElements => bladeElements;
+
+        /// <summary>
+        /// Whether Blade Element Theory is active (numElements > 1)
+        /// </summary>
+        public bool UsesBladeElementTheory => Parameters.numElements > 1;
+
+        /// <summary>
+        /// Initialize blade elements for BET calculation
+        /// </summary>
+        private void InitializeBladeElements()
+        {
+            var config = Parameters;
+            int n = config.numElements;
+
+            if (n <= 1)
+            {
+                bladeElements = null;
+                betInitialized = false;
+                return;
+            }
+
+            bladeElements = new BladeElementState[n];
+            float elementSpan = config.span / n;
+
+            for (int i = 0; i < n; i++)
+            {
+                bladeElements[i] = new BladeElementState();
+                var elem = bladeElements[i];
+
+                // Spanwise fraction (0 to 1 along the wing)
+                elem.spanwiseFraction = (i + 0.5f) / n;
+
+                // Local position along span (Y-axis in local space typically)
+                // Centered at wing midpoint: goes from -span/2 to +span/2
+                float spanPos = (elem.spanwiseFraction - 0.5f) * config.span;
+                elem.localPosition = new Vector3(0f, 0f, spanPos);
+
+                // Local chord with taper
+                // taper_ratio = tip_chord / root_chord
+                // chord(y) = root_chord * (1 - (1 - taper) * |2y/span|)
+                float normalizedSpan = Mathf.Abs(2f * (elem.spanwiseFraction - 0.5f));
+                elem.localChord = config.chord * (1f - (1f - config.taperRatio) * normalizedSpan);
+
+                // Linear twist distribution
+                float twistFraction = Mathf.Abs(2f * (elem.spanwiseFraction - 0.5f));
+                elem.localTwist = Mathf.Lerp(config.twistRoot, config.twistTip, twistFraction) * Mathf.Deg2Rad;
+
+                // Element dimensions
+                elem.elementSpan = elementSpan;
+                elem.elementArea = elem.localChord * elementSpan;
+            }
+
+            // Initialize induced velocity model
+            inducedVelocityModel = InducedVelocityModelFactory.Create(config.inducedVelocityModel);
+            inducedVelocityModel.Initialize(config);
+
+            // Initialize unsteady effects
+            unsteadyEffects = new UnsteadyEffects();
+            unsteadyEffects.Initialize(config);
+
+            betInitialized = true;
+        }
+
+        /// <summary>
+        /// Calculate forces using Blade Element Theory
+        /// </summary>
+        private BiVector3 CalculateForcesWithBET(Vector3 worldFluidVelocity, float density,
+            Vector3 relativePosition, CurrentMedium medium)
+        {
+            var config = Parameters;
+            float dt = Time.fixedDeltaTime;
+
+            // Ensure elements are initialized
+            if (!betInitialized || bladeElements == null || bladeElements.Length != config.numElements)
+            {
+                InitializeBladeElements();
+            }
+
+            BiVector3 totalForces = BiVector3.zero;
+
+            // Pre-compute shared values
+            float ar = config.EffectiveAspectRatio;
+            float correctedLiftSlope = config.liftSlope * ar / (ar + 2f * (ar + 4f) / (ar + 2f));
+            var stallAngles = config.GetStallAngles(medium);
+            float zeroLiftAoaBase = config.zeroLiftAoA * Mathf.Deg2Rad;
+            float stallAngleHighBase = stallAngles.high * Mathf.Deg2Rad;
+            float stallAngleLowBase = stallAngles.low * Mathf.Deg2Rad;
+
+            // Flap effects (shared across elements for simplicity)
+            float theta = Mathf.Acos(2f * config.flapFraction - 1f);
+            float flapEffectiveness = 1f - (theta - Mathf.Sin(theta)) / Mathf.PI;
+            float deltaLift = correctedLiftSlope * flapEffectiveness *
+                              FlapEffectivenessCorrection(flapAngle) * flapAngle;
+            float zeroLiftAoA = zeroLiftAoaBase - deltaLift / correctedLiftSlope;
+
+            float clMaxHigh = correctedLiftSlope * (stallAngleHighBase - zeroLiftAoaBase) +
+                              deltaLift * LiftCoefficientMaxFraction(config.flapFraction);
+            float clMaxLow = correctedLiftSlope * (stallAngleLowBase - zeroLiftAoaBase) +
+                             deltaLift * LiftCoefficientMaxFraction(config.flapFraction);
+            float stallAngleHigh = zeroLiftAoA + clMaxHigh / correctedLiftSlope;
+            float stallAngleLow = zeroLiftAoA + clMaxLow / correctedLiftSlope;
+
+            // Step 1: Compute velocity at each element
+            for (int i = 0; i < bladeElements.Length; i++)
+            {
+                var elem = bladeElements[i];
+
+                // World position of this element
+                Vector3 worldPos = transform.TransformPoint(elem.localPosition);
+
+                // Local velocity at element (already includes body motion from caller)
+                // Transform world velocity to local space
+                Vector3 localVelocity = transform.InverseTransformDirection(worldFluidVelocity);
+
+                // Project to 2D (ignore sideslip)
+                localVelocity = new Vector3(localVelocity.x, localVelocity.y, 0);
+
+                elem.currentVelocity = localVelocity;
+            }
+
+            // Step 2: Compute induced velocities (first pass for Cl estimation)
+            for (int i = 0; i < bladeElements.Length; i++)
+            {
+                var elem = bladeElements[i];
+                if (elem.currentVelocity.sqrMagnitude < 0.0001f) continue;
+
+                // Calculate angle of attack for this element
+                float localAoA = Mathf.Atan2(elem.currentVelocity.y, -elem.currentVelocity.x);
+                localAoA += elem.localTwist;  // Add geometric twist
+                elem.currentAoA = localAoA;
+
+                // Estimate Cl for induced velocity calculation
+                Vector3 coeffs = CalculateCoefficients(localAoA, correctedLiftSlope, zeroLiftAoA,
+                    stallAngleHigh, stallAngleLow, medium);
+                elem.currentCl = coeffs.x;
+                elem.currentCd = coeffs.y;
+                elem.currentCm = coeffs.z;
+            }
+
+            // Compute induced velocities
+            inducedVelocityModel.ComputeInducedVelocities(bladeElements, config, dt);
+
+            // Step 3: Compute forces at each element with induced velocity correction
+            for (int i = 0; i < bladeElements.Length; i++)
+            {
+                var elem = bladeElements[i];
+
+                if (elem.currentVelocity.sqrMagnitude < 0.0001f)
+                {
+                    elem.UpdateHistory();
+                    continue;
+                }
+
+                // Add induced velocity to get effective velocity
+                Vector3 effectiveVelocity = elem.currentVelocity + elem.inducedVelocity;
+
+                // Recalculate AoA with induced velocity
+                float effectiveAoA = Mathf.Atan2(effectiveVelocity.y, -effectiveVelocity.x);
+                effectiveAoA += elem.localTwist;
+
+                // Apply tip-loss factor to lift slope
+                float localLiftSlope = correctedLiftSlope * elem.tipLossFactor;
+
+                // Calculate coefficients
+                Vector3 coeffs = CalculateCoefficients(effectiveAoA, localLiftSlope, zeroLiftAoA,
+                    stallAngleHigh, stallAngleLow, medium);
+
+                // Apply Wagner factor for unsteady effects
+                float wagnerFactor = 1f;
+                if (config.enableUnsteadyEffects && config.enableWagnerLag)
+                {
+                    wagnerFactor = unsteadyEffects.ComputeWagnerFactor(elem, dt);
+                    coeffs.x *= wagnerFactor;  // Reduce lift during transients
+                }
+
+                elem.currentCl = coeffs.x;
+                elem.currentCd = coeffs.y;
+                elem.currentCm = coeffs.z;
+
+                // Dynamic pressure for this element
+                float q = 0.5f * density * effectiveVelocity.sqrMagnitude;
+
+                // Force directions in world space
+                Vector3 dragDirection = worldFluidVelocity.normalized;
+                Vector3 liftDirection = Vector3.Cross(dragDirection, transform.forward).normalized;
+
+                // Forces for this element
+                Vector3 lift = liftDirection * coeffs.x * q * elem.elementArea;
+                Vector3 drag = dragDirection * coeffs.y * q * elem.elementArea;
+
+                elem.lastLiftForce = lift;
+                elem.lastDragForce = drag;
+
+                // Add unsteady forces
+                BiVector3 unsteadyForces = BiVector3.zero;
+                if (config.enableUnsteadyEffects)
+                {
+                    unsteadyForces = unsteadyEffects.ComputeUnsteadyForces(elem, density, dt);
+                }
+
+                // World position for torque calculation
+                Vector3 worldPos = transform.TransformPoint(elem.localPosition);
+                Vector3 elementRelativePos = worldPos - (transform.position - relativePosition);
+
+                Vector3 elementForce = lift + drag + unsteadyForces.force;
+
+                totalForces.force += elementForce;
+
+                // Torque from force at offset position
+                totalForces.torque += Vector3.Cross(elementRelativePos, elementForce);
+
+                // Pitch moment
+                Vector3 pitchTorque = -transform.forward * coeffs.z * q * elem.elementArea * elem.localChord;
+                totalForces.torque += pitchTorque;
+
+                // Add unsteady torque
+                totalForces.torque += unsteadyForces.torque;
+
+                // Update history for next frame
+                elem.UpdateHistory();
+            }
+
+            return totalForces;
+        }
 
         /// <summary>
         /// Detects the current medium based on water surface position
@@ -244,6 +481,15 @@ namespace Aerodynamics
             // Use provided density
             float density = fluidDensity;
 
+            // Use Blade Element Theory if numElements > 1
+            if (config.numElements > 1)
+            {
+                BiVector3 betForces = CalculateForcesWithBET(worldFluidVelocity, density, relativePosition, medium);
+                lastCalculatedForces = betForces;
+                return betForces;
+            }
+
+            // Original quasi-steady calculation for single element (backward compatible)
             BiVector3 forceAndTorque = BiVector3.zero;
 
             // Transform velocity to local space

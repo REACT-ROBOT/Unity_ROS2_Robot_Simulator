@@ -30,6 +30,21 @@ namespace Aerodynamics
     }
 
     /// <summary>
+    /// Induced velocity model type for blade element theory
+    /// </summary>
+    public enum InducedVelocityModelType
+    {
+        /// <summary>No induced velocity correction (for comparison/debugging)</summary>
+        None,
+        /// <summary>Prandtl tip-loss correction (best for fixed-wing aircraft)</summary>
+        Prandtl,
+        /// <summary>Momentum theory (best for rotors/propellers)</summary>
+        Momentum,
+        /// <summary>Simple wake model (for flapping wings)</summary>
+        SimpleWake
+    }
+
+    /// <summary>
     /// Serializable parameters for an aerodynamic surface.
     /// These parameters define the lift, drag, and moment characteristics.
     /// Supports both air and water environments with automatic medium detection.
@@ -107,6 +122,45 @@ namespace Aerodynamics
 
         [Tooltip("Cavitation number threshold (typically 0.2-1.0)")]
         public float cavitationThreshold = 0.5f;
+
+        [Header("Blade Element Theory")]
+        [Tooltip("Number of spanwise elements (1 = original quasi-steady model)")]
+        [Range(1, 32)]
+        public int numElements = 1;
+
+        [Tooltip("Induced velocity model for finite wing effects")]
+        public InducedVelocityModelType inducedVelocityModel = InducedVelocityModelType.Prandtl;
+
+        [Tooltip("Taper ratio (tip chord / root chord). 1.0 = rectangular wing")]
+        [Range(0.1f, 1.5f)]
+        public float taperRatio = 1.0f;
+
+        [Tooltip("Geometric twist at wing root in degrees (positive = nose up)")]
+        public float twistRoot = 0f;
+
+        [Tooltip("Geometric twist at wing tip in degrees")]
+        public float twistTip = 0f;
+
+        [Tooltip("Sweep angle in degrees (positive = swept back)")]
+        public float sweepAngle = 0f;
+
+        [Header("Unsteady Aerodynamics")]
+        [Tooltip("Enable unsteady aerodynamic effects (for flapping/maneuvering)")]
+        public bool enableUnsteadyEffects = false;
+
+        [Tooltip("Enable added mass (virtual mass) effect")]
+        public bool enableAddedMass = true;
+
+        [Tooltip("Added mass coefficient (0.75 for elliptic, 1.0 for flat plate)")]
+        [Range(0.5f, 1.5f)]
+        public float addedMassCoefficient = 0.75f;
+
+        [Tooltip("Enable Wagner function circulation lag")]
+        public bool enableWagnerLag = true;
+
+        [Tooltip("Wagner time constant multiplier (typical: 4.0)")]
+        [Range(1f, 10f)]
+        public float wagnerTimeConstant = 4.0f;
 
         /// <summary>
         /// Gets the effective aspect ratio
