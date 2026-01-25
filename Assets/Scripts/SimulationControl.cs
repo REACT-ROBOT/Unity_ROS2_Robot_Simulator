@@ -1141,6 +1141,69 @@ public class SimulationControl : MonoBehaviour
                                 imuMsgPublisher.serializer = imuSerializer;
                                 imuMsgPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/imu";
                                 break;
+                            case "thruster":
+                                Debug.Log("sensor type 'thruster' found");
+                                string thrusterId = sensor.Attributes?["id"]?.Value;
+                                string thrusterObjectName = string.IsNullOrEmpty(thrusterId)
+                                    ? sensorLinkName + "_thruster"
+                                    : sensorLinkName + "_" + thrusterId + "_thruster";
+
+                                GameObject thrusterObject = new GameObject(thrusterObjectName);
+                                thrusterObject.transform.SetParent(targetObject.transform, false);
+
+                                XmlNode thrusterOriginNode = sensor.SelectSingleNode("origin");
+                                Vector3 thrusterLocalPosition = Vector3.zero;
+                                Vector3 thrusterLocalRpy = Vector3.zero;
+                                if (thrusterOriginNode != null)
+                                {
+                                    thrusterLocalPosition = ParseVector3Attribute(thrusterOriginNode, "xyz", Vector3.zero);
+                                    thrusterLocalRpy = ParseVector3Attribute(thrusterOriginNode, "rpy", Vector3.zero);
+                                }
+
+                                thrusterObject.transform.localPosition = thrusterLocalPosition;
+                                thrusterObject.transform.localRotation = Quaternion.Euler(
+                                    thrusterLocalRpy.x * Mathf.Rad2Deg,
+                                    thrusterLocalRpy.y * Mathf.Rad2Deg,
+                                    thrusterLocalRpy.z * Mathf.Rad2Deg);
+
+                                Vector3 axis = Vector3.forward;
+                                XmlNode axisNode = sensor.SelectSingleNode("axis");
+                                if (axisNode != null)
+                                {
+                                    axis = ParseVector3Attribute(axisNode, "xyz", Vector3.forward);
+                                }
+
+                                float maxForce = 100f;
+                                XmlNode maxForceNode = sensor.SelectSingleNode("max_force");
+                                if (maxForceNode != null)
+                                {
+                                    maxForce = TryParseFloat(maxForceNode.InnerText, maxForce);
+                                }
+
+                                float initialThrottle = 0f;
+                                XmlNode initialThrottleNode = sensor.SelectSingleNode("initial_throttle");
+                                if (initialThrottleNode != null)
+                                {
+                                    initialThrottle = TryParseFloat(initialThrottleNode.InnerText, initialThrottle);
+                                }
+
+                                string commandTopic = null;
+                                XmlNode commandTopicNode = sensor.SelectSingleNode("command_topic");
+                                if (commandTopicNode != null)
+                                {
+                                    commandTopic = commandTopicNode.InnerText;
+                                }
+
+                                LinkThruster thruster = thrusterObject.AddComponent<LinkThruster>();
+                                thruster.targetBody = targetObject.GetComponent<ArticulationBody>();
+                                thruster.localDirection = axis;
+                                thruster.maxForce = maxForce;
+                                thruster.command = initialThrottle;
+                                if (!string.IsNullOrEmpty(commandTopic))
+                                {
+                                    thruster.topicName = commandTopic;
+                                }
+                                break;
                             default:
                                 Debug.Log("undefined sensor type found");
                                 break;
@@ -1798,6 +1861,34 @@ public class SimulationControl : MonoBehaviour
     private static float TryParseFloat(string value, float defaultValue)
     {
         return float.TryParse(value, out float result) ? result : defaultValue;
+    }
+
+    private static Vector3 ParseVector3Attribute(XmlNode node, string attributeName, Vector3 defaultValue)
+    {
+        if (node?.Attributes?[attributeName] == null)
+        {
+            return defaultValue;
+        }
+        return ParseVector3(node.Attributes[attributeName].Value, defaultValue);
+    }
+
+    private static Vector3 ParseVector3(string value, Vector3 defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return defaultValue;
+        }
+
+        string[] parts = value.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 3)
+        {
+            return defaultValue;
+        }
+
+        float x = TryParseFloat(parts[0], defaultValue.x);
+        float y = TryParseFloat(parts[1], defaultValue.y);
+        float z = TryParseFloat(parts[2], defaultValue.z);
+        return new Vector3(-y, z, x);
     }
 
     private void ResetAllEntitiesState()
