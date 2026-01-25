@@ -30,6 +30,7 @@ using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 using UnityMeshImporter;
 using NaughtyWaterBuoyancy;
 using Hydrodynamics;
+using Aerodynamics;
 
 public class FileLogger
 {
@@ -619,6 +620,85 @@ public class SimulationControl : MonoBehaviour
                         }
                     }
                 }
+            }
+        }
+
+        // Aerodynamics 設定（空力学モデル）
+        AeroSurfaceParameters defaultAeroParams = null;
+        bool useAerodynamics = false;
+
+        if (robotNode != null)
+        {
+            // ロボット全体のデフォルト空力学パラメータを読み込む
+            XmlNode defaultAerodynamicsNode = robotNode.SelectSingleNode("aerodynamics");
+            if (defaultAerodynamicsNode != null)
+            {
+                useAerodynamics = true;
+                defaultAeroParams = ParseAerodynamicsNode(defaultAerodynamicsNode, null);
+                Debug.Log($"[Aerodynamics] Default params loaded: liftSlope={defaultAeroParams.liftSlope}, chord={defaultAeroParams.chord}");
+            }
+
+            // リンクごとの空力学サーフェスを設定
+            XmlNodeList links = robotNode.SelectNodes("link");
+            foreach (XmlNode link in links)
+            {
+                string linkName = link.Attributes["name"]?.Value;
+                GameObject targetObject = FindInChildrenByName(robotObject.transform, linkName);
+                if (targetObject == null) continue;
+
+                XmlNode collisionNode = link.SelectSingleNode("collision");
+                if (collisionNode == null) continue;
+
+                // aerodynamic_surface 要素を検索
+                XmlNode aeroSurfaceNode = collisionNode.SelectSingleNode("aerodynamic_surface");
+                if (aeroSurfaceNode == null && !useAerodynamics) continue;
+
+                // 明示的な aerodynamic_surface 要素がある場合のみサーフェスを追加
+                if (aeroSurfaceNode != null)
+                {
+                    // Colliderオブジェクトを取得
+                    Collider linkCollider = targetObject.GetComponentInChildren<Collider>();
+                    GameObject surfaceObject = linkCollider != null ? linkCollider.gameObject : targetObject;
+
+                    // AeroSurface コンポーネントを追加
+                    AeroSurface aeroSurface = surfaceObject.GetComponent<AeroSurface>();
+                    if (aeroSurface == null)
+                    {
+                        aeroSurface = surfaceObject.AddComponent<AeroSurface>();
+                    }
+
+                    // パラメータを解析して設定
+                    AeroSurfaceParameters surfaceParams = ParseAerodynamicsNode(aeroSurfaceNode, defaultAeroParams);
+                    SetAeroSurfaceParameters(aeroSurface, surfaceParams);
+
+                    // 制御面設定
+                    XmlNode controlNode = aeroSurfaceNode.SelectSingleNode("control_surface");
+                    if (controlNode != null)
+                    {
+                        SetAeroSurfaceControlSettings(aeroSurface, controlNode);
+                    }
+
+                    Debug.Log($"[Aerodynamics] Added AeroSurface to {linkName}: chord={surfaceParams.chord}, span={surfaceParams.span}, liftSlope={surfaceParams.liftSlope}");
+                }
+            }
+
+            // AerodynamicsController をルートオブジェクトに追加（空力サーフェスがある場合のみ）
+            AeroSurface[] allSurfaces = robotObject.GetComponentsInChildren<AeroSurface>();
+            if (allSurfaces.Length > 0)
+            {
+                AerodynamicsController aeroController = robotObject.GetComponent<AerodynamicsController>();
+                if (aeroController == null)
+                {
+                    aeroController = robotObject.AddComponent<AerodynamicsController>();
+                }
+
+                // デフォルトの流体密度を設定
+                if (defaultAeroParams != null)
+                {
+                    aeroController.FluidDensity = defaultAeroParams.fluidDensity;
+                }
+
+                Debug.Log($"[Aerodynamics] Added AerodynamicsController with {allSurfaces.Length} surfaces");
             }
         }
 
@@ -1458,6 +1538,256 @@ public class SimulationControl : MonoBehaviour
         }
 
         return p;
+    }
+
+    /// <summary>
+    /// XMLノードからAeroSurfaceParametersを解析する
+    /// </summary>
+    /// <param name="node">aerodynamics/aerodynamic_surface XMLノード</param>
+    /// <param name="defaults">デフォルト値（nullの場合は組み込みデフォルトを使用）</param>
+    /// <returns>解析されたパラメータ</returns>
+    private AeroSurfaceParameters ParseAerodynamicsNode(XmlNode node, AeroSurfaceParameters defaults)
+    {
+        var p = new AeroSurfaceParameters();
+        if (defaults != null)
+        {
+            // デフォルト値をコピー
+            p.chord = defaults.chord;
+            p.span = defaults.span;
+            p.autoAspectRatio = defaults.autoAspectRatio;
+            p.aspectRatio = defaults.aspectRatio;
+            p.liftSlope = defaults.liftSlope;
+            p.zeroLiftAoA = defaults.zeroLiftAoA;
+            // 空気/水中別のストール角
+            p.stallAngleHighAir = defaults.stallAngleHighAir;
+            p.stallAngleLowAir = defaults.stallAngleLowAir;
+            p.stallAngleHighWater = defaults.stallAngleHighWater;
+            p.stallAngleLowWater = defaults.stallAngleLowWater;
+            // 空気/水中別の摩擦係数
+            p.skinFrictionAir = defaults.skinFrictionAir;
+            p.skinFrictionWater = defaults.skinFrictionWater;
+            p.flapFraction = defaults.flapFraction;
+            p.maxFlapAngle = defaults.maxFlapAngle;
+            p.fluidMedium = defaults.fluidMedium;
+            // 空気/水中別の密度
+            p.airDensity = defaults.airDensity;
+            p.waterDensity = defaults.waterDensity;
+            // 動粘度
+            p.airKinematicViscosity = defaults.airKinematicViscosity;
+            p.waterKinematicViscosity = defaults.waterKinematicViscosity;
+            // キャビテーション
+            p.enableCavitation = defaults.enableCavitation;
+            p.cavitationThreshold = defaults.cavitationThreshold;
+        }
+
+        if (node == null) return p;
+
+        // Geometry
+        var chordNode = node.SelectSingleNode("chord");
+        if (chordNode != null)
+            p.chord = TryParseFloat(chordNode.InnerText, p.chord);
+
+        var spanNode = node.SelectSingleNode("span");
+        if (spanNode != null)
+            p.span = TryParseFloat(spanNode.InnerText, p.span);
+
+        var arNode = node.SelectSingleNode("aspect_ratio");
+        if (arNode != null)
+        {
+            p.aspectRatio = TryParseFloat(arNode.InnerText, p.aspectRatio);
+            p.autoAspectRatio = false;
+        }
+
+        var autoArAttr = node.Attributes?["auto_aspect_ratio"];
+        if (autoArAttr != null)
+            p.autoAspectRatio = autoArAttr.Value.ToLower() == "true";
+
+        // Lift characteristics
+        var liftSlopeNode = node.SelectSingleNode("lift_slope");
+        if (liftSlopeNode != null)
+            p.liftSlope = TryParseFloat(liftSlopeNode.InnerText, p.liftSlope);
+
+        var zeroLiftNode = node.SelectSingleNode("zero_lift_aoa");
+        if (zeroLiftNode != null)
+            p.zeroLiftAoA = TryParseFloat(zeroLiftNode.InnerText, p.zeroLiftAoA);
+
+        // ストール角 - 後方互換性のため単一値も対応
+        var stallHighNode = node.SelectSingleNode("stall_angle_high");
+        if (stallHighNode != null)
+        {
+            float val = TryParseFloat(stallHighNode.InnerText, p.stallAngleHighAir);
+            p.stallAngleHighAir = val;
+            p.stallAngleHighWater = val * 0.8f; // 水中は低め
+        }
+
+        var stallLowNode = node.SelectSingleNode("stall_angle_low");
+        if (stallLowNode != null)
+        {
+            float val = TryParseFloat(stallLowNode.InnerText, p.stallAngleLowAir);
+            p.stallAngleLowAir = val;
+            p.stallAngleLowWater = val * 0.8f;
+        }
+
+        // 空気用ストール角（明示的指定）
+        var stallHighAirNode = node.SelectSingleNode("stall_angle_high_air");
+        if (stallHighAirNode != null)
+            p.stallAngleHighAir = TryParseFloat(stallHighAirNode.InnerText, p.stallAngleHighAir);
+
+        var stallLowAirNode = node.SelectSingleNode("stall_angle_low_air");
+        if (stallLowAirNode != null)
+            p.stallAngleLowAir = TryParseFloat(stallLowAirNode.InnerText, p.stallAngleLowAir);
+
+        // 水中用ストール角（明示的指定）
+        var stallHighWaterNode = node.SelectSingleNode("stall_angle_high_water");
+        if (stallHighWaterNode != null)
+            p.stallAngleHighWater = TryParseFloat(stallHighWaterNode.InnerText, p.stallAngleHighWater);
+
+        var stallLowWaterNode = node.SelectSingleNode("stall_angle_low_water");
+        if (stallLowWaterNode != null)
+            p.stallAngleLowWater = TryParseFloat(stallLowWaterNode.InnerText, p.stallAngleLowWater);
+
+        // Drag characteristics - 後方互換性のため単一値も対応
+        var skinFrictionNode = node.SelectSingleNode("skin_friction");
+        if (skinFrictionNode != null)
+        {
+            float val = TryParseFloat(skinFrictionNode.InnerText, p.skinFrictionAir);
+            p.skinFrictionAir = val;
+            p.skinFrictionWater = val * 0.5f; // 水中は低め
+        }
+
+        // 空気用摩擦係数（明示的指定）
+        var skinFrictionAirNode = node.SelectSingleNode("skin_friction_air");
+        if (skinFrictionAirNode != null)
+            p.skinFrictionAir = TryParseFloat(skinFrictionAirNode.InnerText, p.skinFrictionAir);
+
+        // 水中用摩擦係数（明示的指定）
+        var skinFrictionWaterNode = node.SelectSingleNode("skin_friction_water");
+        if (skinFrictionWaterNode != null)
+            p.skinFrictionWater = TryParseFloat(skinFrictionWaterNode.InnerText, p.skinFrictionWater);
+
+        // Control surface
+        var flapFractionNode = node.SelectSingleNode("flap_fraction");
+        if (flapFractionNode != null)
+            p.flapFraction = TryParseFloat(flapFractionNode.InnerText, p.flapFraction);
+
+        var maxFlapNode = node.SelectSingleNode("max_flap_angle");
+        if (maxFlapNode != null)
+            p.maxFlapAngle = TryParseFloat(maxFlapNode.InnerText, p.maxFlapAngle);
+
+        // Fluid properties
+        var fluidMediumNode = node.SelectSingleNode("fluid_medium");
+        if (fluidMediumNode != null)
+        {
+            string medium = fluidMediumNode.InnerText.ToLower();
+            p.fluidMedium = medium switch
+            {
+                "water" => FluidMedium.Water,
+                "auto" => FluidMedium.Auto,
+                _ => FluidMedium.Air
+            };
+        }
+
+        // 後方互換性: 単一の fluid_density
+        var fluidDensityNode = node.SelectSingleNode("fluid_density");
+        if (fluidDensityNode != null)
+        {
+            float density = TryParseFloat(fluidDensityNode.InnerText, p.airDensity);
+            // 密度値から空気か水かを推測
+            if (density > 500f)
+                p.waterDensity = density;
+            else
+                p.airDensity = density;
+        }
+
+        // 空気密度（明示的指定）
+        var airDensityNode = node.SelectSingleNode("air_density");
+        if (airDensityNode != null)
+            p.airDensity = TryParseFloat(airDensityNode.InnerText, p.airDensity);
+
+        // 水中密度（明示的指定）
+        var waterDensityNode = node.SelectSingleNode("water_density");
+        if (waterDensityNode != null)
+            p.waterDensity = TryParseFloat(waterDensityNode.InnerText, p.waterDensity);
+
+        // 動粘度
+        var airViscosityNode = node.SelectSingleNode("air_kinematic_viscosity");
+        if (airViscosityNode != null)
+            p.airKinematicViscosity = TryParseFloat(airViscosityNode.InnerText, p.airKinematicViscosity);
+
+        var waterViscosityNode = node.SelectSingleNode("water_kinematic_viscosity");
+        if (waterViscosityNode != null)
+            p.waterKinematicViscosity = TryParseFloat(waterViscosityNode.InnerText, p.waterKinematicViscosity);
+
+        // キャビテーション設定
+        var cavitationNode = node.SelectSingleNode("enable_cavitation");
+        if (cavitationNode != null)
+            p.enableCavitation = cavitationNode.InnerText.ToLower() == "true";
+
+        var cavitationThresholdNode = node.SelectSingleNode("cavitation_threshold");
+        if (cavitationThresholdNode != null)
+            p.cavitationThreshold = TryParseFloat(cavitationThresholdNode.InnerText, p.cavitationThreshold);
+
+        return p;
+    }
+
+    /// <summary>
+    /// AeroSurfaceコンポーネントにパラメータを設定する（リフレクションを使用）
+    /// </summary>
+    private void SetAeroSurfaceParameters(AeroSurface surface, AeroSurfaceParameters parameters)
+    {
+        var bindingFlags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var surfaceType = typeof(AeroSurface);
+
+        // inlineParameters フィールドを取得して設定
+        var inlineParamsField = surfaceType.GetField("inlineParameters", bindingFlags);
+        if (inlineParamsField != null)
+        {
+            inlineParamsField.SetValue(surface, parameters);
+        }
+        else
+        {
+            Debug.LogWarning("[Aerodynamics] Could not set inline parameters via reflection");
+        }
+    }
+
+    /// <summary>
+    /// AeroSurfaceの制御面設定を適用する（リフレクションを使用）
+    /// </summary>
+    private void SetAeroSurfaceControlSettings(AeroSurface surface, XmlNode controlNode)
+    {
+        var bindingFlags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var surfaceType = typeof(AeroSurface);
+
+        // isControlSurface を true に設定
+        var isControlField = surfaceType.GetField("isControlSurface", bindingFlags);
+        if (isControlField != null)
+        {
+            isControlField.SetValue(surface, true);
+        }
+
+        // inputType を設定
+        var inputTypeField = surfaceType.GetField("inputType", bindingFlags);
+        if (inputTypeField != null)
+        {
+            string typeStr = controlNode.Attributes?["type"]?.Value?.ToLower() ?? "none";
+            ControlInputType inputType = typeStr switch
+            {
+                "pitch" => ControlInputType.Pitch,
+                "roll" => ControlInputType.Roll,
+                "yaw" => ControlInputType.Yaw,
+                "flap" => ControlInputType.Flap,
+                _ => ControlInputType.None
+            };
+            inputTypeField.SetValue(surface, inputType);
+        }
+
+        // inputMultiplier を設定
+        var multiplierField = surfaceType.GetField("inputMultiplier", bindingFlags);
+        if (multiplierField != null)
+        {
+            float multiplier = TryParseFloat(controlNode.Attributes?["multiplier"]?.Value, 1f);
+            multiplierField.SetValue(surface, multiplier);
+        }
     }
 
     private static float TryParseFloat(string value)

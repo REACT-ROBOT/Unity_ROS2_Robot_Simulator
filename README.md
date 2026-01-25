@@ -57,3 +57,4 @@ I would like to thank the following open-source projects that helped this reposi
 
 * **[dbrizov/NaughtyWaterBuoyancy](https://github.com/dbrizov/NaughtyWaterBuoyancy)**: used for **buoyancy calculations** in this project.
 * **[MARUSimulator/marus-core](https://github.com/MARUSimulator/marus-core)**: referenced for approaches on applying **hydrodynamic parameters beyond buoyancy**.
+* **[gasgiant/Aircraft-Physics](https://github.com/gasgiant/Aircraft-Physics)**: referenced for approaches on applying **aerodynamic parameters**.

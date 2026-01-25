@@ -57,3 +57,4 @@ Unity をベースとした ROS2（Robot Operating System 2）と連携するロ
 
 * **[dbrizov/NaughtyWaterBuoyancy](https://github.com/dbrizov/NaughtyWaterBuoyancy)**：オブジェクトの**浮力計算**に利用しています。 
 * **[MARUSimulator/marus-core](https://github.com/MARUSimulator/marus-core)**：浮力以外の**水力学パラメータを適用する設計・実装方法**の参考にさせていただきました。
+* **[gasgiant/Aircraft-Physics](https://github.com/gasgiant/Aircraft-Physics)**：**空力学パラメータを適用する設計・実装方法**の参考にさせていただきました。
