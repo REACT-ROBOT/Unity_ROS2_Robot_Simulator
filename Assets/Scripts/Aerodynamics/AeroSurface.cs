@@ -166,10 +166,10 @@ namespace Aerodynamics
                 // Spanwise fraction (0 to 1 along the wing)
                 elem.spanwiseFraction = (i + 0.5f) / n;
 
-                // Local position along span (Y-axis in local space typically)
+                // Local position along span (Y-axis in local space typically)(ROS: Y-axis -> Unity: -X-axis)
                 // Centered at wing midpoint: goes from -span/2 to +span/2
                 float spanPos = (elem.spanwiseFraction - 0.5f) * config.span;
-                elem.localPosition = new Vector3(0f, 0f, spanPos);
+                elem.localPosition = new Vector3(-spanPos, 0f, 0f);
 
                 // Local chord with taper
                 // taper_ratio = tip_chord / root_chord
@@ -558,7 +558,8 @@ namespace Aerodynamics
             float area = config.Area;
 
             // Calculate force directions in world space
-            Vector3 dragDirection = worldFluidVelocity.normalized;
+            Vector3 localDragDirection = localVelocity.normalized;
+            Vector3 dragDirection = transform.TransformDirection(localDragDirection);
             Vector3 liftDirection = Vector3.Cross(dragDirection, transform.forward).normalized;
 
             // Apply forces
