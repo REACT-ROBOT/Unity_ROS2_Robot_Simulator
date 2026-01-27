@@ -200,8 +200,13 @@ namespace Aerodynamics
         /// <summary>
         /// Calculate forces using Blade Element Theory
         /// </summary>
+        /// <param name="worldFluidVelocity">Fluid velocity at surface center in world space</param>
+        /// <param name="density">Fluid density in kg/m³</param>
+        /// <param name="relativePosition">Position relative to center of mass for torque calculation</param>
+        /// <param name="medium">Current fluid medium</param>
+        /// <param name="angularVelocity">Body angular velocity in world space (for per-element velocity)</param>
         private BiVector3 CalculateForcesWithBET(Vector3 worldFluidVelocity, float density,
-            Vector3 relativePosition, CurrentMedium medium)
+            Vector3 relativePosition, CurrentMedium medium, Vector3 angularVelocity = default)
         {
             var config = Parameters;
             float dt = Time.fixedDeltaTime;
@@ -244,12 +249,31 @@ namespace Aerodynamics
                 // World position of this element
                 Vector3 worldPos = transform.TransformPoint(elem.localPosition);
 
-                // Local velocity at element (already includes body motion from caller)
+                // Calculate fluid velocity at this element's position
+                // If body is rotating, elements at different positions have different velocities
+                // v_element = v_center - ω × (element_pos - surface_center)
+                Vector3 offset = worldPos - transform.position;
+                Vector3 elementFluidVelocity = worldFluidVelocity - Vector3.Cross(angularVelocity, offset);
+
                 // Transform world velocity to local space
-                Vector3 localVelocity = transform.InverseTransformDirection(worldFluidVelocity);
+                Vector3 localVelocity = transform.InverseTransformDirection(elementFluidVelocity);
+
+                // Debug: Log velocity components before projection
+                if (i == 0)
+                {
+                    Debug.Log($"[BET] {name} elem[0]: worldFluidVel={worldFluidVelocity}, elementFluidVel={elementFluidVelocity}");
+                    Debug.Log($"[BET] {name} elem[0]: localVelocity(before)={localVelocity}");
+                    Debug.Log($"[BET] {name} transform: forward={transform.forward}, up={transform.up}, right={transform.right}");
+                }
 
                 // Project to 2D (ignore sideslip)
-                localVelocity = new Vector3(localVelocity.x, localVelocity.y, 0);
+                // Z = forward, Y = up in Unity local space, so zero X (span direction)
+                localVelocity = new Vector3(0, localVelocity.y, localVelocity.z);
+
+                if (i == 0)
+                {
+                    Debug.Log($"[BET] {name} elem[0]: localVelocity(after)={localVelocity}");
+                }
 
                 elem.currentVelocity = localVelocity;
             }
@@ -258,10 +282,17 @@ namespace Aerodynamics
             for (int i = 0; i < bladeElements.Length; i++)
             {
                 var elem = bladeElements[i];
-                if (elem.currentVelocity.sqrMagnitude < 0.0001f) continue;
+                if (elem.currentVelocity.sqrMagnitude < 0.0001f)
+                {
+                    if (i == 0)
+                    {
+                        Debug.Log($"[BET] {name} elem[0]: velocity too small, skipping");
+                    }
+                    continue;
+                }
 
                 // Calculate angle of attack for this element
-                float localAoA = Mathf.Atan2(elem.currentVelocity.y, -elem.currentVelocity.x);
+                float localAoA = Mathf.Atan2(elem.currentVelocity.y, -elem.currentVelocity.z);
                 localAoA += elem.localTwist;  // Add geometric twist
                 elem.currentAoA = localAoA;
 
@@ -271,6 +302,11 @@ namespace Aerodynamics
                 elem.currentCl = coeffs.x;
                 elem.currentCd = coeffs.y;
                 elem.currentCm = coeffs.z;
+
+                if (i == 0)
+                {
+                    Debug.Log($"[BET] {name} elem[0]: AoA={localAoA * Mathf.Rad2Deg:F2}°, twist={elem.localTwist * Mathf.Rad2Deg:F2}°, Cl={coeffs.x:F4}, Cd={coeffs.y:F4}");
+                }
             }
 
             // Compute induced velocities
@@ -291,7 +327,8 @@ namespace Aerodynamics
                 Vector3 effectiveVelocity = elem.currentVelocity + elem.inducedVelocity;
 
                 // Recalculate AoA with induced velocity
-                float effectiveAoA = Mathf.Atan2(effectiveVelocity.y, -effectiveVelocity.x);
+                // Z = forward in Unity local space
+                float effectiveAoA = Mathf.Atan2(effectiveVelocity.y, -effectiveVelocity.z);
                 effectiveAoA += elem.localTwist;
 
                 // Apply tip-loss factor to lift slope
@@ -317,12 +354,50 @@ namespace Aerodynamics
                 float q = 0.5f * density * effectiveVelocity.sqrMagnitude;
 
                 // Force directions in world space
-                Vector3 dragDirection = worldFluidVelocity.normalized;
-                Vector3 liftDirection = Vector3.Cross(dragDirection, transform.forward).normalized;
+                // Use element's actual fluid velocity direction (accounts for angular velocity)
+                Vector3 worldPos = transform.TransformPoint(elem.localPosition);
+                Vector3 offset = worldPos - transform.position;
+                Vector3 elementFluidVelocity = worldFluidVelocity - Vector3.Cross(angularVelocity, offset);
+                Vector3 dragDirection;
+                if (elementFluidVelocity.sqrMagnitude < 0.0001f)
+                {
+                    // Fallback to center velocity if element velocity is too small
+                    dragDirection = worldFluidVelocity.sqrMagnitude > 0.0001f
+                        ? worldFluidVelocity.normalized
+                        : Vector3.forward;
+                }
+                else
+                {
+                    dragDirection = elementFluidVelocity.normalized;
+                }
+                // Lift is perpendicular to both drag direction and span axis
+                // Span axis is local X (transform.right in world space)
+                // Cross(right, drag) gives lift direction by right-hand rule
+                Vector3 liftCross = Vector3.Cross(transform.right, dragDirection);
+                Vector3 liftDirection;
+                if (liftCross.sqrMagnitude < 0.0001f)
+                {
+                    // Fallback if drag and span axis are nearly parallel
+                    liftDirection = transform.up;
+                }
+                else
+                {
+                    liftDirection = liftCross.normalized;
+                }
 
                 // Forces for this element
                 Vector3 lift = liftDirection * coeffs.x * q * elem.elementArea;
                 Vector3 drag = dragDirection * coeffs.y * q * elem.elementArea;
+
+                if (i == 0)
+                {
+                    Debug.Log($"[BET] {name} elem[0]: spanAxis(right)={transform.right}, effectiveAoA={effectiveAoA * Mathf.Rad2Deg:F2}°");
+                    Debug.Log($"[BET] {name} elem[0]: q={q:F2}, area={elem.elementArea:F6}, Cl={coeffs.x:F4}");
+                    Debug.Log($"[BET] {name} elem[0]: liftDir={liftDirection}, dragDir={dragDirection}");
+                    float liftMag = coeffs.x * q * elem.elementArea;
+                    float dragMag = coeffs.y * q * elem.elementArea;
+                    Debug.Log($"[BET] {name} elem[0]: liftMag={liftMag:E3}N, dragMag={dragMag:E3}N, lift={lift}, drag={drag}");
+                }
 
                 elem.lastLiftForce = lift;
                 elem.lastDragForce = drag;
@@ -334,8 +409,7 @@ namespace Aerodynamics
                     unsteadyForces = unsteadyEffects.ComputeUnsteadyForces(elem, density, dt);
                 }
 
-                // World position for torque calculation
-                Vector3 worldPos = transform.TransformPoint(elem.localPosition);
+                // Torque calculation uses worldPos already computed above
                 Vector3 elementRelativePos = worldPos - (transform.position - relativePosition);
 
                 Vector3 elementForce = lift + drag + unsteadyForces.force;
@@ -356,6 +430,7 @@ namespace Aerodynamics
                 elem.UpdateHistory();
             }
 
+            Debug.Log($"[BET] {name} TOTAL: force={totalForces.force} (mag={totalForces.force.magnitude:E3}N), torque={totalForces.torque}");
             return totalForces;
         }
 
@@ -419,8 +494,10 @@ namespace Aerodynamics
         /// </summary>
         /// <param name="worldFluidVelocity">Fluid velocity relative to the surface in world space</param>
         /// <param name="relativePosition">Position relative to center of mass for torque calculation</param>
+        /// <param name="angularVelocity">Body angular velocity in world space (for BET per-element velocity)</param>
         /// <returns>Combined force and torque</returns>
-        public BiVector3 CalculateForcesAutoMedium(Vector3 worldFluidVelocity, Vector3 relativePosition)
+        public BiVector3 CalculateForcesAutoMedium(Vector3 worldFluidVelocity, Vector3 relativePosition,
+            Vector3 angularVelocity = default)
         {
             DetectMedium();
 
@@ -437,7 +514,7 @@ namespace Aerodynamics
                 density = config.GetDensity(currentMedium);
             }
 
-            return CalculateForcesWithMedium(worldFluidVelocity, density, relativePosition, currentMedium);
+            return CalculateForcesWithMedium(worldFluidVelocity, density, relativePosition, currentMedium, angularVelocity);
         }
 
         /// <summary>
@@ -446,13 +523,15 @@ namespace Aerodynamics
         /// <param name="worldFluidVelocity">Fluid velocity relative to the surface in world space</param>
         /// <param name="fluidDensity">Fluid density (kg/m³). If 0, uses auto-detection</param>
         /// <param name="relativePosition">Position relative to center of mass for torque calculation</param>
+        /// <param name="angularVelocity">Body angular velocity in world space (for BET per-element velocity)</param>
         /// <returns>Combined force and torque</returns>
-        public BiVector3 CalculateForces(Vector3 worldFluidVelocity, float fluidDensity, Vector3 relativePosition)
+        public BiVector3 CalculateForces(Vector3 worldFluidVelocity, float fluidDensity, Vector3 relativePosition,
+            Vector3 angularVelocity = default)
         {
             // If density is not provided, use auto-detection
             if (fluidDensity <= 0)
             {
-                return CalculateForcesAutoMedium(worldFluidVelocity, relativePosition);
+                return CalculateForcesAutoMedium(worldFluidVelocity, relativePosition, angularVelocity);
             }
 
             // Determine medium based on provided density
@@ -467,14 +546,19 @@ namespace Aerodynamics
                 medium = CurrentMedium.Air;
             }
 
-            return CalculateForcesWithMedium(worldFluidVelocity, fluidDensity, relativePosition, medium);
+            return CalculateForcesWithMedium(worldFluidVelocity, fluidDensity, relativePosition, medium, angularVelocity);
         }
 
         /// <summary>
         /// Calculates aerodynamic forces with explicit medium specification
         /// </summary>
+        /// <param name="worldFluidVelocity">Fluid velocity at surface center in world space</param>
+        /// <param name="fluidDensity">Fluid density in kg/m³</param>
+        /// <param name="relativePosition">Position relative to center of mass for torque calculation</param>
+        /// <param name="medium">Current fluid medium</param>
+        /// <param name="angularVelocity">Body angular velocity in world space (for BET per-element velocity)</param>
         private BiVector3 CalculateForcesWithMedium(Vector3 worldFluidVelocity, float fluidDensity,
-            Vector3 relativePosition, CurrentMedium medium)
+            Vector3 relativePosition, CurrentMedium medium, Vector3 angularVelocity = default)
         {
             var config = Parameters;
 
@@ -484,7 +568,7 @@ namespace Aerodynamics
             // Use Blade Element Theory if numElements > 1
             if (config.numElements > 1)
             {
-                BiVector3 betForces = CalculateForcesWithBET(worldFluidVelocity, density, relativePosition, medium);
+                BiVector3 betForces = CalculateForcesWithBET(worldFluidVelocity, density, relativePosition, medium, angularVelocity);
                 lastCalculatedForces = betForces;
                 return betForces;
             }
@@ -494,10 +578,12 @@ namespace Aerodynamics
 
             // Transform velocity to local space
             Vector3 localVelocity = transform.InverseTransformDirection(worldFluidVelocity);
+            Debug.Log("worldFluidVelocity(before): " + worldFluidVelocity);
+            Debug.Log("localVelocity(before): " + localVelocity);
 
             // Project to 2D (ignore sideslip for simplified model)
-            // X = forward, Y = up in local space
-            localVelocity = new Vector3(localVelocity.x, localVelocity.y, 0);
+            // Z = forward, Y = up in local space
+            localVelocity = new Vector3(0, localVelocity.y, localVelocity.z);
 
             if (localVelocity.sqrMagnitude < 0.0001f)
             {
@@ -510,7 +596,7 @@ namespace Aerodynamics
             lastReynoldsNumber = config.CalculateReynoldsNumber(velocity, medium);
 
             // Calculate angle of attack
-            float angleOfAttack = Mathf.Atan2(localVelocity.y, -localVelocity.x);
+            float angleOfAttack = Mathf.Atan2(localVelocity.y, -localVelocity.z);
 
             // Apply aspect ratio correction to lift slope (finite wing effect)
             float ar = config.EffectiveAspectRatio;
@@ -557,10 +643,19 @@ namespace Aerodynamics
             float dynamicPressure = 0.5f * density * localVelocity.sqrMagnitude;
             float area = config.Area;
 
-            // Calculate force directions in world space
+            // Calculate force directions in world space using local flow direction and span axis
             Vector3 localDragDirection = localVelocity.normalized;
             Vector3 dragDirection = transform.TransformDirection(localDragDirection);
-            Vector3 liftDirection = Vector3.Cross(dragDirection, transform.forward).normalized;
+
+            Vector3 localLiftDirection = Vector3.Cross(localDragDirection, Vector3.right).normalized;
+            if (localLiftDirection.sqrMagnitude < 0.01f)
+            {
+                localLiftDirection = Vector3.up;
+            }
+            Debug.Log("localLiftDirection: " + localLiftDirection);
+
+            Vector3 liftDirection = transform.TransformDirection(localLiftDirection);
+            Debug.Log("liftDirection: " + liftDirection);
 
             // Apply forces
             Vector3 lift = liftDirection * coefficients.x * dynamicPressure * area;

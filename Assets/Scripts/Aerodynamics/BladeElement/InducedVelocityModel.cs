@@ -94,9 +94,10 @@ namespace Aerodynamics.BladeElement
                 float r_R = Mathf.Abs(2f * elem.spanwiseFraction - 1f);
 
                 // Get inflow angle from current velocity
-                float Vx = -elem.currentVelocity.x;  // Forward velocity (negative because flow comes from front)
+                // Unity local space: Z = forward, Y = up
+                float Vz = -elem.currentVelocity.z;  // Forward velocity (negative because flow comes from front)
                 float Vy = elem.currentVelocity.y;   // Vertical velocity component
-                float phi = Mathf.Atan2(Vy, Mathf.Max(Vx, 0.1f));
+                float phi = Mathf.Atan2(Vy, Mathf.Max(Vz, 0.1f));
 
                 // Prandtl tip-loss factor: F = (2/π) * acos(exp(-f))
                 // where f = (B/2) * (1 - r/R) / (r/R * |sin(φ)|)
@@ -187,8 +188,8 @@ namespace Aerodynamics.BladeElement
                 // Local induced velocity (higher at tip for uniform loading)
                 float v_i_local = v_i_hover * F;
 
-                // Induced velocity is perpendicular to disk plane (assume Z-up for rotor)
-                elem.inducedVelocity = new Vector3(0f, 0f, -v_i_local);
+                // Induced velocity is perpendicular to disk plane (Unity: Y-up)
+                elem.inducedVelocity = new Vector3(0f, -v_i_local, 0f);
             }
         }
     }
