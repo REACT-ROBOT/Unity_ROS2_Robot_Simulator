@@ -1916,6 +1916,18 @@ public class SimulationControl : MonoBehaviour
             float multiplier = TryParseFloat(controlNode.Attributes?["multiplier"]?.Value, 1f);
             multiplierField.SetValue(surface, multiplier);
         }
+
+        // invertSpanDirection を設定
+        var invertSpanField = surfaceType.GetField("invertSpanDirection", bindingFlags);
+        if (invertSpanField != null)
+        {
+            string invertStr = controlNode.Attributes?["invert_span_direction"]?.Value?.ToLower();
+            if (!string.IsNullOrEmpty(invertStr))
+            {
+                bool invert = invertStr == "true" || invertStr == "1" || invertStr == "yes";
+                invertSpanField.SetValue(surface, invert);
+            }
+        }
     }
 
     private static float TryParseFloat(string value)

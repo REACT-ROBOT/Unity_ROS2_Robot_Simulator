@@ -101,6 +101,21 @@ namespace Aerodynamics.BladeElement
         public float previousAoA;
 
         /// <summary>
+        /// Lift coefficient from previous timestep (for rate limiting)
+        /// </summary>
+        public float previousCl;
+
+        /// <summary>
+        /// Drag coefficient from previous timestep (for rate limiting)
+        /// </summary>
+        public float previousCd;
+
+        /// <summary>
+        /// Whether previous coefficients have been initialized
+        /// </summary>
+        public bool prevCoeffsInitialized;
+
+        /// <summary>
         /// Circulation state for Wagner function lag
         /// </summary>
         public float circulationLag;
@@ -155,6 +170,9 @@ namespace Aerodynamics.BladeElement
 
             previousVelocity = Vector3.zero;
             previousAoA = 0f;
+            previousCl = 0f;
+            previousCd = 0f;
+            prevCoeffsInitialized = false;
             circulationLag = 0f;
             circulationQuasiSteady = 0f;
             semiChordsTraveled = 0f;
@@ -184,6 +202,9 @@ namespace Aerodynamics.BladeElement
         {
             previousVelocity = currentVelocity;
             previousAoA = currentAoA;
+            previousCl = currentCl;
+            previousCd = currentCd;
+            prevCoeffsInitialized = true;
         }
 
         /// <summary>

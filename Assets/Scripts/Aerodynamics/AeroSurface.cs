@@ -41,6 +41,10 @@ namespace Aerodynamics
         [SerializeField]
         private AeroSurfaceParameters inlineParameters = new AeroSurfaceParameters();
 
+        [SerializeField]
+        [Tooltip("Invert span direction for mirrored wings if roll damping has wrong sign")]
+        private bool invertSpanDirection = false;
+
         [Header("Control Surface Settings")]
         [SerializeField]
         private bool isControlSurface = false;
@@ -59,6 +63,38 @@ namespace Aerodynamics
         [SerializeField]
         private float debugForceScale = 0.01f;
 
+        [Header("Moment Limiting")]
+        [SerializeField]
+        [Tooltip("Clamp AoA used for pitch moment coefficient (deg). Set <= 0 to disable.")]
+        private float maxMomentAoADeg = 90f;
+
+        [SerializeField]
+        [Tooltip("Fade pitch moment beyond stall. 1 keeps moment at stall, 0 fades to zero by 90 deg.")]
+        private float postStallMomentScale = 0.2f;
+
+        [Header("Post-Stall Force Fade")]
+        [SerializeField]
+        [Tooltip("Fade lift/drag beyond stall. 1 keeps force at stall, 0 fades to zero by 90 deg.")]
+        private float postStallForceScale = 0.2f;
+
+        [Header("Coefficient Limiting")]
+        [SerializeField]
+        [Tooltip("Maximum absolute lift coefficient (typical airfoil: 1.5-2.0)")]
+        private float maxClMagnitude = 2.5f;
+
+        [SerializeField]
+        [Tooltip("Maximum absolute drag coefficient (flat plate at 90deg: ~2.0)")]
+        private float maxCdMagnitude = 2.5f;
+
+        [Header("Coefficient Rate Limiting (Anti-Oscillation)")]
+        [SerializeField]
+        [Tooltip("Maximum Cl change rate per second. 0 = no limit. Helps prevent pitch oscillation.")]
+        private float maxClRatePerSecond = 5.0f;
+
+        [SerializeField]
+        [Tooltip("Maximum Cd change rate per second. 0 = no limit.")]
+        private float maxCdRatePerSecond = 5.0f;
+
         // For debug visualization
         //[SerializeField]
         //private bool showMediumState = false;
@@ -71,6 +107,18 @@ namespace Aerodynamics
         // Cached calculations
         private BiVector3 lastCalculatedForces;
         private float lastReynoldsNumber;
+        private Vector3 lastLocalVelocity;
+        private float lastAoADeg;
+        private Vector3 lastPitchTorque;
+        private Vector3 lastDragDirection;
+        private Vector3 lastLiftDirection;
+        private Vector3 lastWorldFluidVelocity;
+        private Vector3 lastElementFluidVelocity;
+
+        // Rate limiting state (for QS mode - single element)
+        private float prevClQS = 0f;
+        private float prevCdQS = 0f;
+        private bool prevCoeffsInitializedQS = false;
 
         // Blade Element Theory components
         private BladeElementState[] bladeElements;
@@ -114,6 +162,37 @@ namespace Aerodynamics
         /// Gets the last calculated Reynolds number
         /// </summary>
         public float LastReynoldsNumber => lastReynoldsNumber;
+
+        /// <summary>
+        /// Gets the last local velocity used for AoA (projected to Y/Z)
+        /// </summary>
+        public Vector3 LastLocalVelocity => lastLocalVelocity;
+
+        /// <summary>
+        /// Gets the last angle of attack in degrees
+        /// </summary>
+        public float LastAoADeg => lastAoADeg;
+
+        /// <summary>
+        /// Gets the last drag direction in world space
+        /// </summary>
+        public Vector3 LastDragDirection => lastDragDirection;
+        public Vector3 LastLiftDirection => lastLiftDirection;
+
+        /// <summary>
+        /// Gets the last world fluid velocity used for force calculation
+        /// </summary>
+        public Vector3 LastWorldFluidVelocity => lastWorldFluidVelocity;
+
+        /// <summary>
+        /// Gets the last element fluid velocity (element 0) in world space
+        /// </summary>
+        public Vector3 LastElementFluidVelocity => lastElementFluidVelocity;
+
+        /// <summary>
+        /// Gets the last pitch torque (moment coefficient contribution) in world space
+        /// </summary>
+        public Vector3 LastPitchTorque => lastPitchTorque;
 
         /// <summary>
         /// Sets the flap/control surface deflection angle
@@ -169,7 +248,8 @@ namespace Aerodynamics
                 // Local position along span (Y-axis in local space typically)(ROS: Y-axis -> Unity: -X-axis)
                 // Centered at wing midpoint: goes from -span/2 to +span/2
                 float spanPos = (elem.spanwiseFraction - 0.5f) * config.span;
-                elem.localPosition = new Vector3(-spanPos, 0f, 0f);
+                float spanSign = invertSpanDirection ? -1f : 1f;
+                elem.localPosition = new Vector3(-spanPos * spanSign, 0f, 0f);
 
                 // Local chord with taper
                 // taper_ratio = tip_chord / root_chord
@@ -253,24 +333,20 @@ namespace Aerodynamics
                 // If body is rotating, elements at different positions have different velocities
                 // v_element = v_center - ω × (element_pos - surface_center)
                 Vector3 offset = worldPos - transform.position;
-                Vector3 elementFluidVelocity = worldFluidVelocity - Vector3.Cross(angularVelocity, offset);
+                Vector3 elementFluidVelocity = worldFluidVelocity;// + Vector3.Cross(angularVelocity, offset);
 
                 // Transform world velocity to local space
                 Vector3 localVelocity = transform.InverseTransformDirection(elementFluidVelocity);
 
                 // Debug: Log velocity components before projection
-                if (i == 0)
+                if (i == 0 && showDebugForces)
                 {
                     Debug.Log($"[BET] {name} elem[0]: worldFluidVel={worldFluidVelocity}, elementFluidVel={elementFluidVelocity}");
                     Debug.Log($"[BET] {name} elem[0]: localVelocity(before)={localVelocity}");
                     Debug.Log($"[BET] {name} transform: forward={transform.forward}, up={transform.up}, right={transform.right}");
                 }
 
-                // Project to 2D (ignore sideslip)
-                // Z = forward, Y = up in Unity local space, so zero X (span direction)
-                localVelocity = new Vector3(0, localVelocity.y, localVelocity.z);
-
-                if (i == 0)
+                if (i == 0 && showDebugForces)
                 {
                     Debug.Log($"[BET] {name} elem[0]: localVelocity(after)={localVelocity}");
                 }
@@ -295,15 +371,22 @@ namespace Aerodynamics
                 float localAoA = Mathf.Atan2(elem.currentVelocity.y, -elem.currentVelocity.z);
                 localAoA += elem.localTwist;  // Add geometric twist
                 elem.currentAoA = localAoA;
+                if (i == 0)
+                {
+                    lastLocalVelocity = elem.currentVelocity;
+                    lastAoADeg = localAoA * Mathf.Rad2Deg;
+                }
 
                 // Estimate Cl for induced velocity calculation
+                // Use skipInducedDrag=true because induced effects are handled by the induced velocity model
                 Vector3 coeffs = CalculateCoefficients(localAoA, correctedLiftSlope, zeroLiftAoA,
-                    stallAngleHigh, stallAngleLow, medium);
-                elem.currentCl = coeffs.x;
-                elem.currentCd = coeffs.y;
+                    stallAngleHigh, stallAngleLow, medium, skipInducedDrag: true);
+                float forceScale = GetPostStallForceScale(localAoA, stallAngleHigh, stallAngleLow);
+                elem.currentCl = coeffs.x * forceScale;
+                elem.currentCd = coeffs.y * forceScale;
                 elem.currentCm = coeffs.z;
 
-                if (i == 0)
+                if (i == 0 && showDebugForces)
                 {
                     Debug.Log($"[BET] {name} elem[0]: AoA={localAoA * Mathf.Rad2Deg:F2}°, twist={elem.localTwist * Mathf.Rad2Deg:F2}°, Cl={coeffs.x:F4}, Cd={coeffs.y:F4}");
                 }
@@ -313,6 +396,7 @@ namespace Aerodynamics
             inducedVelocityModel.ComputeInducedVelocities(bladeElements, config, dt);
 
             // Step 3: Compute forces at each element with induced velocity correction
+            Vector3 totalPitchTorque = Vector3.zero;
             for (int i = 0; i < bladeElements.Length; i++)
             {
                 var elem = bladeElements[i];
@@ -335,8 +419,9 @@ namespace Aerodynamics
                 float localLiftSlope = correctedLiftSlope * elem.tipLossFactor;
 
                 // Calculate coefficients
+                // Use skipInducedDrag=true because induced effects are handled by the induced velocity model
                 Vector3 coeffs = CalculateCoefficients(effectiveAoA, localLiftSlope, zeroLiftAoA,
-                    stallAngleHigh, stallAngleLow, medium);
+                    stallAngleHigh, stallAngleLow, medium, skipInducedDrag: true);
 
                 // Apply Wagner factor for unsteady effects
                 float wagnerFactor = 1f;
@@ -346,9 +431,31 @@ namespace Aerodynamics
                     coeffs.x *= wagnerFactor;  // Reduce lift during transients
                 }
 
-                elem.currentCl = coeffs.x;
-                elem.currentCd = coeffs.y;
+                float forceScale = GetPostStallForceScale(effectiveAoA, stallAngleHigh, stallAngleLow);
+                elem.currentCl = coeffs.x * forceScale;
+                elem.currentCd = coeffs.y * forceScale;
                 elem.currentCm = coeffs.z;
+
+                // Clamp coefficients to physically reasonable values
+                // This prevents numerical instability from extreme AoA or rapid changes
+                elem.currentCl = Mathf.Clamp(elem.currentCl, -maxClMagnitude, maxClMagnitude);
+                elem.currentCd = Mathf.Clamp(elem.currentCd, 0f, maxCdMagnitude);
+
+                // Apply coefficient rate limiting to prevent oscillation
+                if (elem.prevCoeffsInitialized && maxClRatePerSecond > 0f)
+                {
+                    float maxClChange = maxClRatePerSecond * dt;
+                    elem.currentCl = Mathf.Clamp(elem.currentCl,
+                        elem.previousCl - maxClChange,
+                        elem.previousCl + maxClChange);
+                }
+                if (elem.prevCoeffsInitialized && maxCdRatePerSecond > 0f)
+                {
+                    float maxCdChange = maxCdRatePerSecond * dt;
+                    elem.currentCd = Mathf.Clamp(elem.currentCd,
+                        elem.previousCd - maxCdChange,
+                        elem.previousCd + maxCdChange);
+                }
 
                 // Dynamic pressure for this element
                 float q = 0.5f * density * effectiveVelocity.sqrMagnitude;
@@ -357,7 +464,7 @@ namespace Aerodynamics
                 // Use element's actual fluid velocity direction (accounts for angular velocity)
                 Vector3 worldPos = transform.TransformPoint(elem.localPosition);
                 Vector3 offset = worldPos - transform.position;
-                Vector3 elementFluidVelocity = worldFluidVelocity - Vector3.Cross(angularVelocity, offset);
+                Vector3 elementFluidVelocity = worldFluidVelocity;// + Vector3.Cross(angularVelocity, offset);
                 Vector3 dragDirection;
                 if (elementFluidVelocity.sqrMagnitude < 0.0001f)
                 {
@@ -370,26 +477,63 @@ namespace Aerodynamics
                 {
                     dragDirection = elementFluidVelocity.normalized;
                 }
-                // Lift is perpendicular to both drag direction and span axis
-                // Span axis is local X (transform.right in world space)
-                // Cross(right, drag) gives lift direction by right-hand rule
-                Vector3 liftCross = Vector3.Cross(transform.right, dragDirection);
-                Vector3 liftDirection;
-                if (liftCross.sqrMagnitude < 0.0001f)
+                if (i == 0)
                 {
-                    // Fallback if drag and span axis are nearly parallel
-                    liftDirection = transform.up;
+                    lastDragDirection = dragDirection;
+                }
+                // Lift direction calculation with stability improvements:
+                // 1. Lift is perpendicular to flow direction and lies in the wing plane
+                // 2. The reference direction is the wing's up vector (transform.up)
+                // 3. Cl sign determines whether lift is toward suction or pressure side
+                //
+                // Method: Project drag direction onto wing plane, then find perpendicular
+                Vector3 wingNormal = transform.up;
+                Vector3 spanAxis = invertSpanDirection ? -transform.right : transform.right;
+
+                // Project flow direction onto wing plane (remove component along wing normal)
+                float dragDotNormal = Vector3.Dot(dragDirection, wingNormal);
+                Vector3 flowOnPlane = dragDirection - dragDotNormal * wingNormal;
+
+                Vector3 liftDirection;
+                if (flowOnPlane.sqrMagnitude < 0.0001f)
+                {
+                    // Flow is nearly perpendicular to wing (stall/flat plate regime)
+                    // Use forward direction as reference for lift
+                    liftDirection = transform.forward;
                 }
                 else
                 {
-                    liftDirection = liftCross.normalized;
+                    // Lift is perpendicular to flow-on-plane and span axis
+                    // Cross product gives direction in wing plane, perpendicular to flow
+                    Vector3 liftCross = Vector3.Cross(flowOnPlane.normalized, spanAxis);
+
+                    if (liftCross.sqrMagnitude < 0.0001f)
+                    {
+                        // Flow is parallel to span (sideslip case)
+                        liftDirection = wingNormal;
+                    }
+                    else
+                    {
+                        liftDirection = liftCross.normalized;
+                        // Ensure lift direction has positive component along wing normal
+                        // This makes positive Cl produce lift toward suction side (wing top)
+                        if (Vector3.Dot(liftDirection, wingNormal) < 0f)
+                        {
+                            liftDirection = -liftDirection;
+                        }
+                    }
+                }
+
+                if (i == 0)
+                {
+                    lastLiftDirection = liftDirection;
                 }
 
                 // Forces for this element
-                Vector3 lift = liftDirection * coeffs.x * q * elem.elementArea;
-                Vector3 drag = dragDirection * coeffs.y * q * elem.elementArea;
+                Vector3 lift = liftDirection * elem.currentCl * q * elem.elementArea;
+                Vector3 drag = dragDirection * elem.currentCd * q * elem.elementArea;
 
-                if (i == 0)
+                if (i == 0 && showDebugForces)
                 {
                     Debug.Log($"[BET] {name} elem[0]: spanAxis(right)={transform.right}, effectiveAoA={effectiveAoA * Mathf.Rad2Deg:F2}°");
                     Debug.Log($"[BET] {name} elem[0]: q={q:F2}, area={elem.elementArea:F6}, Cl={coeffs.x:F4}");
@@ -422,6 +566,7 @@ namespace Aerodynamics
                 // Pitch moment
                 Vector3 pitchTorque = -transform.forward * coeffs.z * q * elem.elementArea * elem.localChord;
                 totalForces.torque += pitchTorque;
+                totalPitchTorque += pitchTorque;
 
                 // Add unsteady torque
                 totalForces.torque += unsteadyForces.torque;
@@ -430,7 +575,11 @@ namespace Aerodynamics
                 elem.UpdateHistory();
             }
 
-            Debug.Log($"[BET] {name} TOTAL: force={totalForces.force} (mag={totalForces.force.magnitude:E3}N), torque={totalForces.torque}");
+            if (showDebugForces)
+            {
+                Debug.Log($"[BET] {name} TOTAL: force={totalForces.force} (mag={totalForces.force.magnitude:E3}N), torque={totalForces.torque}");
+            }
+            lastPitchTorque = totalPitchTorque;
             return totalForces;
         }
 
@@ -564,6 +713,9 @@ namespace Aerodynamics
 
             // Use provided density
             float density = fluidDensity;
+            // Always record the current fluid velocity for logging
+            lastWorldFluidVelocity = worldFluidVelocity;
+            lastElementFluidVelocity = worldFluidVelocity;
 
             // Use Blade Element Theory if numElements > 1
             if (config.numElements > 1)
@@ -578,8 +730,13 @@ namespace Aerodynamics
 
             // Transform velocity to local space
             Vector3 localVelocity = transform.InverseTransformDirection(worldFluidVelocity);
-            Debug.Log("worldFluidVelocity(before): " + worldFluidVelocity);
-            Debug.Log("localVelocity(before): " + localVelocity);
+            lastWorldFluidVelocity = worldFluidVelocity;
+            lastElementFluidVelocity = worldFluidVelocity;
+            if (showDebugForces)
+            {
+                Debug.Log($"[QS] {name}: worldFluidVelocity={worldFluidVelocity}");
+                Debug.Log($"[QS] {name}: localVelocity(before)={localVelocity}");
+            }
 
             // Project to 2D (ignore sideslip for simplified model)
             // Z = forward, Y = up in local space
@@ -587,6 +744,7 @@ namespace Aerodynamics
 
             if (localVelocity.sqrMagnitude < 0.0001f)
             {
+                lastPitchTorque = Vector3.zero;
                 lastCalculatedForces = forceAndTorque;
                 return forceAndTorque;
             }
@@ -597,6 +755,12 @@ namespace Aerodynamics
 
             // Calculate angle of attack
             float angleOfAttack = Mathf.Atan2(localVelocity.y, -localVelocity.z);
+            lastLocalVelocity = localVelocity;
+            lastAoADeg = angleOfAttack * Mathf.Rad2Deg;
+            if (showDebugForces)
+            {
+                Debug.Log($"[QS] {name}: localVelocity(after)={localVelocity}, AoA={angleOfAttack * Mathf.Rad2Deg:F2}°");
+            }
 
             // Apply aspect ratio correction to lift slope (finite wing effect)
             float ar = config.EffectiveAspectRatio;
@@ -638,6 +802,34 @@ namespace Aerodynamics
                 stallAngleHigh,
                 stallAngleLow,
                 medium);
+            float forceScale = GetPostStallForceScale(angleOfAttack, stallAngleHigh, stallAngleLow);
+            coefficients.x *= forceScale;
+            coefficients.y *= forceScale;
+
+            // Clamp coefficients to physically reasonable values
+            coefficients.x = Mathf.Clamp(coefficients.x, -maxClMagnitude, maxClMagnitude);
+            coefficients.y = Mathf.Clamp(coefficients.y, 0f, maxCdMagnitude);
+
+            // Apply coefficient rate limiting to prevent oscillation (QS mode)
+            float dt = Time.fixedDeltaTime;
+            if (prevCoeffsInitializedQS && maxClRatePerSecond > 0f)
+            {
+                float maxClChange = maxClRatePerSecond * dt;
+                coefficients.x = Mathf.Clamp(coefficients.x,
+                    prevClQS - maxClChange,
+                    prevClQS + maxClChange);
+            }
+            if (prevCoeffsInitializedQS && maxCdRatePerSecond > 0f)
+            {
+                float maxCdChange = maxCdRatePerSecond * dt;
+                coefficients.y = Mathf.Clamp(coefficients.y,
+                    prevCdQS - maxCdChange,
+                    prevCdQS + maxCdChange);
+            }
+            // Update previous coefficients for next frame
+            prevClQS = coefficients.x;
+            prevCdQS = coefficients.y;
+            prevCoeffsInitializedQS = true;
 
             // Dynamic pressure: q = 0.5 * ρ * V²
             float dynamicPressure = 0.5f * density * localVelocity.sqrMagnitude;
@@ -646,16 +838,51 @@ namespace Aerodynamics
             // Calculate force directions in world space using local flow direction and span axis
             Vector3 localDragDirection = localVelocity.normalized;
             Vector3 dragDirection = transform.TransformDirection(localDragDirection);
+            lastDragDirection = dragDirection;
 
-            Vector3 localLiftDirection = Vector3.Cross(localDragDirection, Vector3.right).normalized;
-            if (localLiftDirection.sqrMagnitude < 0.01f)
+            // Lift direction calculation (local space) with stability improvements:
+            // Project flow onto wing plane, then find perpendicular direction
+            Vector3 spanLocal = invertSpanDirection ? Vector3.left : Vector3.right;
+
+            // In local space, wing normal is Vector3.up
+            float dragDotUp = localDragDirection.y;
+            Vector3 flowOnPlane = localDragDirection - dragDotUp * Vector3.up;
+
+            Vector3 localLiftDirection;
+            if (flowOnPlane.sqrMagnitude < 0.01f)
             {
-                localLiftDirection = Vector3.up;
+                // Flow is nearly perpendicular to wing (stall/flat plate)
+                localLiftDirection = Vector3.forward;
             }
-            Debug.Log("localLiftDirection: " + localLiftDirection);
+            else
+            {
+                // Lift perpendicular to flow-on-plane
+                Vector3 liftCross = Vector3.Cross(flowOnPlane.normalized, spanLocal);
+                if (liftCross.sqrMagnitude < 0.01f)
+                {
+                    localLiftDirection = Vector3.up;
+                }
+                else
+                {
+                    localLiftDirection = liftCross.normalized;
+                    // Ensure lift has positive Y component (toward wing top in local space)
+                    if (localLiftDirection.y < 0f)
+                    {
+                        localLiftDirection = -localLiftDirection;
+                    }
+                }
+            }
+            if (showDebugForces)
+            {
+                Debug.Log("[QS] " + name + ": localLiftDirection=" + localLiftDirection);
+            }
 
             Vector3 liftDirection = transform.TransformDirection(localLiftDirection);
-            Debug.Log("liftDirection: " + liftDirection);
+            lastLiftDirection = liftDirection;
+            if (showDebugForces)
+            {
+                Debug.Log("[QS] " + name + ": liftDirection=" + liftDirection);
+            }
 
             // Apply forces
             Vector3 lift = liftDirection * coefficients.x * dynamicPressure * area;
@@ -666,6 +893,7 @@ namespace Aerodynamics
             // Calculate torque from moment coefficient
             Vector3 pitchTorque = -transform.forward * coefficients.z * dynamicPressure * area * config.chord;
             forceAndTorque.torque = pitchTorque;
+            lastPitchTorque = pitchTorque;
 
             // Add torque from force acting at offset from center of mass
             forceAndTorque.torque += Vector3.Cross(relativePosition, forceAndTorque.force);
@@ -677,13 +905,15 @@ namespace Aerodynamics
         /// <summary>
         /// Calculates lift, drag, and moment coefficients with stall model
         /// </summary>
+        /// <param name="skipInducedDrag">If true, skip induced drag calculation (for BET mode)</param>
         private Vector3 CalculateCoefficients(
             float angleOfAttack,
             float correctedLiftSlope,
             float zeroLiftAoA,
             float stallAngleHigh,
             float stallAngleLow,
-            CurrentMedium medium)
+            CurrentMedium medium,
+            bool skipInducedDrag = false)
         {
             Vector3 coefficients;
 
@@ -700,7 +930,7 @@ namespace Aerodynamics
             {
                 // Normal flight regime (linear lift region)
                 coefficients = CalculateCoefficientsAtLowAoA(
-                    angleOfAttack, correctedLiftSlope, zeroLiftAoA, medium);
+                    angleOfAttack, correctedLiftSlope, zeroLiftAoA, medium, skipInducedDrag);
             }
             else if (angleOfAttack > paddedStallAngleHigh || angleOfAttack < paddedStallAngleLow)
             {
@@ -713,7 +943,7 @@ namespace Aerodynamics
             {
                 // Transition region - interpolate between normal and stall
                 Vector3 lowAoACoeffs = CalculateCoefficientsAtLowAoA(
-                    angleOfAttack, correctedLiftSlope, zeroLiftAoA, medium);
+                    angleOfAttack, correctedLiftSlope, zeroLiftAoA, medium, skipInducedDrag);
 
                 Vector3 stallCoeffs = CalculateCoefficientsAtStall(
                     angleOfAttack, correctedLiftSlope, zeroLiftAoA,
@@ -740,11 +970,13 @@ namespace Aerodynamics
         /// <summary>
         /// Calculates coefficients in normal flight regime (linear lift)
         /// </summary>
+        /// <param name="skipInducedDrag">If true, skip induced drag calculation (for BET mode where induced effects are handled by induced velocity model)</param>
         private Vector3 CalculateCoefficientsAtLowAoA(
             float angleOfAttack,
             float correctedLiftSlope,
             float zeroLiftAoA,
-            CurrentMedium medium)
+            CurrentMedium medium,
+            bool skipInducedDrag = false)
         {
             var config = Parameters;
             float ar = config.EffectiveAspectRatio;
@@ -753,23 +985,47 @@ namespace Aerodynamics
             // Linear lift coefficient
             float liftCoefficient = correctedLiftSlope * (angleOfAttack - zeroLiftAoA);
 
-            // Induced angle from lift (Prandtl's formula)
-            float inducedAngle = ar > 0.01f ? liftCoefficient / (Mathf.PI * ar) : 0f;
-            float effectiveAngle = angleOfAttack - zeroLiftAoA - inducedAngle;
+            float dragCoefficient;
+            float torqueCoefficient;
 
-            // Tangential (friction) and normal force coefficients
-            float tangentialCoeff = skinFriction * Mathf.Cos(effectiveAngle);
+            if (skipInducedDrag)
+            {
+                // BET mode: induced drag is handled by induced velocity model
+                // Only calculate parasitic drag (skin friction + form drag)
+                float absAoA = Mathf.Abs(angleOfAttack - zeroLiftAoA);
 
-            float normalCoeff = (liftCoefficient +
-                Mathf.Sin(effectiveAngle) * tangentialCoeff) /
-                Mathf.Cos(effectiveAngle);
+                // Parasitic drag: Cd0 + k*Cl^2 (form drag from pressure distribution)
+                // For thin airfoils, form drag is roughly proportional to AoA^2
+                float formDragCoeff = 0.01f * absAoA * absAoA;  // Small form drag contribution
 
-            // Total drag: form drag + induced drag + friction
-            float dragCoefficient = normalCoeff * Mathf.Sin(effectiveAngle) +
-                                   tangentialCoeff * Mathf.Cos(effectiveAngle);
+                // Total parasitic drag = skin friction + form drag
+                dragCoefficient = skinFriction + formDragCoeff;
 
-            // Moment coefficient (quarter-chord approximation)
-            float torqueCoefficient = -normalCoeff * TorqueCoefficientProportion(effectiveAngle);
+                // Simple moment coefficient
+                torqueCoefficient = -liftCoefficient * 0.25f;  // Quarter-chord approximation
+            }
+            else
+            {
+                // Legacy mode: include induced drag via Prandtl's formula
+                // Induced angle from lift (Prandtl's formula)
+                float inducedAngle = ar > 0.01f ? liftCoefficient / (Mathf.PI * ar) : 0f;
+                float effectiveAngle = angleOfAttack - zeroLiftAoA - inducedAngle;
+
+                // Tangential (friction) and normal force coefficients
+                float tangentialCoeff = skinFriction * Mathf.Cos(effectiveAngle);
+
+                float normalCoeff = (liftCoefficient +
+                    Mathf.Sin(effectiveAngle) * tangentialCoeff) /
+                    Mathf.Cos(effectiveAngle);
+
+                // Total drag: form drag + induced drag + friction
+                dragCoefficient = normalCoeff * Mathf.Sin(effectiveAngle) +
+                                  tangentialCoeff * Mathf.Cos(effectiveAngle);
+
+                // Moment coefficient (quarter-chord approximation)
+                float clampedMomentAngle = ClampMomentAoA(effectiveAngle);
+                torqueCoefficient = -normalCoeff * TorqueCoefficientProportion(clampedMomentAngle);
+            }
 
             return new Vector3(liftCoefficient, dragCoefficient, torqueCoefficient);
         }
@@ -825,7 +1081,9 @@ namespace Aerodynamics
             float dragCoefficient = normalCoeff * Mathf.Sin(effectiveAngle) +
                                    tangentialCoeff * Mathf.Cos(effectiveAngle);
 
-            float torqueCoefficient = -normalCoeff * TorqueCoefficientProportion(effectiveAngle);
+            float clampedMomentAngle = ClampMomentAoA(effectiveAngle);
+            float momentScale = GetPostStallMomentScale(angleOfAttack, stallAngleHigh, stallAngleLow);
+            float torqueCoefficient = -normalCoeff * TorqueCoefficientProportion(clampedMomentAngle) * momentScale;
 
             return new Vector3(liftCoefficient, dragCoefficient, torqueCoefficient);
         }
@@ -837,6 +1095,51 @@ namespace Aerodynamics
         private float TorqueCoefficientProportion(float effectiveAngle)
         {
             return 0.25f - 0.175f * (1f - 2f * Mathf.Abs(effectiveAngle) / Mathf.PI);
+        }
+
+        private float ClampMomentAoA(float angleRad)
+        {
+            if (maxMomentAoADeg <= 0f)
+            {
+                return angleRad;
+            }
+
+            float limit = maxMomentAoADeg * Mathf.Deg2Rad;
+            return Mathf.Clamp(angleRad, -limit, limit);
+        }
+
+        private float GetPostStallMomentScale(float angleOfAttack, float stallAngleHigh, float stallAngleLow)
+        {
+            float absAoA = Mathf.Abs(angleOfAttack);
+            float absStall = Mathf.Abs(angleOfAttack >= 0f ? stallAngleHigh : stallAngleLow);
+            float start = Mathf.Max(absStall, 0f);
+            float end = Mathf.Max(start, Mathf.PI * 0.5f);
+
+            if (absAoA <= start)
+            {
+                return 1f;
+            }
+
+            float t = (absAoA - start) / Mathf.Max(end - start, 1e-4f);
+            t = Mathf.Clamp01(t);
+            return Mathf.Lerp(1f, postStallMomentScale, t);
+        }
+
+        private float GetPostStallForceScale(float angleOfAttack, float stallAngleHigh, float stallAngleLow)
+        {
+            float absAoA = Mathf.Abs(angleOfAttack);
+            float absStall = Mathf.Abs(angleOfAttack >= 0f ? stallAngleHigh : stallAngleLow);
+            float start = Mathf.Max(absStall, 0f);
+            float end = Mathf.Max(start, Mathf.PI * 0.5f);
+
+            if (absAoA <= start)
+            {
+                return 1f;
+            }
+
+            float t = (absAoA - start) / Mathf.Max(end - start, 1e-4f);
+            t = Mathf.Clamp01(t);
+            return Mathf.Lerp(1f, postStallForceScale, t);
         }
 
         /// <summary>
