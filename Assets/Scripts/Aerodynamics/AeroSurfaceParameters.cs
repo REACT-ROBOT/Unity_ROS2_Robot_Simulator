@@ -131,6 +131,18 @@ namespace Aerodynamics
         [Tooltip("Induced velocity model for finite wing effects")]
         public InducedVelocityModelType inducedVelocityModel = InducedVelocityModelType.Prandtl;
 
+        [Tooltip("Maximum iterations for induced velocity convergence")]
+        [Range(1, 20)]
+        public int maxInducedVelocityIterations = 5;
+
+        [Tooltip("Convergence tolerance for induced velocity (relative change)")]
+        [Range(0.0001f, 0.1f)]
+        public float inducedVelocityTolerance = 0.01f;
+
+        [Tooltip("Relaxation factor for induced velocity iteration (0.5-1.0 typical)")]
+        [Range(0.3f, 1.0f)]
+        public float inducedVelocityRelaxation = 0.7f;
+
         [Tooltip("Taper ratio (tip chord / root chord). 1.0 = rectangular wing")]
         [Range(0.1f, 1.5f)]
         public float taperRatio = 1.0f;

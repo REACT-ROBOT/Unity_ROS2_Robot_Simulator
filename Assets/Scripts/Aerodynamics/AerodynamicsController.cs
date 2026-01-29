@@ -6,6 +6,7 @@
 
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.Serialization.Formatters;
 using UnityEngine;
 
 namespace Aerodynamics
@@ -943,9 +944,9 @@ namespace Aerodynamics
 
                 if (surfaceForce.articulationBody != null)
                 {
-                    Debug.Log("Name: " + surfaceForce.articulationBody.name + " Applying force: " + surfaceForce.forces.force);
+                    if (showDebugInfo) Debug.Log("Name: " + surfaceForce.articulationBody.name + " Applying force: " + surfaceForce.forces.force);
                     surfaceForce.articulationBody.AddForce(surfaceForce.forces.force);
-                    Debug.Log("Applying torque: " + surfaceForce.forces.torque);
+                    if (showDebugInfo) Debug.Log("Applying torque: " + surfaceForce.forces.torque);
                     surfaceForce.articulationBody.AddTorque(surfaceForce.forces.torque);
                 }
                 else if (surfaceForce.rigidbody != null)

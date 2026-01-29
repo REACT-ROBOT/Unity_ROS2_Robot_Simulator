@@ -354,46 +354,122 @@ namespace Aerodynamics
                 elem.currentVelocity = localVelocity;
             }
 
-            // Step 2: Compute induced velocities (first pass for Cl estimation)
+            // Step 2: Iterative induced velocity calculation
+            // Initialize induced velocities to zero for first iteration
             for (int i = 0; i < bladeElements.Length; i++)
             {
-                var elem = bladeElements[i];
-                if (elem.currentVelocity.sqrMagnitude < 0.0001f)
+                bladeElements[i].inducedVelocity = Vector3.zero;
+            }
+
+            // Store previous induced velocities for convergence check
+            Vector3[] prevInducedVelocities = new Vector3[bladeElements.Length];
+
+            int maxIterations = config.maxInducedVelocityIterations;
+            float tolerance = config.inducedVelocityTolerance;
+            float relaxation = config.inducedVelocityRelaxation;
+
+            // Skip iteration for None model
+            if (config.inducedVelocityModel == InducedVelocityModelType.None)
+            {
+                maxIterations = 1;
+            }
+
+            bool converged = false;
+            int iteration = 0;
+
+            for (iteration = 0; iteration < maxIterations && !converged; iteration++)
+            {
+                // Store current induced velocities for convergence check
+                for (int i = 0; i < bladeElements.Length; i++)
                 {
-                    if (i == 0 && showDebugForces)
+                    prevInducedVelocities[i] = bladeElements[i].inducedVelocity;
+                }
+
+                // Calculate Cl at each element using current induced velocity
+                for (int i = 0; i < bladeElements.Length; i++)
+                {
+                    var elem = bladeElements[i];
+                    if (elem.currentVelocity.sqrMagnitude < 0.0001f)
                     {
-                        Debug.Log($"[BET] {name} elem[0]: velocity too small, skipping");
+                        if (i == 0 && showDebugForces && iteration == 0)
+                        {
+                            Debug.Log($"[BET] {name} elem[0]: velocity too small, skipping");
+                        }
+                        continue;
                     }
-                    continue;
+
+                    // Add induced velocity to get effective velocity
+                    Vector3 effectiveVelocity = elem.currentVelocity + elem.inducedVelocity;
+
+                    // Calculate angle of attack with induced velocity correction
+                    float localAoA = Mathf.Atan2(effectiveVelocity.y, -effectiveVelocity.z);
+                    localAoA += elem.localTwist;  // Add geometric twist
+                    elem.currentAoA = localAoA;
+
+                    if (i == 0 && iteration == 0)
+                    {
+                        lastLocalVelocity = elem.currentVelocity;
+                        lastAoADeg = localAoA * Mathf.Rad2Deg;
+                    }
+
+                    // Calculate Cl for induced velocity calculation
+                    // Use skipInducedDrag=true because induced effects are handled by the induced velocity model
+                    Vector3 coeffs = CalculateCoefficients(localAoA, correctedLiftSlope, zeroLiftAoA,
+                        stallAngleHigh, stallAngleLow, medium, skipInducedDrag: true);
+                    float forceScale = GetPostStallForceScale(localAoA, stallAngleHigh, stallAngleLow);
+                    elem.currentCl = coeffs.x * forceScale;
+                    elem.currentCd = coeffs.y * forceScale;
+                    elem.currentCm = coeffs.z;
+
+                    if (i == 0 && showDebugForces && iteration == 0)
+                    {
+                        Debug.Log($"[BET] {name} elem[0]: AoA={localAoA * Mathf.Rad2Deg:F2}°, twist={elem.localTwist * Mathf.Rad2Deg:F2}°, Cl={coeffs.x:F4}, Cd={coeffs.y:F4}");
+                    }
                 }
 
-                // Calculate angle of attack for this element
-                float localAoA = Mathf.Atan2(elem.currentVelocity.y, -elem.currentVelocity.z);
-                localAoA += elem.localTwist;  // Add geometric twist
-                elem.currentAoA = localAoA;
-                if (i == 0)
+                // Compute new induced velocities based on current Cl
+                inducedVelocityModel.ComputeInducedVelocities(bladeElements, config, dt);
+
+                // Apply relaxation and check convergence
+                float maxChange = 0f;
+                float maxMagnitude = 0f;
+
+                for (int i = 0; i < bladeElements.Length; i++)
                 {
-                    lastLocalVelocity = elem.currentVelocity;
-                    lastAoADeg = localAoA * Mathf.Rad2Deg;
+                    var elem = bladeElements[i];
+                    Vector3 newInduced = elem.inducedVelocity;
+                    Vector3 oldInduced = prevInducedVelocities[i];
+
+                    // Apply under-relaxation for stability
+                    elem.inducedVelocity = oldInduced + relaxation * (newInduced - oldInduced);
+
+                    // Track maximum change for convergence check
+                    float change = (newInduced - oldInduced).magnitude;
+                    float magnitude = newInduced.magnitude;
+                    maxChange = Mathf.Max(maxChange, change);
+                    maxMagnitude = Mathf.Max(maxMagnitude, magnitude);
                 }
 
-                // Estimate Cl for induced velocity calculation
-                // Use skipInducedDrag=true because induced effects are handled by the induced velocity model
-                Vector3 coeffs = CalculateCoefficients(localAoA, correctedLiftSlope, zeroLiftAoA,
-                    stallAngleHigh, stallAngleLow, medium, skipInducedDrag: true);
-                float forceScale = GetPostStallForceScale(localAoA, stallAngleHigh, stallAngleLow);
-                elem.currentCl = coeffs.x * forceScale;
-                elem.currentCd = coeffs.y * forceScale;
-                elem.currentCm = coeffs.z;
-
-                if (i == 0 && showDebugForces)
+                // Check convergence (relative change)
+                if (maxMagnitude > 0.001f)
                 {
-                    Debug.Log($"[BET] {name} elem[0]: AoA={localAoA * Mathf.Rad2Deg:F2}°, twist={elem.localTwist * Mathf.Rad2Deg:F2}°, Cl={coeffs.x:F4}, Cd={coeffs.y:F4}");
+                    converged = (maxChange / maxMagnitude) < tolerance;
+                }
+                else
+                {
+                    converged = maxChange < 0.0001f;
+                }
+
+                if (showDebugForces && iteration > 0)
+                {
+                    Debug.Log($"[BET] {name} induced velocity iteration {iteration}: maxChange={maxChange:F6}, maxMag={maxMagnitude:F4}, converged={converged}");
                 }
             }
 
-            // Compute induced velocities
-            inducedVelocityModel.ComputeInducedVelocities(bladeElements, config, dt);
+            if (showDebugForces && iteration > 1)
+            {
+                Debug.Log($"[BET] {name} induced velocity converged in {iteration} iterations");
+            }
 
             // Step 3: Compute forces at each element with induced velocity correction
             Vector3 totalPitchTorque = Vector3.zero;
