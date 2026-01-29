@@ -17,41 +17,44 @@ namespace Hydrodynamics
     public class NaughtyWaterHeightAdapter : MonoBehaviour
     {
         private static NaughtyWaterHeightAdapter _instance;
+        private static bool _searchedForInstance = false;
+
         public static NaughtyWaterHeightAdapter Instance
         {
             get
             {
-                if (_instance == null)
+                if (_instance == null && !_searchedForInstance)
                 {
+                    _searchedForInstance = true;
                     _instance = FindFirstObjectByType<NaughtyWaterHeightAdapter>();
                     if (_instance == null)
                     {
                         // Try to find WaterVolume and create adapter automatically
                         var waterVolume = FindFirstObjectByType<WaterVolume>();
-                        if (waterVolume != null)
+                        if (waterVolume != null && waterVolume.enabled && waterVolume.gameObject.activeInHierarchy)
                         {
                             _instance = waterVolume.gameObject.AddComponent<NaughtyWaterHeightAdapter>();
                         }
-                        else
-                        {
-                            // Create a new GameObject with the adapter
-                            var go = new GameObject("NaughtyWaterHeightAdapter");
-                            _instance = go.AddComponent<NaughtyWaterHeightAdapter>();
-                            Debug.LogWarning("[NaughtyWaterHeightAdapter] No WaterVolume found. Water height will default to 0.");
-                        }
+                        // Do NOT create adapter if no valid WaterVolume exists
+                        // This prevents false water detection when no water is in the scene
                     }
                 }
                 return _instance;
             }
         }
 
+        /// <summary>
+        /// Resets the singleton search flag. Call this when loading a new scene.
+        /// </summary>
+        public static void ResetInstance()
+        {
+            _searchedForInstance = false;
+            _instance = null;
+        }
+
         [SerializeField]
         [Tooltip("Reference to the NaughtyWaterBuoyancy WaterVolume. Auto-detected if not set.")]
         private WaterVolume waterVolume;
-
-        [SerializeField]
-        [Tooltip("Default water level when no WaterVolume is available")]
-        private float defaultWaterLevel = 0f;
 
         [SerializeField]
         [Tooltip("Enable debug logging")]
@@ -82,6 +85,15 @@ namespace Hydrodynamics
             }
         }
 
+        private void OnDestroy()
+        {
+            if (_instance == this)
+            {
+                _instance = null;
+                _searchedForInstance = false;
+            }
+        }
+
         /// <summary>
         /// Sets the WaterVolume reference. Use this when water is created dynamically.
         /// </summary>
@@ -103,19 +115,32 @@ namespace Hydrodynamics
         }
 
         /// <summary>
+        /// Returns true if a valid WaterVolume is configured and active.
+        /// Use this to check if water surface detection is available.
+        /// </summary>
+        public bool HasValidWaterVolume
+        {
+            get
+            {
+                return waterVolume != null && waterVolume.enabled && waterVolume.gameObject.activeInHierarchy;
+            }
+        }
+
+        /// <summary>
         /// Returns the water level at the given world position.
         /// Compatible with MARUS WaterHeightSampler.GetWaterLevel()
         /// </summary>
         /// <param name="position">World position to query</param>
         /// <param name="minSpatialLength">Minimum spatial length (ignored, for API compatibility)</param>
-        /// <returns>Water height at the position</returns>
+        /// <returns>Water height at the position, or float.NegativeInfinity if no valid water volume</returns>
         public float GetWaterLevel(Vector3 position, float minSpatialLength = 0.5f)
         {
-            if (waterVolume != null)
+            if (HasValidWaterVolume)
             {
                 return waterVolume.GetWaterLevel(position);
             }
-            return defaultWaterLevel;
+            // Return negative infinity so any position is considered above water
+            return float.NegativeInfinity;
         }
 
         /// <summary>
@@ -128,7 +153,7 @@ namespace Hydrodynamics
         /// <param name="i_minSpatialLength">Minimum spatial length (ignored, for API compatibility)</param>
         public void GetWaterLevel(Vector3[] i_points, float[] o_heights, int i_array_size, float i_minSpatialLength = 0.5f)
         {
-            if (waterVolume != null)
+            if (HasValidWaterVolume)
             {
                 for (int i = 0; i < i_array_size; i++)
                 {
@@ -137,9 +162,10 @@ namespace Hydrodynamics
             }
             else
             {
+                // Return negative infinity so any position is considered above water
                 for (int i = 0; i < i_array_size; i++)
                 {
-                    o_heights[i] = defaultWaterLevel;
+                    o_heights[i] = float.NegativeInfinity;
                 }
             }
         }
@@ -155,7 +181,7 @@ namespace Hydrodynamics
         {
             float[] heights = new float[points.Count];
 
-            if (waterVolume != null)
+            if (HasValidWaterVolume)
             {
                 for (int i = 0; i < points.Count; i++)
                 {
@@ -164,9 +190,10 @@ namespace Hydrodynamics
             }
             else
             {
+                // Return negative infinity so any position is considered above water
                 for (int i = 0; i < points.Count; i++)
                 {
-                    heights[i] = defaultWaterLevel;
+                    heights[i] = float.NegativeInfinity;
                 }
             }
 
@@ -179,7 +206,7 @@ namespace Hydrodynamics
         /// </summary>
         public Vector3 GetSurfaceNormal(Vector3 position)
         {
-            if (waterVolume != null)
+            if (HasValidWaterVolume)
             {
                 return waterVolume.GetSurfaceNormal(position);
             }
@@ -192,11 +219,12 @@ namespace Hydrodynamics
         /// </summary>
         public bool IsPointUnderWater(Vector3 position)
         {
-            if (waterVolume != null)
+            if (HasValidWaterVolume)
             {
                 return waterVolume.IsPointUnderWater(position);
             }
-            return position.y < defaultWaterLevel;
+            // No valid water volume means nothing is underwater
+            return false;
         }
 
         /// <summary>
@@ -204,7 +232,7 @@ namespace Hydrodynamics
         /// </summary>
         public float GetWaterDensity()
         {
-            if (waterVolume != null)
+            if (HasValidWaterVolume)
             {
                 return waterVolume.Density;
             }

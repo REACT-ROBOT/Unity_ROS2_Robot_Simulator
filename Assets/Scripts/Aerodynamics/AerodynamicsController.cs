@@ -119,11 +119,11 @@ namespace Aerodynamics
 
         [Header("Debug")]
         [SerializeField]
-        private bool showDebugInfo = true;
+        private bool showDebugInfo = false;
 
         [SerializeField]
         [Tooltip("Enable file logging of aerodynamic data")]
-        private bool enableFileLogging = true;
+        private bool enableFileLogging = false;
 
         [SerializeField]
         [Tooltip("Log file path (default: ~/aero_debug.csv)")]
@@ -345,6 +345,10 @@ namespace Aerodynamics
                 header += $",{name}_WorldFluidVelX,{name}_WorldFluidVelY,{name}_WorldFluidVelZ";
                 header += $",{name}_ElementFluidVelX,{name}_ElementFluidVelY,{name}_ElementFluidVelZ";
                 header += $",{name}_CurrentMedium,{name}_SubmersionRatio";
+                // Transform directions for debugging coordinate system
+                header += $",{name}_TransUpX,{name}_TransUpY,{name}_TransUpZ";
+                header += $",{name}_TransRightX,{name}_TransRightY,{name}_TransRightZ";
+                header += $",{name}_TransFwdX,{name}_TransFwdY,{name}_TransFwdZ";
 
                 int elemCount = surface != null ? surface.Parameters.numElements : 0;
                 for (int i = 0; i < elemCount; i++)
@@ -397,6 +401,13 @@ namespace Aerodynamics
                 int mediumValue = sf.surface != null ? (int)sf.surface.CurrentMedium : 0;
                 float submersion = sf.surface != null ? sf.surface.SubmersionRatio : 0f;
                 line += $",{mediumValue},{submersion:F4}";
+                // Transform directions for debugging coordinate system
+                Vector3 transUp = sf.surface != null ? sf.surface.transform.up : Vector3.up;
+                Vector3 transRight = sf.surface != null ? sf.surface.transform.right : Vector3.right;
+                Vector3 transFwd = sf.surface != null ? sf.surface.transform.forward : Vector3.forward;
+                line += $",{transUp.x:F4},{transUp.y:F4},{transUp.z:F4}";
+                line += $",{transRight.x:F4},{transRight.y:F4},{transRight.z:F4}";
+                line += $",{transFwd.x:F4},{transFwd.y:F4},{transFwd.z:F4}";
 
                 int elemCount = sf.surface != null ? sf.surface.Parameters.numElements : 0;
                 var elems = sf.surface != null ? sf.surface.BladeElements : null;

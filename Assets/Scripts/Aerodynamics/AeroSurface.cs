@@ -360,7 +360,7 @@ namespace Aerodynamics
                 var elem = bladeElements[i];
                 if (elem.currentVelocity.sqrMagnitude < 0.0001f)
                 {
-                    if (i == 0)
+                    if (i == 0 && showDebugForces)
                     {
                         Debug.Log($"[BET] {name} elem[0]: velocity too small, skipping");
                     }
@@ -602,7 +602,9 @@ namespace Aerodynamics
 
             // Try to get water height from NaughtyWaterHeightAdapter
             var waterAdapter = NaughtyWaterHeightAdapter.Instance;
-            if (waterAdapter == null)
+
+            // Check if water adapter exists AND has a valid water volume
+            if (waterAdapter == null || !waterAdapter.HasValidWaterVolume)
             {
                 currentMedium = CurrentMedium.Air;
                 submersionRatio = 0f;
@@ -610,6 +612,15 @@ namespace Aerodynamics
             }
 
             float waterHeight = waterAdapter.GetWaterLevel(transform.position);
+
+            // If GetWaterLevel returns negative infinity, there's no valid water
+            if (float.IsNegativeInfinity(waterHeight))
+            {
+                currentMedium = CurrentMedium.Air;
+                submersionRatio = 0f;
+                return;
+            }
+
             float surfaceHeight = transform.position.y;
 
             // Calculate submersion based on surface geometry
