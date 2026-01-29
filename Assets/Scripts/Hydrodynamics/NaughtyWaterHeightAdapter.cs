@@ -17,39 +17,91 @@ namespace Hydrodynamics
     public class NaughtyWaterHeightAdapter : MonoBehaviour
     {
         private static NaughtyWaterHeightAdapter _instance;
-        private static bool _searchedForInstance = false;
+        private static float _lastSearchTime = -1f;
+        private const float SEARCH_INTERVAL = 1.0f;  // Re-search interval in seconds
 
         public static NaughtyWaterHeightAdapter Instance
         {
             get
             {
-                if (_instance == null && !_searchedForInstance)
+                // Check if we need to search for instance
+                // Re-search if:
+                // 1. No instance exists
+                // 2. Instance exists but its waterVolume is invalid
+                // 3. Enough time has passed since last search (to avoid searching every frame)
+                bool needsSearch = false;
+
+                if (_instance == null)
                 {
-                    _searchedForInstance = true;
-                    _instance = FindFirstObjectByType<NaughtyWaterHeightAdapter>();
-                    if (_instance == null)
+                    needsSearch = true;
+                }
+                else if (!_instance.HasValidWaterVolume)
+                {
+                    // Instance exists but waterVolume is invalid - try to find a new one
+                    float currentTime = Time.unscaledTime;
+                    if (currentTime - _lastSearchTime >= SEARCH_INTERVAL)
                     {
-                        // Try to find WaterVolume and create adapter automatically
+                        needsSearch = true;
+                    }
+                }
+
+                if (needsSearch)
+                {
+                    _lastSearchTime = Time.unscaledTime;
+
+                    // First, try to find an existing adapter
+                    var existingAdapter = FindFirstObjectByType<NaughtyWaterHeightAdapter>();
+                    if (existingAdapter != null && existingAdapter.HasValidWaterVolume)
+                    {
+                        _instance = existingAdapter;
+                    }
+                    else
+                    {
+                        // Try to find WaterVolume and create/update adapter
                         var waterVolume = FindFirstObjectByType<WaterVolume>();
                         if (waterVolume != null && waterVolume.enabled && waterVolume.gameObject.activeInHierarchy)
                         {
-                            _instance = waterVolume.gameObject.AddComponent<NaughtyWaterHeightAdapter>();
+                            if (existingAdapter != null)
+                            {
+                                // Update existing adapter with new WaterVolume
+                                existingAdapter.SetWaterVolume(waterVolume);
+                                _instance = existingAdapter;
+                            }
+                            else
+                            {
+                                // Create new adapter on WaterVolume's GameObject
+                                _instance = waterVolume.gameObject.AddComponent<NaughtyWaterHeightAdapter>();
+                            }
                         }
-                        // Do NOT create adapter if no valid WaterVolume exists
-                        // This prevents false water detection when no water is in the scene
+                        else if (existingAdapter != null)
+                        {
+                            // No valid WaterVolume but adapter exists - keep it but it will report no water
+                            _instance = existingAdapter;
+                        }
+                        // If no WaterVolume and no adapter, _instance remains null
                     }
                 }
+
                 return _instance;
             }
         }
 
         /// <summary>
-        /// Resets the singleton search flag. Call this when loading a new scene.
+        /// Resets the singleton instance. Call this when loading a new scene.
         /// </summary>
         public static void ResetInstance()
         {
-            _searchedForInstance = false;
+            _lastSearchTime = -1f;
             _instance = null;
+        }
+
+        /// <summary>
+        /// Forces an immediate re-search for WaterVolume on next Instance access.
+        /// Call this when WaterVolume is dynamically enabled.
+        /// </summary>
+        public static void InvalidateCache()
+        {
+            _lastSearchTime = -1f;
         }
 
         [SerializeField]
@@ -90,7 +142,7 @@ namespace Hydrodynamics
             if (_instance == this)
             {
                 _instance = null;
-                _searchedForInstance = false;
+                _lastSearchTime = -1f;
             }
         }
 
@@ -117,12 +169,62 @@ namespace Hydrodynamics
         /// <summary>
         /// Returns true if a valid WaterVolume is configured and active.
         /// Use this to check if water surface detection is available.
+        /// Automatically attempts to find WaterVolume if current one is invalid.
         /// </summary>
         public bool HasValidWaterVolume
         {
             get
             {
+                // Quick check if current waterVolume is valid
+                if (waterVolume != null && waterVolume.enabled && waterVolume.gameObject.activeInHierarchy)
+                {
+                    return true;
+                }
+
+                // Current waterVolume is invalid - try to find a new one
+                TryFindWaterVolume();
+
                 return waterVolume != null && waterVolume.enabled && waterVolume.gameObject.activeInHierarchy;
+            }
+        }
+
+        private float _lastLocalSearchTime = -1f;
+        private const float LOCAL_SEARCH_INTERVAL = 0.5f;  // Local re-search interval
+
+        /// <summary>
+        /// Attempts to find and connect to a valid WaterVolume.
+        /// Rate-limited to avoid excessive searching.
+        /// </summary>
+        private void TryFindWaterVolume()
+        {
+            float currentTime = Time.unscaledTime;
+            if (currentTime - _lastLocalSearchTime < LOCAL_SEARCH_INTERVAL)
+            {
+                return;  // Don't search too frequently
+            }
+            _lastLocalSearchTime = currentTime;
+
+            // First check if attached to a GameObject with WaterVolume
+            var localWaterVolume = GetComponent<WaterVolume>();
+            if (localWaterVolume != null && localWaterVolume.enabled && localWaterVolume.gameObject.activeInHierarchy)
+            {
+                waterVolume = localWaterVolume;
+                if (debugMode)
+                {
+                    Debug.Log($"[NaughtyWaterHeightAdapter] Found local WaterVolume: {waterVolume.name}");
+                }
+                return;
+            }
+
+            // Search for any active WaterVolume in the scene
+            var foundWaterVolume = FindFirstObjectByType<WaterVolume>();
+            if (foundWaterVolume != null && foundWaterVolume.enabled && foundWaterVolume.gameObject.activeInHierarchy)
+            {
+                waterVolume = foundWaterVolume;
+                if (debugMode)
+                {
+                    Debug.Log($"[NaughtyWaterHeightAdapter] Found WaterVolume: {waterVolume.name}");
+                }
             }
         }
 
