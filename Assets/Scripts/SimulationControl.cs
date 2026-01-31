@@ -42,24 +42,6 @@ public class FileLogger
     }
 }
 
-// 保存するためのXDrive設定用クラス
-[Serializable]
-public class XDriveSettings
-{
-    public string joint_name;
-    public float stiffness;
-    public float damping;
-    public float forceLimit;
-
-    public XDriveSettings(string joint_name, float stiffness, float damping, float forceLimit)
-    {
-        this.joint_name = joint_name;
-        this.stiffness = stiffness;
-        this.damping = damping;
-        this.forceLimit = forceLimit;
-    }
-}
-
 public class SimulationControl : MonoBehaviour
 {
     [SerializeField]
@@ -379,13 +361,7 @@ public class SimulationControl : MonoBehaviour
                 UrdfJoint urdfJoint = child.GetComponent<UrdfJoint>();
                 articulationBodyList.Add(body);
                 jointNameList.Add(urdfJoint.jointName);
-
-                var parameters = GetUnityDriveApiParameters(xmlDoc, urdfJoint.jointName);
-                ArticulationDrive drive = body.xDrive;
-                drive.stiffness = parameters["stiffness"];
-                drive.damping = parameters["damping"];
-                drive.forceLimit = parameters["force_limit"];
-                body.xDrive = drive;
+                // Note: xDrive stiffness/damping is now set by URDF-Importer via <drive> element
             }
         }
 
@@ -1293,79 +1269,6 @@ public class SimulationControl : MonoBehaviour
         {
             SearchArticulationBodies(child, articulationBodies);
         }
-    }
-
-    /// <summary>
-    /// URDF 内の joint 要素から unity_drive_api の各パラメータを抽出します。
-    /// </summary>
-    public static Dictionary<string, float> GetUnityDriveApiParameters(XmlDocument xmlDoc, string targetJointName)
-    {
-        var parameters = new Dictionary<string, float>();
-
-        XmlNode robotNode = xmlDoc.SelectSingleNode("/robot");
-        if (robotNode != null)
-        {
-            XmlNodeList jointNodes = robotNode.SelectNodes("joint");
-            foreach (XmlNode jointNode in jointNodes)
-            {
-                if (jointNode.Attributes["name"]?.Value == targetJointName)
-                {
-                    XmlNode stiffnessNode = jointNode.SelectSingleNode("stiffness");
-                    XmlNode dampingNode = jointNode.SelectSingleNode("damping");
-                    
-                    if (stiffnessNode != null)
-                    {
-                        parameters["stiffness"] = TryParseFloat(stiffnessNode.InnerText);
-                    }
-                    else
-                    {
-                        Debug.Log("Joint stiffness element not found.");
-                        parameters["stiffness"] = 0.0f;
-                    }
-                    if (dampingNode != null)
-                    {
-                        parameters["damping"] = TryParseFloat(dampingNode.InnerText);
-                    }
-                    else
-                    {
-                        Debug.Log("Joint damping element not found.");
-                        parameters["damping"] = 0.0f;
-                    }
-                    if (stiffnessNode != null || dampingNode != null)
-                    {
-                        parameters["force_limit"] = 1000000.0f; // デフォルトの力制限値
-                    }
-                    else
-                    {
-                        XmlNode unityDriveApiNode = jointNode.SelectSingleNode("unity_drive_api");
-                        if (unityDriveApiNode != null)
-                        {
-                            parameters["stiffness"] = TryParseFloat(unityDriveApiNode.Attributes["stiffness"]?.Value);
-                            parameters["damping"] = TryParseFloat(unityDriveApiNode.Attributes["damping"]?.Value);
-                            parameters["force_limit"] = TryParseFloat(unityDriveApiNode.Attributes["force_limit"]?.Value);
-                        }
-                        else
-                        {
-                            Debug.Log("unity_drive_api element not found.");
-                            parameters["stiffness"] = 0.0f;
-                            parameters["damping"] = 0.0f;
-                            parameters["force_limit"] = 0.0f;
-                        }
-                    }
-                    return parameters;
-                }
-            }
-            Debug.Log("Joint with the specified name not found.");
-        }
-        else
-        {
-            Debug.Log("Robot element not found.");
-        }
-
-        parameters["stiffness"] = 0.0f;
-        parameters["damping"] = 0.0f;
-        parameters["force_limit"] = 0.0f;
-        return parameters;
     }
 
     /// <summary>
