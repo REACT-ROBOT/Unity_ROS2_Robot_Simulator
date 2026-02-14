@@ -399,6 +399,7 @@ public class SimulationControl : MonoBehaviour
         }
         XmlNode robotNode = xmlDoc.SelectSingleNode("/robot");
         List<PhysicsMaterial> physicsMaterialList = new List<PhysicsMaterial>();
+        Dictionary<string, float> contactOffsetDict = new Dictionary<string, float>();
         if (robotNode != null)
         {
             XmlNodeList physicsMaterials = robotNode.SelectNodes("collision_material");
@@ -416,6 +417,30 @@ public class SimulationControl : MonoBehaviour
                 {
                     newMaterial.staticFriction = TryParseFloat(frictionNode.Attributes["static"]?.Value);
                     newMaterial.dynamicFriction = TryParseFloat(frictionNode.Attributes["dynamic"]?.Value);
+                    string combineMode = frictionNode.Attributes["combine"]?.Value?.ToLower();
+                    switch (combineMode)
+                    {
+                        case "average":
+                            newMaterial.frictionCombine = PhysicsMaterialCombine.Average;
+                            break;
+                        case "multiply":
+                            newMaterial.frictionCombine = PhysicsMaterialCombine.Multiply;
+                            break;
+                        case "maximum":
+                            newMaterial.frictionCombine = PhysicsMaterialCombine.Maximum;
+                            break;
+                        case "minimum":
+                            newMaterial.frictionCombine = PhysicsMaterialCombine.Minimum;
+                            break;
+                        default:
+                            newMaterial.frictionCombine = PhysicsMaterialCombine.Average;
+                            break;
+                    }
+                }
+                XmlNode contactOffsetNode = physicsMaterial.SelectSingleNode("contact_offset");
+                if (contactOffsetNode != null)
+                {
+                    contactOffsetDict[materialName] = TryParseFloat(contactOffsetNode.Attributes["value"]?.Value);
                 }
                 physicsMaterialList.Add(newMaterial);
             }
@@ -451,7 +476,6 @@ public class SimulationControl : MonoBehaviour
                                     Transform targetCollision = unnamedCollision.GetChild(0);
                                     if (targetCollision != null)
                                     {
-                                        Debug.Log(materialName + ": " + linkName);
                                         Collider meshCollider = targetCollision.gameObject.GetComponent<Collider>();
                                         if (meshCollider != null)
                                         {
@@ -460,6 +484,11 @@ public class SimulationControl : MonoBehaviour
                                                 if (material.name == materialName)
                                                 {
                                                     meshCollider.material = material;
+                                                    if (contactOffsetDict.TryGetValue(materialName, out float contactOffset))
+                                                    {
+                                                        meshCollider.contactOffset = contactOffset;
+                                                    }
+                                                    Debug.Log($"[CollisionMaterial] Applied '{materialName}' to '{linkName}' (static={material.staticFriction}, dynamic={material.dynamicFriction}, combine={material.frictionCombine}, contactOffset={meshCollider.contactOffset})");
                                                     break;
                                                 }
                                             }
