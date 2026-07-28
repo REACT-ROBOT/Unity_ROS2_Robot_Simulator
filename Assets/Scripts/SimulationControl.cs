@@ -502,6 +502,68 @@ public class SimulationControl : MonoBehaviour
             }
         }
 
+        // サーボモデル (摩擦・バックラッシ) の設定: <servo_model joint="..."> 要素
+        if (robotNode != null)
+        {
+            ServoJointModel[] servoModels = new ServoJointModel[articulationBodyList.Count];
+            bool anyServoModel = false;
+            XmlNodeList servoModelNodes = robotNode.SelectNodes("servo_model");
+            foreach (XmlNode servoNode in servoModelNodes)
+            {
+                string servoJointName = servoNode.Attributes["joint"]?.Value;
+                int jointIndex = jointNameList.IndexOf(servoJointName);
+                if (jointIndex < 0)
+                {
+                    Debug.LogWarning($"[ServoModel] joint '{servoJointName}' not found, skipping");
+                    continue;
+                }
+                ArticulationBody jointBody = articulationBodyList[jointIndex];
+                ServoJointModel model = jointBody.gameObject.AddComponent<ServoJointModel>();
+
+                // xDrive の stiffness/damping は SI (N·m/rad) のままモデルに流用できる
+                // (target のみ度単位だが、剛性はラジアン換算誤差に掛かる)
+                ArticulationDrive jointDrive = jointBody.xDrive;
+                model.servoStiffness = jointDrive.stiffness;
+                model.servoDamping = jointDrive.damping;
+                if (jointDrive.forceLimit < float.MaxValue)
+                    model.motorTorqueLimit = jointDrive.forceLimit;
+
+                XmlNode servoFrictionNode = servoNode.SelectSingleNode("friction");
+                if (servoFrictionNode != null)
+                {
+                    model.staticFriction = TryParseFloat(servoFrictionNode.Attributes["static"]?.Value);
+                    model.dynamicFriction = TryParseFloat(servoFrictionNode.Attributes["dynamic"]?.Value);
+                    model.stribeckVelocity = TryParseFloat(servoFrictionNode.Attributes["stribeck_velocity"]?.Value, 0.1f);
+                    model.viscousFriction = TryParseFloat(servoFrictionNode.Attributes["viscous"]?.Value);
+                }
+                XmlNode backlashNode = servoNode.SelectSingleNode("backlash");
+                if (backlashNode != null)
+                {
+                    model.backlashWidth = TryParseFloat(backlashNode.Attributes["width"]?.Value);
+                    model.transmissionStiffness = TryParseFloat(backlashNode.Attributes["stiffness"]?.Value, 400f);
+                    model.transmissionDamping = TryParseFloat(backlashNode.Attributes["damping"]?.Value, 0.5f);
+                }
+                XmlNode motorNode = servoNode.SelectSingleNode("motor");
+                if (motorNode != null)
+                {
+                    model.motorInertia = TryParseFloat(motorNode.Attributes["inertia"]?.Value, 2e-3f);
+                    if (motorNode.Attributes["p_gain"] != null)
+                        model.servoStiffness = TryParseFloat(motorNode.Attributes["p_gain"].Value);
+                    if (motorNode.Attributes["d_gain"] != null)
+                        model.servoDamping = TryParseFloat(motorNode.Attributes["d_gain"].Value);
+                    if (motorNode.Attributes["torque_limit"] != null)
+                        model.motorTorqueLimit = TryParseFloat(motorNode.Attributes["torque_limit"].Value);
+                }
+                servoModels[jointIndex] = model;
+                anyServoModel = true;
+                Debug.Log($"[ServoModel] joint '{servoJointName}': friction(static={model.staticFriction}, dynamic={model.dynamicFriction}), backlash(width={model.backlashWidth}, K={model.transmissionStiffness}), servo(P={model.servoStiffness}, D={model.servoDamping})");
+            }
+            if (anyServoModel)
+            {
+                jointStateSub.servoModels = servoModels;
+            }
+        }
+
         // Buoyancy Material の収集と ArticulationFloatingObject/HydrodynamicFloatingObject の付与
         Dictionary<string, float> buoyancyMaterialDict = new Dictionary<string, float>();
         bool useHydrodynamics = false; // URDFでuse_hydrodynamics="true"が指定されているか

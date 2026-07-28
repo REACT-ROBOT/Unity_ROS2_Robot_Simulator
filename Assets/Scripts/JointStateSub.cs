@@ -7,6 +7,9 @@ using RosMessageTypes.Sensor;
 public class JointStateSub : MonoBehaviour
 {
     public ArticulationBody[] articulationBodies;
+    // Optional per-joint servo model (friction/backlash). When present at an
+    // index, commands are routed to the model instead of writing xDrive.
+    public ServoJointModel[] servoModels;
     public string[] jointName;
     public string topicName = "/joint_states";
     public int jointLength = 19;
@@ -34,6 +37,20 @@ public class JointStateSub : MonoBehaviour
             index = jointNameList.IndexOf(msg.name[i]);
             if (index != -1)
             {
+                ServoJointModel servo = (servoModels != null && index < servoModels.Length)
+                    ? servoModels[index] : null;
+                if (servo != null)
+                {
+                    // Servo model works in SI joint space (rad, rad/s).
+                    float pos = servo.targetPosition;
+                    float vel = 0f;
+                    if (i < msg.position.Length)
+                        pos = (float)msg.position[i];
+                    if (i < msg.velocity.Length)
+                        vel = (float)msg.velocity[i];
+                    servo.SetCommand(pos, vel);
+                    continue;
+                }
                 ArticulationDrive aDrive = articulationBodies[index].xDrive;
                 if (i < msg.position.Length)
                     aDrive.target = Mathf.Rad2Deg * (float)msg.position[i];
