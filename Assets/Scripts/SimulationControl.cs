@@ -341,6 +341,36 @@ public class SimulationControl : MonoBehaviour
             break;
         }
 
+        // スポーン直後の関節状態を明示的にゼロへリセットする。
+        // ランタイム構築中や TeleportRoot によるルート回転 (spawn yaw) は
+        // 関節座標にステップ入力として現れ、1 物理ステップで数十 rad/s の
+        // 速度が注入されて多回転・リミット突破・固着の原因になるため、
+        // 構築完了とテレポートの後に URDF ゼロ姿勢・速度ゼロへ戻す。
+        foreach (GameObject abObject in FindArticulationBodyObjectsInChildren(robotObject))
+        {
+            ArticulationBody ab = abObject.GetComponent<ArticulationBody>();
+            if (ab == null)
+                continue;
+            ab.linearVelocity = Vector3.zero;
+            ab.angularVelocity = Vector3.zero;
+            int dof = ab.dofCount;
+            if (dof > 0)
+            {
+                var jp = ab.jointPosition;
+                var jv = ab.jointVelocity;
+                var jf = ab.jointForce;
+                for (int d = 0; d < dof; d++)
+                {
+                    jp[d] = 0f;
+                    jv[d] = 0f;
+                    jf[d] = 0f;
+                }
+                ab.jointPosition = jp;
+                ab.jointVelocity = jv;
+                ab.jointForce = jf;
+            }
+        }
+
         // URDFファイルの解析
         XmlDocument xmlDoc = new XmlDocument();
         xmlDoc.Load(filePath);

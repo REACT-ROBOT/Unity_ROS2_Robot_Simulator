@@ -58,6 +58,10 @@ public class ServoJointModel : MonoBehaviour
     float m_LastDelta;
     float m_LastTransTorque;
     float m_UnitScale; // SI -> drive units (Rad2Deg for revolute, 1 for prismatic)
+    float m_PrevThetaL;
+    bool m_HasPrevThetaL;
+    float m_LimLower0;
+    float m_LimUpper0;
 
     void Awake()
     {
@@ -76,9 +80,24 @@ public class ServoJointModel : MonoBehaviour
         foreach (ArticulationBody ab in GetComponentsInParent<ArticulationBody>())
             ab.sleepThreshold = 0f;
         m_ThetaM = m_Body.jointPosition[0];
-        m_OmegaM = m_Body.jointVelocity[0];
+        // jointVelocity is not sampled here: see the note in FixedUpdate.
+        m_OmegaM = 0f;
         targetPosition = m_ThetaM;
         targetVelocity = 0f;
+        // Configure the constant drive fields once.
+        // Unit quirk (measured on the Linux player, Unity 6000.2): rotational
+        // xDrive stiffness/damping/forceLimit are effectively scaled by
+        // pi/180 relative to their SI meaning (a drive with stiffness S holds
+        // with S*pi/180 N*m/rad; verified from the static sag of a plain
+        // position drive under a known gravity torque). Compensate with
+        // Rad2Deg so the public fields keep their SI units.
+        var drive0 = m_Body.xDrive;
+        drive0.stiffness = transmissionStiffness * Mathf.Rad2Deg;
+        drive0.damping = transmissionDamping * Mathf.Rad2Deg;
+        drive0.forceLimit = 1e3f * Mathf.Rad2Deg;
+        m_Body.xDrive = drive0;
+        m_LimLower0 = drive0.lowerLimit;
+        m_LimUpper0 = drive0.upperLimit;
         m_Initialized = true;
     }
 
@@ -146,7 +165,25 @@ public class ServoJointModel : MonoBehaviour
 
         float dt = Time.fixedDeltaTime;
         float thetaL = m_Body.jointPosition[0];
-        float omegaL = m_Body.jointVelocity[0];
+
+        // NOTE on joint limits (this engine build): a joint that comes to
+        // rest exactly ON its limit can stop responding to drive torques,
+        // and rewriting the drive limits at runtime to release it makes the
+        // joint position SNAP (hundreds of rad/s), so no un-jam is attempted
+        // here. Instead the robot should be designed so that the rest pose
+        // (gravity equilibrium) sits well inside the joint range and the
+        // limits stay out of normal reach; the rotor clamp below keeps the
+        // transmission from pressing the joint against a limit.
+
+        // Do NOT use m_Body.jointVelocity here. For runtime-imported robots a
+        // joint held static under gravity reports the pre-solve gravity step
+        // (~ tau_g / J * dt) instead of zero. That bias feeds the load
+        // extrapolation below and turns the transmission into a positive
+        // feedback loop: the joint accelerates away and pins at a limit.
+        // A position finite difference is bias-free and good enough at 50 Hz.
+        float omegaL = m_HasPrevThetaL ? (thetaL - m_PrevThetaL) / dt : 0f;
+        m_PrevThetaL = thetaL;
+        m_HasPrevThetaL = true;
 
         int n = substeps > 0 ? substeps : AutoSubsteps(dt);
         float h = dt / n;
@@ -188,6 +225,27 @@ public class ServoJointModel : MonoBehaviour
             m_ThetaM += h * m_OmegaM;
         }
 
+        // The virtual rotor cannot pass the joint end stops either (a real
+        // horn is stopped by the case). Without this clamp a violent swing
+        // drags the rotor beyond the limit and the transmission then pushes
+        // the joint outward against its limit forever.
+        if (m_Body.jointType != ArticulationJointType.PrismaticJoint
+            && m_Body.twistLock == ArticulationDofLock.LimitedMotion)
+        {
+            float rotLo = (m_LimLower0 + 1f) * Mathf.Deg2Rad;
+            float rotHi = (m_LimUpper0 - 1f) * Mathf.Deg2Rad;
+            if (m_ThetaM < rotLo)
+            {
+                m_ThetaM = rotLo;
+                if (m_OmegaM < 0f) m_OmegaM = 0f;
+            }
+            else if (m_ThetaM > rotHi)
+            {
+                m_ThetaM = rotHi;
+                if (m_OmegaM > 0f) m_OmegaM = 0f;
+            }
+        }
+
         // Realize the transmission through the implicit xDrive so that stiff
         // springs stay stable at coarse fixed timesteps. The stiffness is kept
         // constant at K and the backlash enters through the anchor position:
@@ -211,15 +269,20 @@ public class ServoJointModel : MonoBehaviour
         m_LastTransTorque = transmissionStiffness * dzEnd
                           + transmissionDamping * dampScale * (m_OmegaM - omegaL);
 
-        // Unit note (verified empirically): xDrive target/targetVelocity are in
-        // degrees for rotational drives, but stiffness/damping act on the error
-        // converted to radians, i.e. their units are N*m/rad — pass SI directly.
+        // Unit note (verified empirically on the Linux player, Unity 6):
+        // xDrive target is in degrees for rotational drives, but stiffness and
+        // damping act on the error converted to radians (units N*m/rad), and
+        // targetVelocity is consumed in rad/s by the damping term. Passing
+        // deg/s here multiplies the relative-damping force by ~57, which turns
+        // the transmission damping into a violent energy pump (the joint
+        // oscillates full-range; large damping values diverge to infinity).
+        // Only target/targetVelocity change per frame; stiffness, damping and
+        // forceLimit were configured once in Initialize (see note there).
+        // target/targetVelocity use degree units, which the engine converts
+        // correctly (verified: a plain drive tracks its target 1:1).
         var drive = m_Body.xDrive;
-        drive.stiffness = transmissionStiffness;
         drive.target = (thetaLend + dzEnd) * m_UnitScale; // == thetaM - b*tanh(delta/b)
-        drive.damping = transmissionDamping * dampScale;
         drive.targetVelocity = m_OmegaM * m_UnitScale;
-        drive.forceLimit = float.MaxValue;
         m_Body.xDrive = drive;
         if (m_Body.IsSleeping())
             m_Body.WakeUp();
