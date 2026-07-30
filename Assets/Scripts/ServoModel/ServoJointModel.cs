@@ -63,6 +63,12 @@ public class ServoJointModel : MonoBehaviour
     float m_LimLower0;
     float m_LimUpper0;
 
+#if UNITY_EDITOR
+    const float DriveUnitCompensation = 1f;
+#else
+    static readonly float DriveUnitCompensation = Mathf.Rad2Deg;
+#endif
+
     void Awake()
     {
         m_Body = GetComponent<ArticulationBody>();
@@ -80,21 +86,29 @@ public class ServoJointModel : MonoBehaviour
         foreach (ArticulationBody ab in GetComponentsInParent<ArticulationBody>())
             ab.sleepThreshold = 0f;
         m_ThetaM = m_Body.jointPosition[0];
+        // Batch/headless runs can report non-finite joint state on the very
+        // first frame; a NaN here would poison the drive forever ("The
+        // supplied joint drive has non-finite values").
+        if (!float.IsFinite(m_ThetaM))
+            return; // retry next FixedUpdate
         // jointVelocity is not sampled here: see the note in FixedUpdate.
         m_OmegaM = 0f;
         targetPosition = m_ThetaM;
         targetVelocity = 0f;
         // Configure the constant drive fields once.
-        // Unit quirk (measured on the Linux player, Unity 6000.2): rotational
-        // xDrive stiffness/damping/forceLimit are effectively scaled by
-        // pi/180 relative to their SI meaning (a drive with stiffness S holds
-        // with S*pi/180 N*m/rad; verified from the static sag of a plain
-        // position drive under a known gravity torque). Compensate with
-        // Rad2Deg so the public fields keep their SI units.
+        // Unit quirk: in STANDALONE PLAYER builds (measured on the Linux
+        // player, Unity 6000.2) rotational xDrive stiffness/damping/
+        // forceLimit are effectively scaled by pi/180 relative to their SI
+        // meaning (a drive with stiffness S holds with S*pi/180 N*m/rad;
+        // verified from the static sag of a plain position drive under a
+        // known gravity torque). In the EDITOR the same fields act as plain
+        // N*m/rad (verified by the ServoPendulumTests friction-curve fit,
+        // accurate to <1%). Compensate only in player builds so the public
+        // fields keep their SI units in both environments.
         var drive0 = m_Body.xDrive;
-        drive0.stiffness = transmissionStiffness * Mathf.Rad2Deg;
-        drive0.damping = transmissionDamping * Mathf.Rad2Deg;
-        drive0.forceLimit = 1e3f * Mathf.Rad2Deg;
+        drive0.stiffness = transmissionStiffness * DriveUnitCompensation;
+        drive0.damping = transmissionDamping * DriveUnitCompensation;
+        drive0.forceLimit = 1e3f * DriveUnitCompensation;
         m_Body.xDrive = drive0;
         m_LimLower0 = drive0.lowerLimit;
         m_LimUpper0 = drive0.upperLimit;
@@ -175,15 +189,28 @@ public class ServoJointModel : MonoBehaviour
         // limits stay out of normal reach; the rotor clamp below keeps the
         // transmission from pressing the joint against a limit.
 
-        // Do NOT use m_Body.jointVelocity here. For runtime-imported robots a
-        // joint held static under gravity reports the pre-solve gravity step
-        // (~ tau_g / J * dt) instead of zero. That bias feeds the load
-        // extrapolation below and turns the transmission into a positive
-        // feedback loop: the joint accelerates away and pins at a limit.
-        // A position finite difference is bias-free and good enough at 50 Hz.
+        // Load velocity source differs per environment:
+        // - EDITOR: jointVelocity is clean and current -> use it directly
+        //   (a finite difference would add one step of delay, which
+        //   destabilizes stiff transmissions; verified: the pendulum tests
+        //   explode with FD at K = 400 N*m/rad).
+        // - PLAYER: jointVelocity of a runtime-imported joint held static
+        //   under gravity reports the pre-solve gravity step
+        //   (~ tau_g / J * dt) instead of zero. That bias feeds the load
+        //   extrapolation below and turns the transmission into positive
+        //   feedback (the joint runs away and pins at a limit). Use a
+        //   bias-free position finite difference instead and keep the
+        //   transmission stiffness low enough for the added delay (see the
+        //   stability note in docs/Servo-Model-Guide.md).
+#if UNITY_EDITOR
+        float omegaL = m_Body.jointVelocity[0];
+        m_PrevThetaL = thetaL;
+        m_HasPrevThetaL = true;
+#else
         float omegaL = m_HasPrevThetaL ? (thetaL - m_PrevThetaL) / dt : 0f;
         m_PrevThetaL = thetaL;
         m_HasPrevThetaL = true;
+#endif
 
         int n = substeps > 0 ? substeps : AutoSubsteps(dt);
         float h = dt / n;

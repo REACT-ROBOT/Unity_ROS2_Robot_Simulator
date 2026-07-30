@@ -103,6 +103,29 @@ During the transient the pin bounces across the slot; once settled it stays enga
 - Steady error 0.0089 rad (≈0.5°) — consistent with stiction (≤τ_s/Kp) + gap + PD gravity sag
 - The motor sticks via the Karnopp condition and the holding torque balances gravity exactly through the transmission spring
 
+## 5. Runtime validation (standalone player)
+
+Independently of the editor pendulum tests, the key phenomena were also
+measured on a robot spawned from URDF into the built Linux player (the
+side-by-side ideal-vs-cheap servo demo in
+[Unity_ROS2_sample / servo_demo_description](https://github.com/hijimasa/Unity_ROS2_sample)):
+
+![runtime_validation](images/servo-model/runtime_validation.png)
+
+- **Backlash** (left): the deviation from an ideal reference joint sits on
+  the gravity-loaded gear flank at ±45 mrad (= half of the configured
+  0.09 rad gap) and traverses the gap to the other flank when the pendulum
+  crosses its lowest point; the separation of the up/down branches is the
+  hysteresis loop
+- **Stick-slip** (right): during a slow sweep (0.11 rad/s) the joint
+  repeatedly sticks for ~0.7 s and breaks away; the judder amplitude
+  matches (τ_s − τ_c)/K_series with K_series = 1/(1/Kp + 1/K)
+
+The datasets and plotting script live in `servo_demo_description/doc/` of
+the demo repository. For runtime-specific constraints (discrete stability
+bound on the transmission stiffness, automatic unit compensation, etc.) see
+[the guide's Limitations & notes](Servo-Model-Guide.md#limitations--notes).
+
 ## Re-running
 
 ```bash

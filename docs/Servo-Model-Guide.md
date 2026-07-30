@@ -13,7 +13,7 @@ Adding a `<servo_model>` tag directly under `<robot>` in the URDF attaches a `Se
    - d(Δ) = Δ − b·tanh(Δ/b)  (b = half of the total gap width)
    - Since the model is a continuous function with no branching, it automatically reproduces not only command reversals but also **load-torque reversals** (e.g. the clunk when an arm crosses vertical)
 
-The transmission spring is realized through the implicit PhysX xDrive, so it remains stable at a 50 Hz physics step even for stiff transmissions.
+The transmission spring is realized through the implicit PhysX xDrive. Note however that the rotor and the joint exchange state with one physics step of delay, so **the transmission stiffness has a discrete-stability upper bound** (see "Limitations & notes").
 
 ## URDF syntax
 
@@ -59,6 +59,10 @@ Friction curve: τ_f(ω) = τ_c + (τ_s − τ_c)·exp(−(ω/ω_s)²) + σ_v·�
 | `damping` | engaged transmission damping D | N·m/(rad/s) | 0.5 |
 
 Rule of thumb for `stiffness`: the tooth deflection at maximum torque, τ_max/K, should be roughly 30–50 % of the half gap b.
+However, for robots spawned at runtime (standalone player) the discrete
+stability condition √(K·(1/Jm + 1/J_load))·Δt ≲ 1 takes precedence
+(Δt = Fixed Timestep). For light loads (J_load ~ 10⁻³ kg·m²) the practical
+upper bound is a few N·m/rad; beyond it the joint self-oscillates.
 
 Note: the dead zone is a smooth tanh-based continuous function, so the flank engagement is gradual and the **observed effective dead band is 20–30 % narrower than the nominal `width`** (about 24 % of the nominal stiffness is already transmitted at Δ = b). Set `width` slightly larger if you want to match a measured backlash.
 
@@ -67,9 +71,14 @@ Note: the dead zone is a smooth tanh-based continuous function, so the flank eng
 | Attribute | Meaning | Unit | Default |
 |---|---|---|---|
 | `inertia` | gear-reflected rotor inertia (gear ratio² × rotor inertia) | kg·m² | 2e-3 |
-| `p_gain` | internal servo P gain | N·m/rad | URDF `<drive>` stiffness converted to SI |
-| `d_gain` | internal servo D gain | N·m/(rad/s) | URDF `<drive>` damping converted to SI |
-| `torque_limit` | motor torque limit | N·m | `<drive>` force_limit |
+| `p_gain` | internal servo P gain | N·m/rad | raw URDF `<drive>` stiffness value |
+| `d_gain` | internal servo D gain | N·m/(rad/s) | raw URDF `<drive>` damping value |
+| `torque_limit` | motor torque limit | N·m | raw URDF `<limit effort>` value |
+
+The defaults inherit the **raw numbers** written in the URDF as SI values.
+In runtime deployments the `<drive>`/`<limit effort>` entries usually carry
+the ×180/π compensation described below, so specify `p_gain`/`d_gain`/
+`torque_limit` explicitly in that case.
 
 ## Validation
 
@@ -80,8 +89,64 @@ Validation results with plots and numbers are collected in the [Servo Model Vali
 - **FrictionCurve** — the friction-velocity curve recovered from the steady tracking error must match the configured Stribeck curve
 - **StictionHold** — holding a position against gravity must not chatter (no stick-slip limit cycle)
 
+## General form of the model (porting to other simulators)
+
+The model is engine-independent and can be implemented in MuJoCo, Gazebo,
+etc. from the following coupled system:
+
+**Virtual rotor (reflected to the gear output shaft):**
+
+```
+Jm·ω̇m = τ_servo − τ_f(ωm) − τ_t
+τ_servo = clip( Kp·(θ_cmd − θm) + Kd·(ω_cmd − ωm), ±τ_max )
+τ_f(ω)  = [τ_c + (τ_s − τ_c)·exp(−(ω/ω_s)²)]·sgn(ω) + σ_v·ω   (with Karnopp sticking)
+```
+
+**Backlash transmission (rotor → load joint):**
+
+```
+Δ    = θm − θl,   b = width/2
+d(Δ) = Δ − b·tanh(Δ/b)
+s(Δ) = tanh²(Δ/b)
+τ_t  = K·d(Δ) + D·max(s(Δ), 0.1)·(ωm − ωl)      ← applied to the load joint
+```
+
+The Unity implementation maps τ_t onto the implicit PhysX xDrive
+(stiffness = K, target = θl + d(Δ), targetVelocity = ωm), but that is just
+one realization.
+
+MuJoCo mapping hints:
+- rotor inertia Jm → `armature` (though modelling the rotor as a separate
+  1-DOF joint is more faithful when combined with backlash)
+- Coulomb/static friction → `frictionloss` (MuJoCo's smoothed friction
+  differs from the Stribeck/Karnopp shape; implement the equations above as
+  a custom passive force if fidelity matters)
+- transmission torque τ_t → a custom passive force between the rotor joint
+  and the load joint (`mjcb_passive` etc.); d(Δ) and s(Δ) can be used as-is
+
 ## Limitations & notes
 
+- **Discrete stability bound on the transmission stiffness**: the rotor and
+  the load are coupled with one physics step of delay, so the coupled mode
+  √(K·(1/Jm + 1/J_load)) × Δt must stay below ~1 or the joint
+  self-oscillates. At 50 Hz with light loads this caps K at a few N·m/rad.
+  Plain xDrive position servos (without servo_model) obey the same bound
+- **Keep the gravity rest pose away from the joint limits**: a joint that
+  comes to rest exactly ON a limit can stop responding to drive torques in
+  this engine build, and releasing it by rewriting the drive limits at
+  runtime makes the position snap, so no un-jam is attempted. The virtual
+  rotor is clamped into the joint limit range so the transmission cannot
+  press the joint against a limit indefinitely
+- **Editor vs standalone player unit difference**: on the Linux player the
+  rotational xDrive stiffness/damping/forceLimit act at π/180 of their
+  nominal value (measured from static sag); in the editor they act at face
+  value. `ServoJointModel` compensates automatically per environment, but
+  for plain joints **write URDF `<drive>`/`<limit effort>` with a ×180/π
+  factor for runtime deployments**
+- `jointVelocity` of runtime-spawned joints carries a gravity-induced bias
+  (~τ_g/J·Δt) even at rest, so the player estimates the load velocity by
+  finite differencing positions (the added one-step delay is one reason for
+  the stiffness bound above)
 - Free in-gap motion faster than the physics step (~20 ms) is smoothed out. Reduce `Fixed Timestep` if you need higher fidelity there
 - The `effort` field of `/joint_states` reports the transmitted torque (`driveForce`), which is close to what a real servo would estimate as output torque
 - Keep using the standard URDF `<dynamics friction>` (PhysX `jointFriction`) for load-side (joint bearing) friction
