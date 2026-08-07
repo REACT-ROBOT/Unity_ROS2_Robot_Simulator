@@ -29,7 +29,15 @@ public class JointStatePub : MonoBehaviour
     void Start()
     {
         ros = ROSConnection.GetOrCreateInstance();
-        ros.RegisterPublisher<JointStateMsg>(topicName, 15);
+        // 同名トピックへの二重登録を避ける。デスポーンしても publisher の登録は
+        // 残る (ROSConnection に解除 API が無い) ため、再スポーン時にそのまま
+        // 登録し直すと "registered twice!" の警告でログが埋まり、本物の異常が
+        // 埋もれてしまう。既存の登録はそのまま使える。
+        RosTopicState topicState = ros.GetTopic(topicName);
+        if (topicState == null || !topicState.IsPublisher)
+        {
+            ros.RegisterPublisher<JointStateMsg>(topicName, 15);
+        }
 
         position = new double[jointName.Length];
         velocity = new double[jointName.Length];

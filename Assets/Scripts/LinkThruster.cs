@@ -12,6 +12,7 @@ public class LinkThruster : MonoBehaviour
     public bool clampCommand = true;
 
     private ROSConnection ros;
+    private bool unsubscribed;
 
     void Awake()
     {
@@ -51,8 +52,38 @@ public class LinkThruster : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// このインスタンスを ROS の受信経路から切り離す。デスポーン時に必ず呼ぶこと。
+    /// </summary>
+    /// <remarks>
+    /// JointStateSub.DetachFromRos と同じ理由・同じ作り。破棄済みインスタンスの
+    /// コールバックが購読リストに残ると、そこで例外が出た時点で同じトピックの
+    /// 後続コールバックが呼ばれなくなる。
+    /// </remarks>
+    public void DetachFromRos()
+    {
+        if (unsubscribed)
+        {
+            return;
+        }
+        unsubscribed = true;
+        if (ros != null && !string.IsNullOrEmpty(topicName))
+        {
+            ros.Unsubscribe(topicName);
+        }
+    }
+
+    void OnDestroy()
+    {
+        DetachFromRos();
+    }
+
     private void OnCommand(Float32Msg msg)
     {
+        if (unsubscribed)
+        {
+            return;
+        }
         command = msg.data;
     }
 }

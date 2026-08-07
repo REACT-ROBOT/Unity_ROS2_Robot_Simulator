@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Robotics.ROSTCPConnector;
+using Unity.Robotics.ROSTCPConnector.MessageGeneration;
 using RosMessageTypes.Sensor;
 using RosMessageTypes.Std;
 using RosMessageTypes.Geometry;
@@ -34,8 +35,9 @@ public class GroundTruthPub : MonoBehaviour
     void Start()
     {
         ros = ROSConnection.GetOrCreateInstance();
-        ros.RegisterPublisher<PoseStampedMsg>(topicName, 15);
-        ros.RegisterPublisher<TFMessageMsg>(tfTopicName, 15);
+        // 二重登録を避ける (理由は JointStatePub.Start のコメントを参照)。
+        RegisterPublisherOnce<PoseStampedMsg>(topicName);
+        RegisterPublisherOnce<TFMessageMsg>(tfTopicName);
 
         // Pre-allocate messages once to avoid GC allocations every frame
         _poseMsg = new PoseStampedMsg
@@ -60,6 +62,15 @@ public class GroundTruthPub : MonoBehaviour
         };
 
         _tfMsg = new TFMessageMsg { transforms = _tfTransforms };
+    }
+
+    void RegisterPublisherOnce<T>(string topic) where T : Message
+    {
+        RosTopicState topicState = ros.GetTopic(topic);
+        if (topicState == null || !topicState.IsPublisher)
+        {
+            ros.RegisterPublisher<T>(topic, 15);
+        }
     }
 
     void FixedUpdate()

@@ -121,6 +121,40 @@ public class ServoJointModel : MonoBehaviour
         targetVelocity = velocity;
     }
 
+    /// <summary>
+    /// モデル内部の状態をスポーン直後と同じ状態へ戻す。
+    /// </summary>
+    /// <remarks>
+    /// reset_simulation で関節の位置と速度を戻すだけでは足りない。ロータ角
+    /// (m_ThetaM)、伝達ばねのたわみ、指令値といったモデル側の状態が残っていると、
+    /// 巻き上がったトルクがリセット直後に解放されて関節が跳ねる。ここは関節を
+    /// ゼロへ戻した「後」に呼ぶこと (ロータ角を関節の現在値に合わせるため)。
+    /// </remarks>
+    public void ResetState()
+    {
+        if (m_Body == null)
+            m_Body = GetComponent<ArticulationBody>();
+
+        float theta = 0f;
+        if (m_Body != null && m_Body.dofCount > 0)
+        {
+            float current = m_Body.jointPosition[0];
+            if (float.IsFinite(current))
+                theta = current;
+        }
+
+        m_ThetaM = theta;
+        m_OmegaM = 0f;
+        targetPosition = theta;
+        targetVelocity = 0f;
+        m_LastDelta = 0f;
+        m_LastTransTorque = 0f;
+        // 有限差分による負荷速度の履歴。残すとリセット直後の 1 ステップで
+        // 巨大な速度差として効いてしまう。
+        m_PrevThetaL = theta;
+        m_HasPrevThetaL = false;
+    }
+
     int AutoSubsteps(float dt)
     {
         // Semi-implicit Euler needs w0 * h < ~1 for accuracy; w0 is the highest

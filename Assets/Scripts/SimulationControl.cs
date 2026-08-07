@@ -24,6 +24,7 @@ using UnitySensors.ROS.Serializer.PointCloud;
 using UnitySensors.ROS.Serializer.Image;
 
 using RosMessageTypes.SimulationInterfaces;
+using Unity.Robotics.Core;
 using Unity.Robotics.ROSTCPConnector;
 using Unity.Robotics.ROSTCPConnector.ROSGeometry;
 
@@ -68,6 +69,14 @@ public class SimulationControl : MonoBehaviour
     private Dictionary<string, Vector3> m_EntityInitialPose = new Dictionary<string, Vector3>();
     private Dictionary<string, Quaternion> m_EntityInitialRotation = new Dictionary<string, Quaternion>();
 
+    // Entity ごとに、そのスポーンで publisher 登録したトピック名。
+    // デスポーン時に登録を解除して、消えたロボットのトピックが
+    // ros2 topic list に残り続けないようにする。
+    private Dictionary<string, List<string>> m_EntityPublishedTopics = new Dictionary<string, List<string>>();
+    // トピックごとの参照数。/tf や /ground_truth は複数ロボットが同じ名前へ
+    // publish するので、最後の 1 台が消えるまで解除してはいけない。
+    private Dictionary<string, int> m_PublishedTopicRefCount = new Dictionary<string, int>();
+
     void Start()
     {
         ROSConnection.GetOrCreateInstance().ImplementService<SetSimulationStateRequest, SetSimulationStateResponse>(
@@ -93,6 +102,9 @@ public class SimulationControl : MonoBehaviour
     private SetSimulationStateResponse SetSimulationState(SetSimulationStateRequest request)
     {
         var response = new SetSimulationStateResponse();
+        // Result.msg の規約では成功は RESULT_OK (1)。既定値の 0 は
+        // RESULT_FEATURE_UNSUPPORTED なので、明示的に上書きする。
+        response.result.result = ResultMsg.RESULT_OK;
 
         if (request.state.state == m_SimulationState)
         {
@@ -166,6 +178,7 @@ public class SimulationControl : MonoBehaviour
     private GetSimulationStateResponse GetSimulationState(GetSimulationStateRequest request)
     {
         var response = new GetSimulationStateResponse();
+        response.result.result = ResultMsg.RESULT_OK;
         response.state.state = m_SimulationState;
         return response;
     }
@@ -173,9 +186,14 @@ public class SimulationControl : MonoBehaviour
     private ResetSimulationResponse ResetSimulation(ResetSimulationRequest request)
     {
         var response = new ResetSimulationResponse();
+        response.result.result = ResultMsg.RESULT_OK;
 
         m_SimulationState = SimulationStateMsg.STATE_STOPPED;
         Time.timeScale = 0f;
+        if (playStopImage != null)
+        {
+            playStopImage.sprite = playIcon;
+        }
 
         if (request.scope == ResetSimulationRequest.SCOPE_DEFAULT)
         {
@@ -184,11 +202,16 @@ public class SimulationControl : MonoBehaviour
 
         if ((request.scope & ResetSimulationRequest.SCOPE_TIME) == ResetSimulationRequest.SCOPE_TIME)
         {
-            // TODO: Reset Time
+            Clock.ResetTime();
         }
         if ((request.scope & ResetSimulationRequest.SCOPE_STATE) == ResetSimulationRequest.SCOPE_STATE)
         {
-            ResetAllEntitiesState();
+            // SCOPE_SPAWNED も一緒に立っている場合、どうせ全部消えるので
+            // 状態を戻す意味がない。
+            if ((request.scope & ResetSimulationRequest.SCOPE_SPAWNED) != ResetSimulationRequest.SCOPE_SPAWNED)
+            {
+                ResetAllEntitiesState();
+            }
         }
         if ((request.scope & ResetSimulationRequest.SCOPE_SPAWNED) == ResetSimulationRequest.SCOPE_SPAWNED)
         {
@@ -219,6 +242,7 @@ public class SimulationControl : MonoBehaviour
     {
         // prepare a response
         SpawnEntityResponse spawnEntityResponse = new SpawnEntityResponse();
+        spawnEntityResponse.result.result = ResultMsg.RESULT_OK;
 
         // process the service request
         Debug.Log("Received request for object: " + request.name);
@@ -346,30 +370,7 @@ public class SimulationControl : MonoBehaviour
         // 関節座標にステップ入力として現れ、1 物理ステップで数十 rad/s の
         // 速度が注入されて多回転・リミット突破・固着の原因になるため、
         // 構築完了とテレポートの後に URDF ゼロ姿勢・速度ゼロへ戻す。
-        foreach (GameObject abObject in FindArticulationBodyObjectsInChildren(robotObject))
-        {
-            ArticulationBody ab = abObject.GetComponent<ArticulationBody>();
-            if (ab == null)
-                continue;
-            ab.linearVelocity = Vector3.zero;
-            ab.angularVelocity = Vector3.zero;
-            int dof = ab.dofCount;
-            if (dof > 0)
-            {
-                var jp = ab.jointPosition;
-                var jv = ab.jointVelocity;
-                var jf = ab.jointForce;
-                for (int d = 0; d < dof; d++)
-                {
-                    jp[d] = 0f;
-                    jv[d] = 0f;
-                    jf[d] = 0f;
-                }
-                ab.jointPosition = jp;
-                ab.jointVelocity = jv;
-                ab.jointForce = jf;
-            }
-        }
+        ResetArticulationState(robotObject);
 
         // URDFファイルの解析
         XmlDocument xmlDoc = new XmlDocument();
@@ -403,6 +404,8 @@ public class SimulationControl : MonoBehaviour
         {
             jointStatePub.topicName = jointStateParam.InnerText;
         }
+        // URDF 指定が無ければ既定値のままなので、確定してから控える
+        TrackPublishedTopic(robotObject.name, jointStatePub.topicName);
 
         jointStateSub.articulationBodies = articulationBodyList.ToArray();
         jointStateSub.jointName = jointNameList.ToArray();
@@ -419,6 +422,10 @@ public class SimulationControl : MonoBehaviour
         {
             groundTruthPub.topicName = groundTruthParam.InnerText;
         }
+        // ground_truth と tf は既定では全ロボット共通の名前になる。参照数で管理するので
+        // ここでは素直に両方控えておけばよい。
+        TrackPublishedTopic(robotObject.name, groundTruthPub.topicName);
+        TrackPublishedTopic(robotObject.name, groundTruthPub.tfTopicName);
 
         // Physics Material の生成（ランタイムでは AssetDatabase は使用不可のため new で生成）
         string directoryPath = Path.GetDirectoryName(filePath);
@@ -877,7 +884,7 @@ public class SimulationControl : MonoBehaviour
                                     laserScanHeader.Configure(lidarSensor, sensorLinkName);
                                     laserScanMsgPublisherSerializer.Configure(laserScanHeader, scanPattern, lidarMinRange, lidarMaxRange, lidarGaussianNoiseSigma);
                                     laserScanMsgPublisher.serializer = laserScanMsgPublisherSerializer;
-                                    laserScanMsgPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/scan";
+                                    laserScanMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
                                 }
                                 else
                                 {
@@ -933,7 +940,7 @@ public class SimulationControl : MonoBehaviour
                                     pointCloud2Header.Configure(lidarSensor, sensorLinkName);
                                     lidarPointCloud2MsgPublisherSerializer.Configure(pointCloud2Header);
                                     lidarPointCloud2MsgPublisher.serializer = lidarPointCloud2MsgPublisherSerializer;
-                                    lidarPointCloud2MsgPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/scan";
+                                    lidarPointCloud2MsgPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
                                 }
                                 break;
                             case "camera":
@@ -973,14 +980,14 @@ public class SimulationControl : MonoBehaviour
                                 var cameraInfoSerializer = new CameraInfoMsgSerializer();
                                 cameraInfoSerializer.Configure(cameraSensor, cameraInfoHeader);
                                 cameraInfoPublisher.serializer = cameraInfoSerializer;
-                                cameraInfoPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/camera_info";
+                                cameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/camera_info");
 
                                 var cameraImageHeader = new HeaderSerializer();
                                 cameraImageHeader.Configure(cameraSensor, sensorLinkName);
                                 var cameraImageSerializer = new ImageMsgSerializer();
                                 cameraImageSerializer.Configure(cameraSensor, cameraImageHeader, 0, 0); // Texture0, RGB8
                                 cameraImagePublisher.serializer = cameraImageSerializer;
-                                cameraImagePublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/image_raw";
+                                cameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/image_raw");
                                 break;
                             case "wideanglecamera":
                                 Debug.Log("sensor type 'wideanglecamera' found");
@@ -1019,14 +1026,14 @@ public class SimulationControl : MonoBehaviour
                                 var fisheyeCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 fisheyeCameraInfoSerializer.Configure(fisheyeCameraSensor, fisheyeCameraInfoHeader);
                                 fisheyeCameraInfoPublisher.serializer = fisheyeCameraInfoSerializer;
-                                fisheyeCameraInfoPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_camera_info";
+                                fisheyeCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_camera_info");
 
                                 var fisheyeCameraImageHeader = new HeaderSerializer();
                                 fisheyeCameraImageHeader.Configure(fisheyeCameraSensor, sensorLinkName);
                                 var fisheyeCameraImageSerializer = new ImageMsgSerializer();
                                 fisheyeCameraImageSerializer.Configure(fisheyeCameraSensor, fisheyeCameraImageHeader, 0, 0); // Texture0, RGB8
                                 fisheyeCameraImagePublisher.serializer = fisheyeCameraImageSerializer;
-                                fisheyeCameraImagePublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_image_raw";
+                                fisheyeCameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_image_raw");
                                 break;
                             case "panoramiccamera":
                                 Debug.Log("sensor type 'panoramiccamera' found");
@@ -1065,14 +1072,14 @@ public class SimulationControl : MonoBehaviour
                                 var panoramicCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 panoramicCameraInfoSerializer.Configure(panoramicCameraSensor, panoramicCameraInfoHeader);
                                 panoramicCameraInfoPublisher.serializer = panoramicCameraInfoSerializer;
-                                panoramicCameraInfoPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_camera_info";
+                                panoramicCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_camera_info");
 
                                 var panoramicCameraImageHeader = new HeaderSerializer();
                                 panoramicCameraImageHeader.Configure(panoramicCameraSensor, sensorLinkName);
                                 var panoramicCameraImageSerializer = new CompressedImageMsgSerializer();
                                 panoramicCameraImageSerializer.Configure(panoramicCameraSensor, panoramicCameraImageHeader, 0); // Texture0
                                 panoramicCameraImagePublisher.serializer = panoramicCameraImageSerializer;
-                                panoramicCameraImagePublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_image_raw";
+                                panoramicCameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_image_raw");
                                 break;
                             case "depth_camera":
                                 Debug.Log("sensor type 'depth_camera' found");
@@ -1118,14 +1125,14 @@ public class SimulationControl : MonoBehaviour
                                 var depthCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 depthCameraInfoSerializer.Configure(depthCameraSensor, depthCameraInfoHeader);
                                 depthCameraInfoPublisher.serializer = depthCameraInfoSerializer;
-                                depthCameraInfoPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/depth_camera_info";
+                                depthCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/depth_camera_info");
 
                                 var depthCameraImageHeader = new HeaderSerializer();
                                 depthCameraImageHeader.Configure(depthCameraSensor, sensorLinkName);
                                 var depthCameraImageSerializer = new ImageMsgSerializer();
                                 depthCameraImageSerializer.Configure(depthCameraSensor, depthCameraImageHeader, 0, 1); // Texture0, 32FC1
                                 depthCameraImagePublisher.serializer = depthCameraImageSerializer;
-                                depthCameraImagePublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/depth_image_raw";
+                                depthCameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/depth_image_raw");
                                 break;
                             case "rgbd_camera":
                                 Debug.Log("sensor type 'rgbd_camera' found");
@@ -1181,7 +1188,7 @@ public class SimulationControl : MonoBehaviour
                                 var rgbdDepthCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 rgbdDepthCameraInfoSerializer.Configure(rgbdCameraSensor, rgbdDepthCameraInfoHeader);
                                 rgbdDepthCameraInfoPublisher.serializer = rgbdDepthCameraInfoSerializer;
-                                rgbdDepthCameraInfoPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/depth/camera_info";
+                                rgbdDepthCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/depth/camera_info");
 
                                 // Configure depth image publisher
                                 var rgbdDepthImageHeader = new HeaderSerializer();
@@ -1189,7 +1196,7 @@ public class SimulationControl : MonoBehaviour
                                 var rgbdDepthImageSerializer = new ImageMsgSerializer();
                                 rgbdDepthImageSerializer.Configure(rgbdCameraSensor, rgbdDepthImageHeader, 0, 1); // Texture0 (depth), 32FC1
                                 rgbdDepthImagePublisher.serializer = rgbdDepthImageSerializer;
-                                rgbdDepthImagePublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/depth/image_raw";
+                                rgbdDepthImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/depth/image_raw");
 
                                 // Configure color camera info publisher
                                 var rgbdColorCameraInfoHeader = new HeaderSerializer();
@@ -1197,7 +1204,7 @@ public class SimulationControl : MonoBehaviour
                                 var rgbdColorCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 rgbdColorCameraInfoSerializer.Configure(rgbdCameraSensor, rgbdColorCameraInfoHeader);
                                 rgbdColorCameraInfoPublisher.serializer = rgbdColorCameraInfoSerializer;
-                                rgbdColorCameraInfoPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/color/camera_info";
+                                rgbdColorCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/color/camera_info");
 
                                 // Configure color image publisher
                                 var rgbdColorImageHeader = new HeaderSerializer();
@@ -1205,7 +1212,7 @@ public class SimulationControl : MonoBehaviour
                                 var rgbdColorImageSerializer = new ImageMsgSerializer();
                                 rgbdColorImageSerializer.Configure(rgbdCameraSensor, rgbdColorImageHeader, 1, 0); // Texture1 (color), RGB8
                                 rgbdColorImagePublisher.serializer = rgbdColorImageSerializer;
-                                rgbdColorImagePublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/color/image_raw";
+                                rgbdColorImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/color/image_raw");
                                 break;
                             case "imu":
                                 Debug.Log("sensor type 'imu' found");
@@ -1236,7 +1243,7 @@ public class SimulationControl : MonoBehaviour
                                 var imuSerializer = new IMUMsgSerializer();
                                 imuSerializer.Configure(imuSensor, imuHeader);
                                 imuMsgPublisher.serializer = imuSerializer;
-                                imuMsgPublisher.topicName = "/" + robotObject.name + "/" + sensorLinkName + "/imu";
+                                imuMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/imu");
                                 break;
                             case "thruster":
                                 Debug.Log("sensor type 'thruster' found");
@@ -1992,29 +1999,163 @@ public class SimulationControl : MonoBehaviour
         return new Vector3(-y, z, x);
     }
 
+    /// <summary>
+    /// publisher 登録したトピックを Entity に紐づけて控える。引数の topic をそのまま返すので
+    /// <c>pub.topicName = TrackPublishedTopic(name, "/foo");</c> の形で代入に挟んで使う。
+    /// </summary>
+    private string TrackPublishedTopic(string entityName, string topic)
+    {
+        if (string.IsNullOrEmpty(topic))
+        {
+            return topic;
+        }
+
+        List<string> topics;
+        if (!m_EntityPublishedTopics.TryGetValue(entityName, out topics))
+        {
+            topics = new List<string>();
+            m_EntityPublishedTopics[entityName] = topics;
+        }
+        topics.Add(topic);
+
+        int count;
+        m_PublishedTopicRefCount.TryGetValue(topic, out count);
+        m_PublishedTopicRefCount[topic] = count + 1;
+
+        return topic;
+    }
+
+    /// <summary>
+    /// Entity が使っていた publisher 登録を解除する。他の Entity がまだ同じトピックへ
+    /// publish している場合は参照数を減らすだけで、実際の解除は最後の 1 つが消えたとき。
+    /// </summary>
+    private void ReleasePublishedTopics(string entityName)
+    {
+        List<string> topics;
+        if (!m_EntityPublishedTopics.TryGetValue(entityName, out topics))
+        {
+            return;
+        }
+        m_EntityPublishedTopics.Remove(entityName);
+
+        ROSConnection ros = ROSConnection.GetOrCreateInstance();
+        foreach (string topic in topics)
+        {
+            int count;
+            if (!m_PublishedTopicRefCount.TryGetValue(topic, out count))
+            {
+                continue;
+            }
+            count--;
+            if (count > 0)
+            {
+                m_PublishedTopicRefCount[topic] = count;
+                continue;
+            }
+            m_PublishedTopicRefCount.Remove(topic);
+            // __remove_publisher をエンドポイントへ送る。エンドポイント側の対応が要る
+            // (JointStateSub.DetachFromRos の注記を参照)。
+            ros.UnregisterPublisher(topic);
+        }
+    }
+
+    /// <summary>
+    /// 配下の ArticulationBody の関節状態を URDF ゼロ姿勢・速度ゼロへ戻す。
+    /// </summary>
+    /// <remarks>
+    /// スポーン直後と reset_simulation (SCOPE_STATE) の両方から呼ぶ。
+    /// 位置・速度・関節力だけでなく xDrive の目標値も戻さないと、リセット直後に
+    /// 「最後に受け取った指令」へ向かって動き出してしまい、開始時の状態にならない。
+    /// </remarks>
+    private void ResetArticulationState(GameObject root)
+    {
+        foreach (GameObject abObject in FindArticulationBodyObjectsInChildren(root))
+        {
+            ArticulationBody ab = abObject.GetComponent<ArticulationBody>();
+            if (ab == null)
+                continue;
+
+            ab.linearVelocity = Vector3.zero;
+            ab.angularVelocity = Vector3.zero;
+
+            int dof = ab.dofCount;
+            if (dof > 0)
+            {
+                var jp = ab.jointPosition;
+                var jv = ab.jointVelocity;
+                var jf = ab.jointForce;
+                for (int d = 0; d < dof; d++)
+                {
+                    jp[d] = 0f;
+                    jv[d] = 0f;
+                    jf[d] = 0f;
+                }
+                ab.jointPosition = jp;
+                ab.jointVelocity = jv;
+                ab.jointForce = jf;
+
+                // 駆動目標も初期状態 (停止・原点) に戻す。ここを残すと関節を
+                // ゼロにした次の物理ステップで元の指令位置へ飛び戻る。
+                ArticulationDrive drive = ab.xDrive;
+                drive.target = 0f;
+                drive.targetVelocity = 0f;
+                ab.xDrive = drive;
+            }
+
+            // サーボモデルはロータ角や伝達ばねのたわみを内部に持つ。関節をゼロに
+            // した「後」で戻さないと、巻き上がったトルクが直後に解放される。
+            ServoJointModel servo = abObject.GetComponent<ServoJointModel>();
+            if (servo != null)
+            {
+                servo.ResetState();
+            }
+        }
+    }
+
     private void ResetAllEntitiesState()
     {
         foreach (GameObject entity in m_EntityList)
         {
-            if (entity != null)
+            if (entity == null)
+                continue;
+
+            // スポーン時に記録した初期姿勢。エンティティ名をキーにしているので、
+            // 取り出せない場合は現在の姿勢を維持して関節だけ戻す。
+            Vector3 initialPosition;
+            Quaternion initialRotation;
+            bool hasPosition = m_EntityInitialPose.TryGetValue(entity.name, out initialPosition);
+            bool hasRotation = m_EntityInitialRotation.TryGetValue(entity.name, out initialRotation);
+            if (!hasPosition || !hasRotation)
             {
-                entity.transform.position = m_EntityInitialPose[entity.name];
-                entity.transform.rotation = m_EntityInitialRotation[entity.name];
+                Debug.LogWarning($"[ResetSimulation] '{entity.name}' の初期姿勢が記録されていない。関節状態のみ戻す");
+                initialPosition = entity.transform.position;
+                initialRotation = entity.transform.rotation;
+            }
 
-                List<GameObject> childObjectsWithUrdfLink = GetChildObjectsWithComponent<UrdfLink>(entity);
-                foreach (GameObject child in childObjectsWithUrdfLink)
+            // 関節状態を先に戻す。ルートをテレポートしてから関節をゼロにすると、
+            // その 1 ステップ分だけ関節が動いた状態でソルバが回る。
+            ResetArticulationState(entity);
+
+            entity.transform.position = initialPosition;
+            entity.transform.rotation = initialRotation;
+
+            List<GameObject> childObjectsWithUrdfLink = GetChildObjectsWithComponent<UrdfLink>(entity);
+            foreach (GameObject child in childObjectsWithUrdfLink)
+            {
+                UrdfLink link = child.GetComponent<UrdfLink>();
+                link.IsBaseLink = true;
+
+                ArticulationBody body = child.GetComponent<ArticulationBody>();
+                if (body != null)
                 {
-                    UrdfLink link = child.GetComponent<UrdfLink>();
-                    link.IsBaseLink = true;
-
-                    ArticulationBody body = child.GetComponent<ArticulationBody>();
-                    if (body != null)
-                    {
-                        body.TeleportRoot(m_EntityInitialPose[entity.name], m_EntityInitialRotation[entity.name]);
-                        body.PublishTransform();
-                    }
-                    break;
+                    body.TeleportRoot(initialPosition, initialRotation);
+                    // TeleportRoot はルートの速度を消さない。残すとテレポート直後に
+                    // そのまま走り出して初期位置から離れてしまう。
+                    body.linearVelocity = Vector3.zero;
+                    body.angularVelocity = Vector3.zero;
+                    body.PublishTransform();
                 }
+                break;
             }
         }
     }
@@ -2023,10 +2164,32 @@ public class SimulationControl : MonoBehaviour
     {
         foreach (GameObject entity in m_EntityList)
         {
-            if (entity != null)
+            if (entity == null)
+                continue;
+
+            // まず非アクティブにして、この Entity 配下の Update / FixedUpdate を止める。
+            // Destroy はフレーム終端まで遅延されるので、これをやらないと
+            // UnitySensors の RosMsgPublisher.Update() が「未登録なら登録する」
+            // 遅延登録を行い、下で解除した publisher をその場で登録し直してしまう。
+            entity.SetActive(false);
+
+            // Destroy より前に ROS の受信経路から切り離す。Unity の Destroy は
+            // フレーム終端まで遅延されるため、OnDestroy 任せにすると破棄済みの
+            // コールバックが 1 フレーム分生き残って例外を投げ、同じトピックの
+            // 後続コールバック (再スポーンしたロボット) まで止めてしまう。
+            foreach (JointStateSub sub in entity.GetComponentsInChildren<JointStateSub>(true))
             {
-                GameObject.Destroy(entity);
+                sub.DetachFromRos();
             }
+            foreach (LinkThruster thruster in entity.GetComponentsInChildren<LinkThruster>(true))
+            {
+                thruster.DetachFromRos();
+            }
+            // publisher 側も解除する。こちらは購読と違いコンポーネントに解除 API が無い
+            // (センサ系は UnitySensors のクラス) ため、スポーン時に控えたトピック名で外す。
+            ReleasePublishedTopics(entity.name);
+
+            GameObject.Destroy(entity);
         }
         m_EntityList.Clear();
         m_EntityInitialPose.Clear();

@@ -29,8 +29,25 @@ namespace Unity.Robotics.Core
         static readonly double k_StartTimeEpochSeconds = SecondsSinceUnixEpoch - Time.realtimeSinceStartupAsDouble;
         
         static double SecondsSinceUnixEpoch => (DateTime.Now - k_UnixEpoch).TotalSeconds;
-        static double UnityUnscaledTimeSinceFrameStart => 
+        static double UnityUnscaledTimeSinceFrameStart =>
             Time.realtimeSinceStartupAsDouble - Time.unscaledTimeAsDouble;
+
+        // Origin of the published simulation clock. Time.timeAsDouble cannot be
+        // rewound, so ResetTime() moves this origin forward instead; every
+        // reader below subtracts it. Needed by ResetSimulation's SCOPE_TIME,
+        // which is specified to put the simulated clock back to the start.
+        static double s_TimeOrigin;
+
+        /// <summary>
+        /// Put the published simulation clock back to zero.
+        /// </summary>
+        public static void ResetTime()
+        {
+            s_TimeOrigin = Time.timeAsDouble;
+        }
+
+        /// <summary>Seconds of simulated time since the last ResetTime().</summary>
+        public static double TimeOrigin => s_TimeOrigin;
 
         public static double TimeSinceFrameStart => Now - FrameStartTimeInSeconds;
 
@@ -41,7 +58,7 @@ namespace Unity.Robotics.Core
                 return Mode switch
                 {
                     // This might be an approximation... needs testing.
-                    ClockMode.UnityScaled => Time.timeAsDouble,
+                    ClockMode.UnityScaled => Time.timeAsDouble - s_TimeOrigin,
                     // ClockMode.UnityUnscaled => Time.unscaledTimeAsDouble,
                     // ClockMode.UnixEpoch => k_StartTimeEpochSeconds + UnityUnscaledTimeSinceFrameStart,
                     _ => throw new NotImplementedException()
@@ -55,7 +72,7 @@ namespace Unity.Robotics.Core
             {
                 return Mode switch
                 {
-                    ClockMode.UnityScaled => Time.timeAsDouble + UnityUnscaledTimeSinceFrameStart * Time.timeScale,
+                    ClockMode.UnityScaled => Time.timeAsDouble - s_TimeOrigin + UnityUnscaledTimeSinceFrameStart * Time.timeScale,
                     // ClockMode.UnityUnscaled => Time.realtimeSinceStartupAsDouble,
                     // ClockMode.UnixEpoch => SecondsSinceUnixEpoch,
                     _ => throw new NotImplementedException()
