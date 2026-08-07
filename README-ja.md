@@ -48,6 +48,19 @@ Unity をベースとした ROS2（Robot Operating System 2）と連携するロ
 
 注: これらのサービスは [simulation_interfaces](https://github.com/ros-simulation/simulation_interfaces) に基づいています
 
+## サービスの動作確認
+
+上記のサービス群が仕様どおりに動くかを、実際に動いているシミュレータへ接続して自動検証する
+適合性テストを用意しています。とくに `reset_simulation` の前後で状態が初期化され、
+リセット後も指令を受け付け続けるかを確認できます。
+
+```bash
+# Unity_ROS2_sample のコンテナ内で
+cd ~/colcon_ws && ./scripts/service_conformance_test.sh
+```
+
+詳細は [docs/Service-Conformance-Test-ja.md](docs/Service-Conformance-Test-ja.md) を参照してください。
+
 ## ライセンス
 このプロジェクトは Apache 2.0 ライセンスの下で提供されています - 詳細はライセンスファイルをご覧ください。
 

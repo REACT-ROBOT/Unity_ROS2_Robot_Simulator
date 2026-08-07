@@ -48,6 +48,19 @@ Note: UnitySensors and UnitySensorsROS are used in modifid version now.
 
 Note: The services are based on [simulation_interfaces](https://github.com/ros-simulation/simulation_interfaces)
 
+## Verifying the services
+
+A conformance suite connects to a running simulator and checks that these services behave as
+specified — in particular that `reset_simulation` restores the initial state and that the robot
+keeps accepting commands afterwards.
+
+```bash
+# inside the Unity_ROS2_sample container
+cd ~/colcon_ws && ./scripts/service_conformance_test.sh
+```
+
+See [docs/Service-Conformance-Test.md](docs/Service-Conformance-Test.md) for details.
+
 ## License
 This project is licensed under the Apache 2.0 License - see the LICENSE file for details.
 
