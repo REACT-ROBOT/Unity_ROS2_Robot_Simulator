@@ -55,6 +55,10 @@ public class SimulationControl : MonoBehaviour
     string m_StepSimulationServiceName = "step_simulation";
     [SerializeField]
     string m_SpawnEntityServiceName = "spawn_entity";
+    [SerializeField]
+    string m_SpawnEntitiesServiceName = "spawn_entities";
+    [SerializeField]
+    string m_GetSimulatorFeaturesServiceName = "get_simulator_features";
 
     [Header("再生/停止 Button の Image コンポーネント")]
     public Image playStopImage;
@@ -94,6 +98,12 @@ public class SimulationControl : MonoBehaviour
         ROSConnection.GetOrCreateInstance().ImplementService<SpawnEntityRequest, SpawnEntityResponse>(
             m_SpawnEntityServiceName,
             SpawnEntity);
+        ROSConnection.GetOrCreateInstance().ImplementService<SpawnEntitiesRequest, SpawnEntitiesResponse>(
+            m_SpawnEntitiesServiceName,
+            SpawnEntities);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetSimulatorFeaturesRequest, GetSimulatorFeaturesResponse>(
+            m_GetSimulatorFeaturesServiceName,
+            GetSimulatorFeatures);
 
         m_SimulationState = SimulationStateMsg.STATE_STOPPED;
         Time.timeScale = 0f;
@@ -221,6 +231,38 @@ public class SimulationControl : MonoBehaviour
         return response;
     }
 
+    /// <summary>
+    /// get_simulator_features サービス。このシミュレータが実際に実装している機能だけを申告する。
+    /// </summary>
+    /// <remarks>
+    /// simulation_interfaces は「その機能が使えるかは GetSimulatorFeatures で確認せよ」という
+    /// 建て付けなので、ここは実装状況と必ず揃えること。未実装のものを載せると、
+    /// クライアントは使えると判断して呼びに行ってしまう。
+    /// </remarks>
+    private GetSimulatorFeaturesResponse GetSimulatorFeatures(GetSimulatorFeaturesRequest request)
+    {
+        var response = new GetSimulatorFeaturesResponse();
+        response.features.features = new ushort[]
+        {
+            SimulatorFeaturesMsg.SPAWNING,                  // spawn_entity
+            SimulatorFeaturesMsg.SPAWNING_ENTITIES,         // spawn_entities
+            SimulatorFeaturesMsg.SIMULATION_RESET,          // reset_simulation
+            SimulatorFeaturesMsg.SIMULATION_RESET_TIME,     // SCOPE_TIME
+            SimulatorFeaturesMsg.SIMULATION_RESET_STATE,    // SCOPE_STATE
+            SimulatorFeaturesMsg.SIMULATION_RESET_SPAWNED,  // SCOPE_SPAWNED
+            SimulatorFeaturesMsg.SIMULATION_STATE_GETTING,  // get_simulation_state
+            SimulatorFeaturesMsg.SIMULATION_STATE_SETTING,  // set_simulation_state
+            SimulatorFeaturesMsg.SIMULATION_STATE_PAUSE,    // STATE_PAUSED への遷移
+        };
+        // URDF のみ。mesh は URDF からの相対パスで解決するため、
+        // SPAWNING_RESOURCE_STRING (文字列からの生成) は申告しない。
+        response.features.spawn_formats = new string[] { "urdf" };
+        response.features.custom_info =
+            "Unity_ROS2_Robot_Simulator. Mesh files (obj/stl/dae) can also be spawned by uri. " +
+            "step_simulation and the world interfaces are not implemented.";
+        return response;
+    }
+
     private StepSimulationResponse StepSimulation(StepSimulationRequest request)
     {
         var response = new StepSimulationResponse();
@@ -234,39 +276,130 @@ public class SimulationControl : MonoBehaviour
     }
 
     /// <summary>
-    ///  Callback to respond to the request
+    /// spawn_entity サービス。simulation_interfaces 2.0.0 以降は SpawnEntities が推奨で
+    /// こちらは deprecated 扱いだが、単体スポーンの入口として残っている。
     /// </summary>
-    /// <param name="request">service request containing the object name</param>
-    /// <returns>service response containing the object pose (or 0 if object not found)</returns>
     private SpawnEntityResponse SpawnEntity(SpawnEntityRequest request)
     {
-        // prepare a response
-        SpawnEntityResponse spawnEntityResponse = new SpawnEntityResponse();
-        spawnEntityResponse.result.result = ResultMsg.RESULT_OK;
+        SpawnResultMsg result = SpawnEntityCore(
+            request.name, request.allow_renaming, request.entity_resource,
+            request.entity_namespace, request.initial_pose);
 
-        // process the service request
-        Debug.Log("Received request for object: " + request.name);
+        // SpawnResult と SpawnEntity レスポンスは同じ追加コード (101-109) を共有する
+        var response = new SpawnEntityResponse();
+        response.result = result.result;
+        response.entity_name = result.entity_name;
+        return response;
+    }
 
-        string filePath;
-        Uri uri = new Uri(request.uri);
-        if (uri.IsFile)
+    /// <summary>
+    /// spawn_entities サービス (simulation_interfaces 2.0.0 で追加)。
+    /// </summary>
+    /// <remarks>
+    /// 1 件でも失敗したら result は ENTITIES_SPAWN_FAILED になり、個々の成否は
+    /// results[i] に入る。途中で失敗しても残りの要求は続行する: 部分的に成功した
+    /// シーンを呼び出し側が results から把握できるほうが、途中で止めて何が生成
+    /// されたか分からなくなるより扱いやすい。
+    /// </remarks>
+    private SpawnEntitiesResponse SpawnEntities(SpawnEntitiesRequest request)
+    {
+        var response = new SpawnEntitiesResponse();
+        int count = request.spawn_requests != null ? request.spawn_requests.Length : 0;
+        response.results = new SpawnResultMsg[count];
+
+        bool anyFailed = false;
+        for (int i = 0; i < count; i++)
         {
-            filePath = uri.LocalPath;
+            SpawnEntityMsg spawnRequest = request.spawn_requests[i];
+            SpawnResultMsg result = SpawnEntityCore(
+                spawnRequest.name, spawnRequest.allow_renaming, spawnRequest.entity_resource,
+                spawnRequest.entity_namespace, spawnRequest.initial_pose);
+            response.results[i] = result;
+            if (result.result.result != ResultMsg.RESULT_OK)
+            {
+                anyFailed = true;
+            }
+        }
+
+        if (anyFailed)
+        {
+            response.result.result = SpawnEntitiesResponse.ENTITIES_SPAWN_FAILED;
+            response.result.error_message = "At least one spawn request failed; see results";
         }
         else
         {
-            Debug.LogError("Invalid URI: " + request.uri);
-            spawnEntityResponse.result.result = SpawnEntityResponse.RESOURCE_PARSE_ERROR;
-            spawnEntityResponse.result.error_message = "Invalid URI: " + request.uri;
+            response.result.result = ResultMsg.RESULT_OK;
+        }
+        return response;
+    }
+
+    /// <summary>
+    /// 1 体分のスポーン処理。spawn_entity と spawn_entities の共通実装。
+    /// </summary>
+    private SpawnResultMsg SpawnEntityCore(
+        string requestedName,
+        bool allowRenaming,
+        ResourceMsg entityResource,
+        string entityNamespace,
+        RosMessageTypes.Geometry.PoseStampedMsg initialPose)
+    {
+        // prepare a response
+        SpawnResultMsg spawnEntityResponse = new SpawnResultMsg();
+        spawnEntityResponse.result.result = ResultMsg.RESULT_OK;
+        spawnEntityResponse.entity_name = requestedName;
+
+        // process the service request
+        Debug.Log("Received request for object: " + requestedName);
+
+        // 2.0.0 で uri / resource_string は Resource メッセージへまとめられた。
+        string resourceUri = entityResource != null ? entityResource.uri : null;
+        string resourceString = entityResource != null ? entityResource.resource_string : null;
+
+        if (string.IsNullOrEmpty(resourceUri))
+        {
+            if (!string.IsNullOrEmpty(resourceString))
+            {
+                // resource_string からの生成 (SPAWNING_RESOURCE_STRING) は未対応。
+                // URDF の mesh 参照は URDF ファイルからの相対パスで解決されるため、
+                // 文字列だけ受け取ってもアセットを見つけられない。
+                Debug.LogError("Spawning from resource_string is not supported");
+                spawnEntityResponse.result.result = SpawnResultMsg.UNSUPPORTED_FORMAT;
+                spawnEntityResponse.result.error_message =
+                    "Spawning from resource_string is not supported; provide a file uri instead";
+                return spawnEntityResponse;
+            }
+            Debug.LogError("Neither uri nor resource_string was provided");
+            spawnEntityResponse.result.result = SpawnResultMsg.NO_RESOURCE;
+            spawnEntityResponse.result.error_message = "Both uri and resource_string are empty";
             return spawnEntityResponse;
         }
-        double robot_x = request.initial_pose.pose.position.x;
-        double robot_y = request.initial_pose.pose.position.y;
-        double robot_z = request.initial_pose.pose.position.z;
-        double q_x = request.initial_pose.pose.orientation.x;
-        double q_y = request.initial_pose.pose.orientation.y;
-        double q_z = request.initial_pose.pose.orientation.z;
-        double q_w = request.initial_pose.pose.orientation.w;
+
+        string filePath;
+        Uri uri;
+        if (!Uri.TryCreate(resourceUri, UriKind.Absolute, out uri) || !uri.IsFile)
+        {
+            Debug.LogError("Invalid URI: " + resourceUri);
+            spawnEntityResponse.result.result = SpawnResultMsg.RESOURCE_PARSE_ERROR;
+            spawnEntityResponse.result.error_message = "Invalid URI: " + resourceUri;
+            return spawnEntityResponse;
+        }
+        filePath = uri.LocalPath;
+
+        if (!File.Exists(filePath))
+        {
+            Debug.LogError("Resource file not found: " + filePath);
+            spawnEntityResponse.result.result = SpawnResultMsg.MISSING_ASSETS;
+            spawnEntityResponse.result.error_message = "Resource file not found: " + filePath;
+            return spawnEntityResponse;
+        }
+
+        double robot_x = initialPose.pose.position.x;
+        double robot_y = initialPose.pose.position.y;
+        double robot_z = initialPose.pose.position.z;
+        double q_x = initialPose.pose.orientation.x;
+        double q_y = initialPose.pose.orientation.y;
+        double q_z = initialPose.pose.orientation.z;
+        double q_w = initialPose.pose.orientation.w;
 
         Debug.Log("Received path: " + filePath);
 
@@ -276,11 +409,22 @@ public class SimulationControl : MonoBehaviour
             if (ob == null)
             {
                 Debug.LogError("Failed to load object from File.");
-                spawnEntityResponse.result.result = SpawnEntityResponse.RESOURCE_PARSE_ERROR;
+                spawnEntityResponse.result.result = SpawnResultMsg.RESOURCE_PARSE_ERROR;
                 spawnEntityResponse.result.error_message = "Failed to load object from File.";
                 return spawnEntityResponse;
             }
-            ob.name = request.name;
+            string meshName;
+            if (!TryResolveEntityName(requestedName, ob.name, allowRenaming, out meshName))
+            {
+                Debug.LogError($"Entity name '{requestedName}' is already taken");
+                GameObject.Destroy(ob);
+                spawnEntityResponse.result.result = SpawnResultMsg.NAME_NOT_UNIQUE;
+                spawnEntityResponse.result.error_message =
+                    $"Entity name '{requestedName}' is already taken; set allow_renaming to spawn anyway";
+                return spawnEntityResponse;
+            }
+            ob.name = meshName;
+            spawnEntityResponse.entity_name = meshName;
 
             // オブジェクトの直下のすべての子オブジェクトを取得
             foreach (MeshCollider meshCollider in ob.GetComponentsInChildren<MeshCollider>())
@@ -315,10 +459,26 @@ public class SimulationControl : MonoBehaviour
         if (robotObject == null)
         {
             Debug.LogError("Failed to load robot from URDF.");
-            spawnEntityResponse.result.result = SpawnEntityResponse.RESOURCE_PARSE_ERROR;
+            spawnEntityResponse.result.result = SpawnResultMsg.RESOURCE_PARSE_ERROR;
             spawnEntityResponse.result.error_message = "Failed to load robot from URDF.";
             return spawnEntityResponse;
         }
+
+        // 名前は topic 名 (/<name>/joint_states など) や m_EntityInitialPose の
+        // キーになるので、配下の publisher を組み立てる前に確定させる。
+        string resolvedName;
+        if (!TryResolveEntityName(requestedName, robotObject.name, allowRenaming, out resolvedName))
+        {
+            Debug.LogError($"Entity name '{requestedName}' is already taken");
+            GameObject.Destroy(robotObject);
+            spawnEntityResponse.result.result = SpawnResultMsg.NAME_NOT_UNIQUE;
+            spawnEntityResponse.result.error_message =
+                $"Entity name '{requestedName}' is already taken; set allow_renaming to spawn anyway";
+            return spawnEntityResponse;
+        }
+        robotObject.name = resolvedName;
+        spawnEntityResponse.entity_name = resolvedName;
+
         m_EntityList.Add(robotObject);
 
         // ロボットの位置・回転設定
@@ -404,8 +564,12 @@ public class SimulationControl : MonoBehaviour
         {
             jointStatePub.topicName = jointStateParam.InnerText;
         }
-        // URDF 指定が無ければ既定値のままなので、確定してから控える
-        TrackPublishedTopic(robotObject.name, jointStatePub.topicName);
+        // URDF 指定が無ければ既定値のままなので、確定してから控える。
+        // TrackPublishedTopic は名前空間を適用した名前を返すので必ず代入し直すこと
+        // (代入を忘れると publisher だけ名前空間なしのまま登録され、解除対象の
+        // 名前ともずれる)。
+        jointStatePub.topicName =
+            TrackPublishedTopic(robotObject.name, entityNamespace, jointStatePub.topicName);
 
         jointStateSub.articulationBodies = articulationBodyList.ToArray();
         jointStateSub.jointName = jointNameList.ToArray();
@@ -415,6 +579,7 @@ public class SimulationControl : MonoBehaviour
         {
             jointStateSub.topicName = jointCommandParam.InnerText;
         }
+        jointStateSub.topicName = ApplyNamespace(entityNamespace, jointStateSub.topicName);
 
         groundTruthPub.targetObject = childObjectsWithUrdfLink[0];
         XmlNode groundTruthParam = xmlDoc.SelectSingleNode("//robot/ros2_control/hardware/param[@name='ground_truth_topic']");
@@ -424,8 +589,10 @@ public class SimulationControl : MonoBehaviour
         }
         // ground_truth と tf は既定では全ロボット共通の名前になる。参照数で管理するので
         // ここでは素直に両方控えておけばよい。
-        TrackPublishedTopic(robotObject.name, groundTruthPub.topicName);
-        TrackPublishedTopic(robotObject.name, groundTruthPub.tfTopicName);
+        groundTruthPub.topicName =
+            TrackPublishedTopic(robotObject.name, entityNamespace, groundTruthPub.topicName);
+        groundTruthPub.tfTopicName =
+            TrackPublishedTopic(robotObject.name, entityNamespace, groundTruthPub.tfTopicName);
 
         // Physics Material の生成（ランタイムでは AssetDatabase は使用不可のため new で生成）
         string directoryPath = Path.GetDirectoryName(filePath);
@@ -884,7 +1051,7 @@ public class SimulationControl : MonoBehaviour
                                     laserScanHeader.Configure(lidarSensor, sensorLinkName);
                                     laserScanMsgPublisherSerializer.Configure(laserScanHeader, scanPattern, lidarMinRange, lidarMaxRange, lidarGaussianNoiseSigma);
                                     laserScanMsgPublisher.serializer = laserScanMsgPublisherSerializer;
-                                    laserScanMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
+                                    laserScanMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
                                 }
                                 else
                                 {
@@ -940,7 +1107,7 @@ public class SimulationControl : MonoBehaviour
                                     pointCloud2Header.Configure(lidarSensor, sensorLinkName);
                                     lidarPointCloud2MsgPublisherSerializer.Configure(pointCloud2Header);
                                     lidarPointCloud2MsgPublisher.serializer = lidarPointCloud2MsgPublisherSerializer;
-                                    lidarPointCloud2MsgPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
+                                    lidarPointCloud2MsgPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/scan");
                                 }
                                 break;
                             case "camera":
@@ -980,14 +1147,14 @@ public class SimulationControl : MonoBehaviour
                                 var cameraInfoSerializer = new CameraInfoMsgSerializer();
                                 cameraInfoSerializer.Configure(cameraSensor, cameraInfoHeader);
                                 cameraInfoPublisher.serializer = cameraInfoSerializer;
-                                cameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/camera_info");
+                                cameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/camera_info");
 
                                 var cameraImageHeader = new HeaderSerializer();
                                 cameraImageHeader.Configure(cameraSensor, sensorLinkName);
                                 var cameraImageSerializer = new ImageMsgSerializer();
                                 cameraImageSerializer.Configure(cameraSensor, cameraImageHeader, 0, 0); // Texture0, RGB8
                                 cameraImagePublisher.serializer = cameraImageSerializer;
-                                cameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/image_raw");
+                                cameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/image_raw");
                                 break;
                             case "wideanglecamera":
                                 Debug.Log("sensor type 'wideanglecamera' found");
@@ -1026,14 +1193,14 @@ public class SimulationControl : MonoBehaviour
                                 var fisheyeCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 fisheyeCameraInfoSerializer.Configure(fisheyeCameraSensor, fisheyeCameraInfoHeader);
                                 fisheyeCameraInfoPublisher.serializer = fisheyeCameraInfoSerializer;
-                                fisheyeCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_camera_info");
+                                fisheyeCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_camera_info");
 
                                 var fisheyeCameraImageHeader = new HeaderSerializer();
                                 fisheyeCameraImageHeader.Configure(fisheyeCameraSensor, sensorLinkName);
                                 var fisheyeCameraImageSerializer = new ImageMsgSerializer();
                                 fisheyeCameraImageSerializer.Configure(fisheyeCameraSensor, fisheyeCameraImageHeader, 0, 0); // Texture0, RGB8
                                 fisheyeCameraImagePublisher.serializer = fisheyeCameraImageSerializer;
-                                fisheyeCameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_image_raw");
+                                fisheyeCameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/fisheye_image_raw");
                                 break;
                             case "panoramiccamera":
                                 Debug.Log("sensor type 'panoramiccamera' found");
@@ -1072,14 +1239,14 @@ public class SimulationControl : MonoBehaviour
                                 var panoramicCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 panoramicCameraInfoSerializer.Configure(panoramicCameraSensor, panoramicCameraInfoHeader);
                                 panoramicCameraInfoPublisher.serializer = panoramicCameraInfoSerializer;
-                                panoramicCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_camera_info");
+                                panoramicCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_camera_info");
 
                                 var panoramicCameraImageHeader = new HeaderSerializer();
                                 panoramicCameraImageHeader.Configure(panoramicCameraSensor, sensorLinkName);
                                 var panoramicCameraImageSerializer = new CompressedImageMsgSerializer();
                                 panoramicCameraImageSerializer.Configure(panoramicCameraSensor, panoramicCameraImageHeader, 0); // Texture0
                                 panoramicCameraImagePublisher.serializer = panoramicCameraImageSerializer;
-                                panoramicCameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_image_raw");
+                                panoramicCameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/panoramic_image_raw");
                                 break;
                             case "depth_camera":
                                 Debug.Log("sensor type 'depth_camera' found");
@@ -1125,14 +1292,14 @@ public class SimulationControl : MonoBehaviour
                                 var depthCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 depthCameraInfoSerializer.Configure(depthCameraSensor, depthCameraInfoHeader);
                                 depthCameraInfoPublisher.serializer = depthCameraInfoSerializer;
-                                depthCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/depth_camera_info");
+                                depthCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/depth_camera_info");
 
                                 var depthCameraImageHeader = new HeaderSerializer();
                                 depthCameraImageHeader.Configure(depthCameraSensor, sensorLinkName);
                                 var depthCameraImageSerializer = new ImageMsgSerializer();
                                 depthCameraImageSerializer.Configure(depthCameraSensor, depthCameraImageHeader, 0, 1); // Texture0, 32FC1
                                 depthCameraImagePublisher.serializer = depthCameraImageSerializer;
-                                depthCameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/depth_image_raw");
+                                depthCameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/depth_image_raw");
                                 break;
                             case "rgbd_camera":
                                 Debug.Log("sensor type 'rgbd_camera' found");
@@ -1188,7 +1355,7 @@ public class SimulationControl : MonoBehaviour
                                 var rgbdDepthCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 rgbdDepthCameraInfoSerializer.Configure(rgbdCameraSensor, rgbdDepthCameraInfoHeader);
                                 rgbdDepthCameraInfoPublisher.serializer = rgbdDepthCameraInfoSerializer;
-                                rgbdDepthCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/depth/camera_info");
+                                rgbdDepthCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/depth/camera_info");
 
                                 // Configure depth image publisher
                                 var rgbdDepthImageHeader = new HeaderSerializer();
@@ -1196,7 +1363,7 @@ public class SimulationControl : MonoBehaviour
                                 var rgbdDepthImageSerializer = new ImageMsgSerializer();
                                 rgbdDepthImageSerializer.Configure(rgbdCameraSensor, rgbdDepthImageHeader, 0, 1); // Texture0 (depth), 32FC1
                                 rgbdDepthImagePublisher.serializer = rgbdDepthImageSerializer;
-                                rgbdDepthImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/depth/image_raw");
+                                rgbdDepthImagePublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/depth/image_raw");
 
                                 // Configure color camera info publisher
                                 var rgbdColorCameraInfoHeader = new HeaderSerializer();
@@ -1204,7 +1371,7 @@ public class SimulationControl : MonoBehaviour
                                 var rgbdColorCameraInfoSerializer = new CameraInfoMsgSerializer();
                                 rgbdColorCameraInfoSerializer.Configure(rgbdCameraSensor, rgbdColorCameraInfoHeader);
                                 rgbdColorCameraInfoPublisher.serializer = rgbdColorCameraInfoSerializer;
-                                rgbdColorCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/color/camera_info");
+                                rgbdColorCameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/color/camera_info");
 
                                 // Configure color image publisher
                                 var rgbdColorImageHeader = new HeaderSerializer();
@@ -1212,7 +1379,7 @@ public class SimulationControl : MonoBehaviour
                                 var rgbdColorImageSerializer = new ImageMsgSerializer();
                                 rgbdColorImageSerializer.Configure(rgbdCameraSensor, rgbdColorImageHeader, 1, 0); // Texture1 (color), RGB8
                                 rgbdColorImagePublisher.serializer = rgbdColorImageSerializer;
-                                rgbdColorImagePublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/color/image_raw");
+                                rgbdColorImagePublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/color/image_raw");
                                 break;
                             case "imu":
                                 Debug.Log("sensor type 'imu' found");
@@ -1243,7 +1410,7 @@ public class SimulationControl : MonoBehaviour
                                 var imuSerializer = new IMUMsgSerializer();
                                 imuSerializer.Configure(imuSensor, imuHeader);
                                 imuMsgPublisher.serializer = imuSerializer;
-                                imuMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, "/" + robotObject.name + "/" + sensorLinkName + "/imu");
+                                imuMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/imu");
                                 break;
                             case "thruster":
                                 Debug.Log("sensor type 'thruster' found");
@@ -1305,7 +1472,7 @@ public class SimulationControl : MonoBehaviour
                                 thruster.command = initialThrottle;
                                 if (!string.IsNullOrEmpty(commandTopic))
                                 {
-                                    thruster.topicName = commandTopic;
+                                    thruster.topicName = ApplyNamespace(entityNamespace, commandTopic);
                                 }
                                 break;
                             default:
@@ -1319,9 +1486,6 @@ public class SimulationControl : MonoBehaviour
 
         // エディタ依存の DestroyImmediate の代わりに Destroy を利用
         GameObject.Destroy(robotObject.GetComponent<Controller>());
-
-        // Find a game object with the requested name
-        GameObject gameObject = GameObject.Find(request.name);
 
         return spawnEntityResponse;
     }
@@ -2000,11 +2164,88 @@ public class SimulationControl : MonoBehaviour
     }
 
     /// <summary>
+    /// スポーンするエンティティの名前を決める。
+    /// </summary>
+    /// <remarks>
+    /// 仕様 (SpawnEntity.srv) では、要求名が空ならリソース側の名前 (URDF の
+    /// robot 名) を使う。決まった名前が既存エンティティと衝突する場合、
+    /// allow_renaming が false なら失敗、true なら連番を足して一意にする。
+    ///
+    /// 名前は topic 名の一部になるため、既存の launch を壊さないよう
+    /// 「要求名が空なら URDF 名」という優先順位は仕様どおり守る
+    /// (simulation_ros2_utils の robot_name の既定値も空文字にしてある)。
+    /// </remarks>
+    private bool TryResolveEntityName(string requestedName, string resourceName, bool allowRenaming, out string resolved)
+    {
+        string desired = string.IsNullOrEmpty(requestedName) ? resourceName : requestedName;
+        resolved = desired;
+
+        if (string.IsNullOrEmpty(desired))
+        {
+            return false;
+        }
+        if (!IsEntityNameTaken(desired))
+        {
+            return true;
+        }
+        if (!allowRenaming)
+        {
+            return false;
+        }
+        for (int i = 1; i < 1000; i++)
+        {
+            string candidate = desired + "_" + i;
+            if (!IsEntityNameTaken(candidate))
+            {
+                resolved = candidate;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private bool IsEntityNameTaken(string name)
+    {
+        foreach (GameObject entity in m_EntityList)
+        {
+            if (entity != null && entity.name == name)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// publisher 登録したトピックを Entity に紐づけて控える。引数の topic をそのまま返すので
     /// <c>pub.topicName = TrackPublishedTopic(name, "/foo");</c> の形で代入に挟んで使う。
     /// </summary>
-    private string TrackPublishedTopic(string entityName, string topic)
+    /// <summary>
+    /// SpawnEntity の entity_namespace をトピック名へ適用する。
+    /// </summary>
+    /// <remarks>
+    /// 仕様は「そのエンティティのインターフェースをすべてこの名前空間の下に置く」。
+    /// URDF の ros2_control に書かれたトピック名 (/diffbot/joint_states など) は
+    /// リソース側で固定なので、同じ URDF から 2 体スポーンすると名前空間なしでは
+    /// トピックが衝突する。空文字なら何もしないので、既存の呼び出しには影響しない。
+    /// </remarks>
+    private static string ApplyNamespace(string entityNamespace, string topic)
     {
+        if (string.IsNullOrEmpty(entityNamespace) || string.IsNullOrEmpty(topic))
+        {
+            return topic;
+        }
+        string ns = entityNamespace.Trim('/');
+        if (ns.Length == 0)
+        {
+            return topic;
+        }
+        return "/" + ns + (topic.StartsWith("/") ? topic : "/" + topic);
+    }
+
+    private string TrackPublishedTopic(string entityName, string entityNamespace, string topic)
+    {
+        topic = ApplyNamespace(entityNamespace, topic);
         if (string.IsNullOrEmpty(topic))
         {
             return topic;
