@@ -28,6 +28,11 @@ source install/setup.bash
 The script brings up the ROS-TCP-Endpoint and the simulator, runs the suite, and tears everything
 down. Pass `--no-sim` to attach to an already running stack instead.
 
+> **Note**: when reusing one `colcon_ws` across humble and jazzy, `rm -rf build install log`
+> before `colcon build`. The Python versions differ (3.10 / 3.12), so leftovers from the other
+> distro make the suite fail to start with
+> `UnsupportedTypeSupport: Could not import 'rosidl_typesupport_c'`.
+
 ### Verifying your own changes
 
 The suite drives a running player, so after changing this repository you need to rebuild the

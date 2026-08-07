@@ -28,6 +28,11 @@ source install/setup.bash
 スクリプトが ROS-TCP-Endpoint とシミュレータの起動、テストの実行、後始末までまとめて行います。
 既に立ち上がっているシミュレータへ相乗りしたいときは `--no-sim` を付けます。
 
+> **注意**: `colcon_ws` を humble と jazzy で使い回すときは、先に `rm -rf build install log`
+> してから `colcon build` すること。Python のバージョン (3.10 / 3.12) が違うため、
+> 前の distro の成果物が残っていると
+> `UnsupportedTypeSupport: Could not import 'rosidl_typesupport_c'` でテストが起動しません。
+
 ### 自分の変更を検証する
 
 テストは動いているプレイヤーへ接続するので、このリポジトリを直したときは
