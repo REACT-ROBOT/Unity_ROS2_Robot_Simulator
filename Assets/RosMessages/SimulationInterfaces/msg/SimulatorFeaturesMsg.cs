@@ -41,6 +41,13 @@ namespace RosMessageTypes.SimulationInterfaces
         public const byte STEP_SIMULATION_MULTIPLE = 32; //  Supports multi-stepping through simulation, either through StepSimulation.
         //  service or through SimulateSteps action.
         public const byte STEP_SIMULATION_ACTION = 33; //  Supports SimulateSteps action interface.
+        public const byte WORLD_LOADING = 40; //  Supports LoadWorld interface
+        public const byte WORLD_RESOURCE_STRING = 41; //  Supports LoadWorld resource_string field
+        public const byte WORLD_TAGS = 42; //  Supports world tags and tag filtering
+        public const byte WORLD_UNLOADING = 43; //  Supports UnloadWorld interface
+        public const byte WORLD_INFO_GETTING = 44; //  Supports GetCurrentWorld interface
+        public const byte AVAILABLE_WORLDS = 45; //  Supports GetAvailableWorlds interface
+        public const byte SPAWNING_ENTITIES = 50; //  Support spawn multiple entities
         public ushort[] features;
         //  A list of simulation features as specified by the list above.
         //  A list of additional supported formats for spawning, which might be empty. Values may include

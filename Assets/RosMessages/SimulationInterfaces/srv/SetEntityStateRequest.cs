@@ -22,17 +22,28 @@ namespace RosMessageTypes.SimulationInterfaces
         //  If non-zero twist or acceleration is requested for static object, the service call
         //  fails and RESULT_OPERATION_FAILED is returned.
         //  Note that the acceleration field may be ignored by simulators.
+        public bool set_pose;
+        //  Flags to choose whether pose, twist or acceleration should be set or ignored.
+        public bool set_twist;
+        //  These can be used to choose which EntityState properties to set.
+        public bool set_acceleration;
 
         public SetEntityStateRequest()
         {
             this.entity = "";
             this.state = new EntityStateMsg();
+            this.set_pose = false;
+            this.set_twist = false;
+            this.set_acceleration = false;
         }
 
-        public SetEntityStateRequest(string entity, EntityStateMsg state)
+        public SetEntityStateRequest(string entity, EntityStateMsg state, bool set_pose, bool set_twist, bool set_acceleration)
         {
             this.entity = entity;
             this.state = state;
+            this.set_pose = set_pose;
+            this.set_twist = set_twist;
+            this.set_acceleration = set_acceleration;
         }
 
         public static SetEntityStateRequest Deserialize(MessageDeserializer deserializer) => new SetEntityStateRequest(deserializer);
@@ -41,19 +52,28 @@ namespace RosMessageTypes.SimulationInterfaces
         {
             deserializer.Read(out this.entity);
             this.state = EntityStateMsg.Deserialize(deserializer);
+            deserializer.Read(out this.set_pose);
+            deserializer.Read(out this.set_twist);
+            deserializer.Read(out this.set_acceleration);
         }
 
         public override void SerializeTo(MessageSerializer serializer)
         {
             serializer.Write(this.entity);
             serializer.Write(this.state);
+            serializer.Write(this.set_pose);
+            serializer.Write(this.set_twist);
+            serializer.Write(this.set_acceleration);
         }
 
         public override string ToString()
         {
             return "SetEntityStateRequest: " +
             "\nentity: " + entity.ToString() +
-            "\nstate: " + state.ToString();
+            "\nstate: " + state.ToString() +
+            "\nset_pose: " + set_pose.ToString() +
+            "\nset_twist: " + set_twist.ToString() +
+            "\nset_acceleration: " + set_acceleration.ToString();
         }
 
 #if UNITY_EDITOR

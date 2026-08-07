@@ -8,14 +8,12 @@ using Unity.Robotics.ROSTCPConnector.MessageGeneration;
 namespace RosMessageTypes.SimulationInterfaces
 {
     [Serializable]
-    public class SpawnEntityRequest : Message
+    public class SpawnEntityMsg : Message
     {
         public const string k_RosMessageName = "simulation_interfaces/SpawnEntity";
         public override string RosMessageName => k_RosMessageName;
 
-        //  Spawn an entity (a robot, other object) by name or URI
-        //  This interface is deprecated in favour of SpawnEntities.srv
-        //  Support for this interface is indicated through the SPAWNING value in GetSimulationFeatures.
+        //  Information about spawning an individual entity.
         public string name;
         //  A name to give to the spawned entity.
         //  If empty, the name field in the URI file or resource_string will be used,
@@ -42,7 +40,7 @@ namespace RosMessageTypes.SimulationInterfaces
         //  This frame must be known to the simulator, e.g. of an object spawned earlier.
         //  The timestamp field in the header is ignored.
 
-        public SpawnEntityRequest()
+        public SpawnEntityMsg()
         {
             this.name = "";
             this.allow_renaming = false;
@@ -51,7 +49,7 @@ namespace RosMessageTypes.SimulationInterfaces
             this.initial_pose = new Geometry.PoseStampedMsg();
         }
 
-        public SpawnEntityRequest(string name, bool allow_renaming, ResourceMsg entity_resource, string entity_namespace, Geometry.PoseStampedMsg initial_pose)
+        public SpawnEntityMsg(string name, bool allow_renaming, ResourceMsg entity_resource, string entity_namespace, Geometry.PoseStampedMsg initial_pose)
         {
             this.name = name;
             this.allow_renaming = allow_renaming;
@@ -60,9 +58,9 @@ namespace RosMessageTypes.SimulationInterfaces
             this.initial_pose = initial_pose;
         }
 
-        public static SpawnEntityRequest Deserialize(MessageDeserializer deserializer) => new SpawnEntityRequest(deserializer);
+        public static SpawnEntityMsg Deserialize(MessageDeserializer deserializer) => new SpawnEntityMsg(deserializer);
 
-        private SpawnEntityRequest(MessageDeserializer deserializer)
+        private SpawnEntityMsg(MessageDeserializer deserializer)
         {
             deserializer.Read(out this.name);
             deserializer.Read(out this.allow_renaming);
@@ -82,7 +80,7 @@ namespace RosMessageTypes.SimulationInterfaces
 
         public override string ToString()
         {
-            return "SpawnEntityRequest: " +
+            return "SpawnEntityMsg: " +
             "\nname: " + name.ToString() +
             "\nallow_renaming: " + allow_renaming.ToString() +
             "\nentity_resource: " + entity_resource.ToString() +

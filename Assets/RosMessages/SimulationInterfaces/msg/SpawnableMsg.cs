@@ -14,8 +14,8 @@ namespace RosMessageTypes.SimulationInterfaces
         public override string RosMessageName => k_RosMessageName;
 
         //  Robot or other object which can be spawned in simulation runtime.
-        public string uri;
-        //  URI which will be accepted by SpawnEntity service.
+        public ResourceMsg entity_resource;
+        //  The resource (e.g. URDF, SDF) for the model to be spawned.
         public string description;
         //  Optional description for the user, e.g. "robot X with sensors A,B,C".
         public BoundsMsg spawn_bounds;
@@ -23,14 +23,14 @@ namespace RosMessageTypes.SimulationInterfaces
 
         public SpawnableMsg()
         {
-            this.uri = "";
+            this.entity_resource = new ResourceMsg();
             this.description = "";
             this.spawn_bounds = new BoundsMsg();
         }
 
-        public SpawnableMsg(string uri, string description, BoundsMsg spawn_bounds)
+        public SpawnableMsg(ResourceMsg entity_resource, string description, BoundsMsg spawn_bounds)
         {
-            this.uri = uri;
+            this.entity_resource = entity_resource;
             this.description = description;
             this.spawn_bounds = spawn_bounds;
         }
@@ -39,14 +39,14 @@ namespace RosMessageTypes.SimulationInterfaces
 
         private SpawnableMsg(MessageDeserializer deserializer)
         {
-            deserializer.Read(out this.uri);
+            this.entity_resource = ResourceMsg.Deserialize(deserializer);
             deserializer.Read(out this.description);
             this.spawn_bounds = BoundsMsg.Deserialize(deserializer);
         }
 
         public override void SerializeTo(MessageSerializer serializer)
         {
-            serializer.Write(this.uri);
+            serializer.Write(this.entity_resource);
             serializer.Write(this.description);
             serializer.Write(this.spawn_bounds);
         }
@@ -54,7 +54,7 @@ namespace RosMessageTypes.SimulationInterfaces
         public override string ToString()
         {
             return "SpawnableMsg: " +
-            "\nuri: " + uri.ToString() +
+            "\nentity_resource: " + entity_resource.ToString() +
             "\ndescription: " + description.ToString() +
             "\nspawn_bounds: " + spawn_bounds.ToString();
         }

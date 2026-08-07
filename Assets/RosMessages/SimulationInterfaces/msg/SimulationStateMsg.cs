@@ -14,7 +14,7 @@ namespace RosMessageTypes.SimulationInterfaces
         public override string RosMessageName => k_RosMessageName;
 
         //  Simulation states used in SetSimulationState and returned in GetSimulationState
-        public const byte STATE_STOPPED = 0; //  Simulation is stopped, which is equivalent to pausing and resetting with ALL.
+        public const byte STATE_STOPPED = 0; //  Simulation is stopped, which is equivalent to pausing and resetting with ALL_PAUSED.
         //  This is typically the default state when simulator is launched.
         //  Stopped simulation can be played. It can also be paused, which means
         //  starting simulation in a paused state immediately,
@@ -26,6 +26,10 @@ namespace RosMessageTypes.SimulationInterfaces
         //  Simulation interfaces will become unavailable after quitting.
         //  Running simulation application is outside of the simulation interfaces as
         //  there is no service to handle the call when the simulator is not up.
+        public const byte STATE_NO_WORLD = 4; //  Simulation world is currently unloaded.
+        //  The simulation is inactive and cannot be started, stopped, or paused.
+        public const byte STATE_LOADING_WORLD = 5; //  Simulation world is currently loading.
+        //  The simulation is inactive while world is loading and cannot be started, stopped, or paused.
         public byte state;
 
         public SimulationStateMsg()

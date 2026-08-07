@@ -8,29 +8,28 @@ using Unity.Robotics.ROSTCPConnector.MessageGeneration;
 namespace RosMessageTypes.SimulationInterfaces
 {
     [Serializable]
-    public class SetEntityStateResponse : Message
+    public class UnloadWorldResponse : Message
     {
-        public const string k_RosMessageName = "simulation_interfaces/SetEntityState";
+        public const string k_RosMessageName = "simulation_interfaces/UnloadWorld";
         public override string RosMessageName => k_RosMessageName;
 
-        //  Additional result.result_code values for this service. Check result.error_message for further details.
-        public const byte INVALID_POSE = 101; //  initial_pose is invalid, such as when the quaternion is invalid or position
-        //  exceeds simulator world bounds.
+        public const byte NO_WORLD_LOADED = 101; //  No world is loaded at the moment.
         public ResultMsg result;
+        //  Standard result message
 
-        public SetEntityStateResponse()
+        public UnloadWorldResponse()
         {
             this.result = new ResultMsg();
         }
 
-        public SetEntityStateResponse(ResultMsg result)
+        public UnloadWorldResponse(ResultMsg result)
         {
             this.result = result;
         }
 
-        public static SetEntityStateResponse Deserialize(MessageDeserializer deserializer) => new SetEntityStateResponse(deserializer);
+        public static UnloadWorldResponse Deserialize(MessageDeserializer deserializer) => new UnloadWorldResponse(deserializer);
 
-        private SetEntityStateResponse(MessageDeserializer deserializer)
+        private UnloadWorldResponse(MessageDeserializer deserializer)
         {
             this.result = ResultMsg.Deserialize(deserializer);
         }
@@ -42,7 +41,7 @@ namespace RosMessageTypes.SimulationInterfaces
 
         public override string ToString()
         {
-            return "SetEntityStateResponse: " +
+            return "UnloadWorldResponse: " +
             "\nresult: " + result.ToString();
         }
 
