@@ -38,7 +38,7 @@ Note: UnitySensors and UnitySensorsROS are used in modifid version now.
 
 2. Set up your robot model and sensors
    ```bash
-   ros2 service call /spawn_entity simulation_interfaces/srv/SpawnEntity "{ name: '<YOURROBOTNAME>', allow_renaming: false, uri: '/your/urdf/path/robot.urdf', resource_string: '', entity_namespace: '', initial_pose: { header: { stamp: { sec: 0, nanosec: 0 }, frame_id: '' }, pose: { position: { x: 0.0, y: 0.0, z: 0.0 }, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } } } }"
+   ros2 service call /spawn_entity simulation_interfaces/srv/SpawnEntity "{ name: '<YOURROBOTNAME>', allow_renaming: false, entity_resource: { uri: 'file:///your/urdf/path/robot.urdf', resource_string: '' }, entity_namespace: '', initial_pose: { header: { stamp: { sec: 0, nanosec: 0 }, frame_id: '' }, pose: { position: { x: 0.0, y: 0.0, z: 0.0 }, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } } } }"
    ```
 
 3. Start the simulation
@@ -46,7 +46,19 @@ Note: UnitySensors and UnitySensorsROS are used in modifid version now.
    ros2 service call /set_simulation_state simulation_interfaces/srv/SetSimulationState "{ state: { state: 1 } }"
    ```
 
-Note: The services are based on [simulation_interfaces](https://github.com/ros-simulation/simulation_interfaces)
+Note: The services are based on [simulation_interfaces](https://github.com/ros-simulation/simulation_interfaces) **2.1.0**.
+Version 2.0.0 folded `uri` and `resource_string` into the `Resource` message (`entity_resource`),
+so earlier call syntax will not work.
+
+Ask the simulator what it supports with `get_simulator_features`:
+
+```bash
+ros2 service call /get_simulator_features simulation_interfaces/srv/GetSimulatorFeatures "{}"
+```
+
+Use `spawn_entities` to spawn several at once (`spawn_entity` is deprecated as of 2.0.0). When
+spawning more than one entity from the same URDF, pass `entity_namespace` — the topic names baked
+into the URDF would otherwise collide.
 
 ## Verifying the services
 

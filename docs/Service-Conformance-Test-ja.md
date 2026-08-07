@@ -64,6 +64,7 @@ CI に組み込む場合は `--junit PATH` で JUnit XML を出力できます�
 | D1–D10 | **`reset_simulation` の全スコープ**。エンティティ生存、関節・姿勢の復元、リセット後の指令受付、サービス生存、デスポーン、再スポーン、時刻リセット、反復安定性 |
 | E1–E2 | `STATE_STOPPED` でのデスポーンと、その後の再スポーン |
 | F1–F2 | `step_simulation` の未対応表明、空シーンへのリセット |
+| G1–G5 | **simulation_interfaces 2.x**。`get_simulator_features` の申告内容、`Resource` によるスポーン、`spawn_entities` (複数生成・部分失敗の報告)、`entity_namespace` によるトピック分離 |
 
 ★ 印 (D5 / D8 / D10) が報告されている不具合の直接検証にあたります。
 
@@ -79,12 +80,12 @@ PASS 19  FAIL 4  KNOWN_GAP 3  SKIP 0  ERROR 0   (diffbot)
 PASS 19  FAIL 3  KNOWN_GAP 3  SKIP 1  ERROR 0   (servo_demo)
 ```
 
-以下の修正を入れた現在の HEAD では、両プロファイルとも全項目が通ります
-(`servo_demo` の 1 SKIP は固定台ロボットでは意味を持たない C5)。
+以下の修正と simulation_interfaces 2.1.0 対応を入れた現在の HEAD では、両プロファイルとも
+全項目が通ります (`servo_demo` の 1 SKIP は固定台ロボットでは意味を持たない C5)。
 
 ```
-PASS 26  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
-PASS 25  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
+PASS 31  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
 ### FAIL → 修正済: デスポーン後に再スポーンすると指令を受け付けない (D8 / D10 / E2)
@@ -237,6 +238,54 @@ KNOWN_GAP  D3  最大ずれ right_wheel_joint で 26.110 rad
 これを飛ばすと、UnitySensors の `RosMsgPublisher.Update()` が持つ「未登録なら登録する」
 遅延登録が、解除した直後に同じフレームで登録し直してしまいます
 (`Destroy()` はフレーム終端まで遅延されるため、コンポーネントはまだ生きています)。
+
+## simulation_interfaces 2.1.0 対応
+
+1.0.0 から 2.1.0 へ更新しました。破壊的変更があるため、2.0.0 より前のクライアントとは
+互換性がありません。
+
+### インターフェース側の変更
+
+| 変更 | 内容 |
+|---|---|
+| `Resource` メッセージの導入 | `SpawnEntity` の `uri` / `resource_string` が `entity_resource` にまとめられた (2.0.0, 破壊的) |
+| `SpawnEntities` の追加 | 複数体を一度に生成する。`SpawnEntity` は deprecated |
+| `SpawnResult` の追加 | 個々のスポーン結果 (101-109 の詳細コード付き) |
+| world 系サービス | `LoadWorld` / `UnloadWorld` / `GetCurrentWorld` / `GetAvailableWorlds` |
+| `SimulationState` | `STATE_NO_WORLD` (4) と `STATE_LOADING_WORLD` (5) を追加 |
+| `SetEntityState` | `set_pose` / `set_twist` / `set_acceleration` フラグを追加 |
+
+### シミュレータ側の対応
+
+- **C# メッセージの再生成**: `Assets/Editor/GenerateRosMessages.cs` を追加しました。
+  エディタのメニューを手で辿らずに、定義から `Assets/RosMessages` 以下を作り直せます。
+
+  ```bash
+  Unity -batchmode -nographics -quit -projectPath . \
+    -executeMethod GenerateRosMessages.Generate \
+    -messageInput ../Unity_ROS2_sample/colcon_ws/src/simulation_interfaces
+  ```
+
+- **`spawn_entity`**: `entity_resource.uri` から読むよう変更。あわせて結果コードを仕様に
+  合わせました (リソース無し → `NO_RESOURCE`、ファイルが無い → `MISSING_ASSETS`、
+  `resource_string` 指定 → `UNSUPPORTED_FORMAT`)。
+- **`spawn_entities`**: 実装しました。1 件でも失敗すると全体は `ENTITIES_SPAWN_FAILED` になり、
+  個々の成否は `results[i]` に入ります。途中で失敗しても残りの要求は続行します。
+- **エンティティ名の一意性**: 従来は要求名を無視して URDF の robot 名をそのまま使っていたため、
+  同じ URDF から 2 体出すと両方が同じ名前・同じトピックになっていました。仕様どおり
+  「要求名が空ならリソース側の名前」を使い、衝突時は `allow_renaming` が false なら
+  `NAME_NOT_UNIQUE`、true なら連番を付けて一意化します。
+- **`entity_namespace`**: 実装しました。URDF の `ros2_control` に書かれたトピック名は
+  リソース側で固定なので、同じ URDF から複数体出すときはこれが無いと衝突します。
+- **`get_simulator_features`**: 実装しました。**実装しているものだけ**を申告します
+  (G1 が未実装機能の申告を失敗として検出します)。
+
+### 対応していないもの
+
+world 系 4 サービス (`LoadWorld` / `UnloadWorld` / `GetCurrentWorld` / `GetAvailableWorlds`) と
+`step_simulation` は未実装で、`get_simulator_features` でも申告していません。
+`resource_string` からの生成 (`SPAWNING_RESOURCE_STRING`) も未対応です — URDF の mesh 参照は
+URDF ファイルからの相対パスで解決するため、文字列だけ受け取ってもアセットを見つけられません。
 
 ## テストを読み書きするときの前提
 

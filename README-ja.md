@@ -38,7 +38,7 @@ Unity をベースとした ROS2（Robot Operating System 2）と連携するロ
 
 3. ロボットモデルとセンサーを設定します
    ```bash
-   ros2 service call /spawn_entity simulation_interfaces/srv/SpawnEntity "{ name: '<YOURROBOTNAME>', allow_renaming: false, uri: '/your/urdf/path/robot.urdf', resource_string: '', entity_namespace: '', initial_pose: { header: { stamp: { sec: 0, nanosec: 0 }, frame_id: '' }, pose: { position: { x: 0.0, y: 0.0, z: 0.0 }, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } } } }"
+   ros2 service call /spawn_entity simulation_interfaces/srv/SpawnEntity "{ name: '<YOURROBOTNAME>', allow_renaming: false, entity_resource: { uri: 'file:///your/urdf/path/robot.urdf', resource_string: '' }, entity_namespace: '', initial_pose: { header: { stamp: { sec: 0, nanosec: 0 }, frame_id: '' }, pose: { position: { x: 0.0, y: 0.0, z: 0.0 }, orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } } } }"
    ```
 
 4. シミュレーションを開始します
@@ -46,7 +46,19 @@ Unity をベースとした ROS2（Robot Operating System 2）と連携するロ
    ros2 service call /set_simulation_state simulation_interfaces/srv/SetSimulationState "{ state: { state: 1 } }"
    ```
 
-注: これらのサービスは [simulation_interfaces](https://github.com/ros-simulation/simulation_interfaces) に基づいています
+注: これらのサービスは [simulation_interfaces](https://github.com/ros-simulation/simulation_interfaces) **2.1.0** に基づいています。
+2.0.0 で `uri` と `resource_string` が `Resource` メッセージ (`entity_resource`) にまとめられているので、
+それ以前の書き方とは互換性がありません。
+
+対応しているサービスは `get_simulator_features` で確認できます。
+
+```bash
+ros2 service call /get_simulator_features simulation_interfaces/srv/GetSimulatorFeatures "{}"
+```
+
+複数体を一度に生成する場合は `spawn_entities` を使います (`spawn_entity` は 2.0.0 で deprecated)。
+同じ URDF から複数体出すときは、URDF に書かれたトピック名が衝突するため `entity_namespace` を
+指定してください。
 
 ## サービスの動作確認
 

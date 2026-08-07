@@ -64,6 +64,7 @@ Outputs (default `/tmp/service_conformance/`):
 | D1–D10 | **All `reset_simulation` scopes**: entity survival, joint and pose restoration, command acceptance after reset, service liveness, despawn, respawn, time reset, repeat stability |
 | E1–E2 | Despawn on `STATE_STOPPED`, and respawning afterwards |
 | F1–F2 | `step_simulation` reporting non-support, resetting an empty scene |
+| G1–G5 | **simulation_interfaces 2.x**: what `get_simulator_features` advertises, spawning through `Resource`, `spawn_entities` (batch spawn and partial-failure reporting), topic separation via `entity_namespace` |
 
 The starred scenarios (D5 / D8 / D10) are the direct checks for the reported bug.
 
@@ -79,12 +80,12 @@ PASS 19  FAIL 4  KNOWN_GAP 3  SKIP 0  ERROR 0   (diffbot)
 PASS 19  FAIL 3  KNOWN_GAP 3  SKIP 1  ERROR 0   (servo_demo)
 ```
 
-With the fixes below, current HEAD passes everything on both profiles (the single
-`servo_demo` skip is C5, which is meaningless for a fixed-base robot).
+With the fixes below plus the simulation_interfaces 2.1.0 work, current HEAD passes everything on
+both profiles (the single `servo_demo` skip is C5, which is meaningless for a fixed-base robot).
 
 ```
-PASS 26  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
-PASS 25  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
+PASS 31  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
 ### FAIL, now fixed: a respawned robot ignores commands (D8 / D10 / E2)
@@ -235,6 +236,56 @@ Despawn calls `entity.SetActive(false)` before releasing, to stop `Update()` on 
 Skipping that lets UnitySensors' `RosMsgPublisher.Update()` — which lazily registers the topic if
 it is not registered — re-register in the same frame, because `Destroy()` is deferred to the end
 of the frame and the components are still alive.
+
+## simulation_interfaces 2.1.0
+
+Updated from 1.0.0. The jump includes breaking changes, so clients built against anything before
+2.0.0 will not interoperate.
+
+### What changed in the interfaces
+
+| Change | Detail |
+|---|---|
+| `Resource` message | `SpawnEntity`'s `uri` / `resource_string` folded into `entity_resource` (2.0.0, breaking) |
+| `SpawnEntities` added | Spawn several entities in one call; `SpawnEntity` is deprecated |
+| `SpawnResult` added | Per-entity spawn outcome with detail codes 101-109 |
+| World services | `LoadWorld` / `UnloadWorld` / `GetCurrentWorld` / `GetAvailableWorlds` |
+| `SimulationState` | Added `STATE_NO_WORLD` (4) and `STATE_LOADING_WORLD` (5) |
+| `SetEntityState` | Added `set_pose` / `set_twist` / `set_acceleration` flags |
+
+### What the simulator does about it
+
+- **Regenerating the C# messages**: `Assets/Editor/GenerateRosMessages.cs` rebuilds
+  `Assets/RosMessages` from the definitions without walking the editor menus.
+
+  ```bash
+  Unity -batchmode -nographics -quit -projectPath . \
+    -executeMethod GenerateRosMessages.Generate \
+    -messageInput ../Unity_ROS2_sample/colcon_ws/src/simulation_interfaces
+  ```
+
+- **`spawn_entity`** now reads `entity_resource.uri`, and its result codes follow the spec:
+  no resource at all gives `NO_RESOURCE`, a missing file gives `MISSING_ASSETS`, and asking for
+  `resource_string` gives `UNSUPPORTED_FORMAT`.
+- **`spawn_entities`** is implemented. A single failure makes the overall result
+  `ENTITIES_SPAWN_FAILED` while each outcome lands in `results[i]`; remaining requests are still
+  attempted, so the caller can see exactly what got created.
+- **Entity name uniqueness**: the requested name used to be ignored in favour of the URDF's robot
+  name, so two spawns of the same URDF produced two entities with the same name publishing to the
+  same topics. The spec's rule now applies — the resource's name is only the fallback for an empty
+  request — and a collision returns `NAME_NOT_UNIQUE` unless `allow_renaming` is set, in which case
+  a suffix is appended.
+- **`entity_namespace`** is implemented. Topic names in a URDF's `ros2_control` block are fixed by
+  the resource, so without a namespace two entities from one URDF collide.
+- **`get_simulator_features`** is implemented and advertises **only what is actually implemented**
+  (G1 fails the run if an unimplemented feature is advertised).
+
+### Not supported
+
+The four world services (`LoadWorld` / `UnloadWorld` / `GetCurrentWorld` / `GetAvailableWorlds`)
+and `step_simulation` are unimplemented and are not advertised. Spawning from `resource_string`
+(`SPAWNING_RESOURCE_STRING`) is also unsupported: a URDF's mesh references resolve relative to the
+URDF file, so a bare string leaves the assets unfindable.
 
 ## Assumptions to know when writing tests
 
