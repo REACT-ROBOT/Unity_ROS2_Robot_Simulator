@@ -5,6 +5,7 @@ Summary of the physical validation of `ServoJointModel` (friction & backlash mod
 ## Setup
 
 - Unity 6000.2.7f2 / PhysX ArticulationBody / Fixed Timestep 0.02 s (50 Hz)
+  (Unity 6000.3.21f1 reproduces the same numbers; see "A note on how these are run" below)
 - Rig: fixed base + one revolute pendulum
   - mass m = 0.2 kg, COM distance L = 0.2 m (max gravity torque mgL ≈ 0.39 N·m)
 - Servo model parameters:
@@ -134,6 +135,29 @@ Unity -batchmode -nographics -projectPath <this repo> \
 ```
 
 Each test writes time-series CSV logs (command, joint angle, motor angle, deflection, actual transmitted torque, …) to `<project>/TestOutput/`.
+
+### A note on how these are run
+
+**All four tests currently fail under `-batchmode -nographics`.** The numbers in this report
+come from running them interactively from the editor's Test Runner. In batch mode the results
+are off by orders of magnitude:
+
+| Test | Expected | Batch-mode measurement |
+|---|---|---|
+| FrictionCurve | 0.135 N·m | 1572.6 |
+| Hysteresis | < 0.104 rad | 56.71 |
+| StictionHold | < 0.01 | 1065.9 |
+| GravityCrossing | Δ < −0.0026 | +0.0068 |
+
+Unity 6000.2.7f2 and 6000.3.21f1 produce **identical values to seven significant figures**, so
+this is a property of the execution mode, not of the engine version. Finding 5 below is the
+likely cause: `ServoJointModel` switches its xDrive unit compensation on `#if UNITY_EDITOR`, and
+batch mode defines `UNITY_EDITOR` (so no compensation) while the engine appears to apply the
+π/180 scaling anyway — a ~57× stiffness error, which matches the divergence and chatter seen.
+
+Use the editor's Test Runner until this is resolved. Behaviour of the built player is covered
+continuously by the servo_demo profile of the
+[service conformance suite](Service-Conformance-Test.md).
 
 ## Implementation findings (dev notes)
 

@@ -5,6 +5,7 @@
 ## 検証環境
 
 - Unity 6000.2.7f2 / PhysX ArticulationBody / Fixed Timestep 0.02 s (50 Hz)
+  (Unity 6000.3.21f1 でも同一結果を確認済み。下記「実行環境に関する注意」を参照)
 - リグ: 固定ベース + revolute 1軸の振子
   - 質量 m = 0.2 kg、重心距離 L = 0.2 m (最大重力トルク mgL ≈ 0.39 N·m)
 - サーボモデルのパラメータ:
@@ -127,8 +128,6 @@ servo_demo_description](https://github.com/hijimasa/Unity_ROS2_sample)) でも
 
 ## 再実行方法
 
-リポジトリのテストをそのまま実行できます (要 Unity 6000.2.7f2):
-
 ```bash
 Unity -batchmode -nographics -projectPath <このリポジトリ> \
       -runTests -testPlatform playmode -testResults results.xml -logFile unity.log
@@ -136,10 +135,30 @@ Unity -batchmode -nographics -projectPath <このリポジトリ> \
 
 各テストが `<プロジェクト>/TestOutput/*.csv` に時系列ログ (指令・関節角・モータ角・たわみ・実伝達トルクなど) を出力するので、プロットして挙動を確認できます。
 
-既知の問題: バッチ実行では初回フレームの関節状態が非有限値になることがあり、
-"The supplied joint drive has non-finite values" で全テストが失敗する場合が
-あります (Initialize に有限性ガードを追加済み)。再現しない場合はエディタの
-Test Runner ウィンドウから対話的に実行してください。
+### 実行環境に関する注意
+
+**上記の `-batchmode -nographics` では現状 4 テストすべてが失敗します。**
+本レポートの数値はエディタの Test Runner から対話的に実行して得たものです。
+バッチ実行では以下のように桁違いの値になります。
+
+| テスト | 期待 | バッチ実行の実測 |
+|---|---|---|
+| FrictionCurve | 0.135 N·m | 1572.6 |
+| Hysteresis | < 0.104 rad | 56.71 |
+| StictionHold | < 0.01 | 1065.9 |
+| GravityCrossing | Δ < −0.0026 | +0.0068 |
+
+Unity 6000.2.7f2 と 6000.3.21f1 で **有効数字 7 桁まで完全に同一の値**になるため、
+エンジンのバージョン差ではなく実行モードの差です。原因は下記「実装上の知見」5 の
+xDrive 単位差と考えられます: `ServoJointModel` は `#if UNITY_EDITOR` で補償を
+切り替えており、バッチ実行では `UNITY_EDITOR` が定義される (= 補償なし) 一方、
+エンジンは π/180 倍で作用しているとすると剛性が約 57 倍になり、
+観測されている発散・チャタリングと整合します。
+
+対話実行では期待どおりの結果が得られるため、当面はエディタの Test Runner を
+使ってください。ビルド済みプレイヤー側の挙動は
+[サービス適合性テスト](Service-Conformance-Test-ja.md) の servo_demo プロファイルで
+継続的に検証しています。
 
 ## 実装上の知見 (開発メモ)
 

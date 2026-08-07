@@ -15,7 +15,7 @@ This project enables robot simulation in Unity with ROS2 communication capabilit
 - Customizable environments for different testing scenarios
 
 ## Requirements
-- Unity 6000.0.47f1 LTS or newer
+- Unity 6000.3.21f1 (verified). 6000.0.47f1 LTS or newer should work
 - ROS 2 Humble (Ubuntu 22.04) or Jazzy (Ubuntu 24.04) — both verified
 - [ROS-TCP-Connector (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Connector) — needs the publisher unregistration API
 - [ROS-TCP-Endpoint (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Endpoint) — **upstream will not work**: it does not implement `__remove_subscriber` and drops the TCP connection on receiving it
