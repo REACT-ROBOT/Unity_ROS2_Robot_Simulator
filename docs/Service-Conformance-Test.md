@@ -13,7 +13,8 @@ so nothing in this repository needs to change to run it.
 
 ## Running
 
-Run it **inside** the Unity_ROS2_sample container.
+Run it **inside** the Unity_ROS2_sample container. Both ROS 2 Humble and Jazzy work as-is —
+the scripts read `${ROS_DISTRO}` rather than hardcoding a distro.
 
 ```bash
 cd ~/colcon_ws
@@ -87,6 +88,8 @@ both profiles (the single `servo_demo` skip is C5, which is meaningless for a fi
 PASS 31  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
 PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
+
+Same results on both ROS 2 Humble (Ubuntu 22.04) and Jazzy (Ubuntu 24.04).
 
 ### FAIL, now fixed: a respawned robot ignores commands (D8 / D10 / E2)
 

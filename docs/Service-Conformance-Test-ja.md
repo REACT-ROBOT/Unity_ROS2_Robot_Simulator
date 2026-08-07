@@ -13,7 +13,8 @@
 
 ## 実行方法
 
-Unity_ROS2_sample のコンテナの **中** で実行します。
+Unity_ROS2_sample のコンテナの **中** で実行します。ROS 2 Humble / Jazzy のどちらでも
+そのまま動きます (スクリプトは決め打ちせず `${ROS_DISTRO}` を見ます)。
 
 ```bash
 cd ~/colcon_ws
@@ -87,6 +88,8 @@ PASS 19  FAIL 3  KNOWN_GAP 3  SKIP 1  ERROR 0   (servo_demo)
 PASS 31  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
 PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
+
+同じ結果を ROS 2 Humble (Ubuntu 22.04) と Jazzy (Ubuntu 24.04) の両方で確認しています。
 
 ### FAIL → 修正済: デスポーン後に再スポーンすると指令を受け付けない (D8 / D10 / E2)
 

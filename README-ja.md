@@ -16,8 +16,9 @@ Unity をベースとした ROS2（Robot Operating System 2）と連携するロ
 
 ## 必要条件
 - Unity 6000.0.47f1 LTS 以降
-- ROS2 (Humble 以降)
-- [ROS-TCP-Connector](https://github.com/Unity-Technologies/ROS-TCP-Connector)
+- ROS 2 Humble (Ubuntu 22.04) または Jazzy (Ubuntu 24.04) — どちらも検証済み
+- [ROS-TCP-Connector (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Connector) — publisher の登録解除 API が必要
+- [ROS-TCP-Endpoint (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Endpoint) — **本家は不可**。`__remove_subscriber` が未実装で、受け取ると TCP 接続ごと落ちます
 - [URDF-Importer](https://github.com/Unity-Technologies/URDF-Importer)
 - [UnitySensors](https://github.com/Field-Robotics-Japan/UnitySensors)
 - [UnitySensorsROS](https://github.com/Field-Robotics-Japan/UnitySensors)
