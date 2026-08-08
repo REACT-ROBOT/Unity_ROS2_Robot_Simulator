@@ -744,7 +744,11 @@ public class SimulationControl : MonoBehaviour
                 if (backlashNode != null)
                 {
                     model.backlashWidth = TryParseFloat(backlashNode.Attributes["width"]?.Value);
-                    model.transmissionStiffness = TryParseFloat(backlashNode.Attributes["stiffness"]?.Value, 400f);
+                    // Same default as ServoJointModel: 400 N*m/rad is past the
+                    // point where the dead-zone term stays quantitative at
+                    // 50 Hz, so a URDF that omits the attribute would silently
+                    // get a transmission the model cannot resolve.
+                    model.transmissionStiffness = TryParseFloat(backlashNode.Attributes["stiffness"]?.Value, 20f);
                     model.transmissionDamping = TryParseFloat(backlashNode.Attributes["damping"]?.Value, 0.5f);
                 }
                 XmlNode motorNode = servoNode.SelectSingleNode("motor");

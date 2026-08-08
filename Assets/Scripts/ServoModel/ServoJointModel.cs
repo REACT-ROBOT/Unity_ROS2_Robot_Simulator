@@ -34,7 +34,12 @@ public class ServoJointModel : MonoBehaviour
 
     [Header("Backlash + transmission")]
     public float backlashWidth = 0f;          // rad, TOTAL dead band (gap = backlashWidth, half width b = width/2)
-    public float transmissionStiffness = 400f; // N*m/rad
+    // N*m/rad. Kept low enough that the dead-zone staleness (a torque error of
+    // K*omega*dt) stays small at the 50 Hz physics rate while the gap still
+    // dominates the deflection, so a joint that does not set it explicitly
+    // still shows backlash rather than a transmission that is quantitatively
+    // wrong. See docs/Servo-Model-Guide.md for the two bounds.
+    public float transmissionStiffness = 20f;
     public float transmissionDamping = 0.5f;  // N*m/(rad/s), only acts while engaged
 
     [Header("Integration")]

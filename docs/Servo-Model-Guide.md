@@ -55,7 +55,7 @@ Friction curve: τ_f(ω) = τ_c + (τ_s − τ_c)·exp(−(ω/ω_s)²) + σ_v·�
 | Attribute | Meaning | Unit | Default |
 |---|---|---|---|
 | `width` | total gap (dead band 2b) | rad | 0 |
-| `stiffness` | engaged transmission stiffness K | N·m/rad | 400 |
+| `stiffness` | engaged transmission stiffness K | N·m/rad | 20 |
 | `damping` | engaged transmission damping D | N·m/(rad/s) | 0.5 |
 
 `stiffness` is squeezed between two bounds (measured values and the derivation
@@ -69,8 +69,9 @@ are in [the validation report](Servo-Model-Validation.md#choosing-the-transmissi
   to be small against the torque you want to resolve — at Δt = 0.02 s, a joint
   moving at ω = 0.15 rad/s and carrying 0.2 N·m wants K ≲ 50
 
-**The 400 default exceeds that upper bound under any realistic condition**, so
-set it explicitly (the bundled servo_demo uses K = 2).
+The default of 20 aims at the middle of that range - stiff enough for the gap
+to dominate, soft enough to stay inside the accuracy bound. Set it explicitly to
+match the real hardware; the bundled servo_demo uses K = 2.
 
 Note also that for robots spawned at runtime (standalone player) the discrete
 stability condition √(K·(1/Jm + 1/J_load))·Δt ≲ 1 takes precedence
