@@ -29,7 +29,7 @@ The transmission spring is realized through the implicit PhysX xDrive. Note howe
   <servo_model joint="arm_joint">
     <friction static="0.12" dynamic="0.08"
               stribeck_velocity="0.1" viscous="0.005"/>
-    <backlash width="0.0175" stiffness="400" damping="0.5"/>
+    <backlash width="0.0175" stiffness="20" damping="0.5"/>
     <motor inertia="2e-3" p_gain="20" d_gain="0.5" torque_limit="2.0"/>
   </servo_model>
 </robot>
@@ -58,8 +58,21 @@ Friction curve: τ_f(ω) = τ_c + (τ_s − τ_c)·exp(−(ω/ω_s)²) + σ_v·�
 | `stiffness` | engaged transmission stiffness K | N·m/rad | 400 |
 | `damping` | engaged transmission damping D | N·m/(rad/s) | 0.5 |
 
-Rule of thumb for `stiffness`: the tooth deflection at maximum torque, τ_max/K, should be roughly 30–50 % of the half gap b.
-However, for robots spawned at runtime (standalone player) the discrete
+`stiffness` is squeezed between two bounds (measured values and the derivation
+are in [the validation report](Servo-Model-Validation.md#choosing-the-transmission-stiffness-updated-2026-08-08)):
+
+- **lower**: the tooth deflection τ/K must stay below the half gap b (`K > τ/b`).
+  Below that the transmission compliance, not the gap, dominates the deviation
+  and there is no backlash left to observe
+- **upper**: the dead-zone argument is one step stale with respect to the
+  end-of-step load position, which leaves a torque error of **K·ω·dt**. That has
+  to be small against the torque you want to resolve — at Δt = 0.02 s, a joint
+  moving at ω = 0.15 rad/s and carrying 0.2 N·m wants K ≲ 50
+
+**The 400 default exceeds that upper bound under any realistic condition**, so
+set it explicitly (the bundled servo_demo uses K = 2).
+
+Note also that for robots spawned at runtime (standalone player) the discrete
 stability condition √(K·(1/Jm + 1/J_load))·Δt ≲ 1 takes precedence
 (Δt = Fixed Timestep). For light loads (J_load ~ 10⁻³ kg·m²) the practical
 upper bound is a few N·m/rad; beyond it the joint self-oscillates.
@@ -126,11 +139,15 @@ MuJoCo mapping hints:
 
 ## Limitations & notes
 
-- **Discrete stability bound on the transmission stiffness**: the rotor and
-  the load are coupled with one physics step of delay, so the coupled mode
-  √(K·(1/Jm + 1/J_load)) × Δt must stay below ~1 or the joint
-  self-oscillates. At 50 Hz with light loads this caps K at a few N·m/rad.
-  Plain xDrive position servos (without servo_model) obey the same bound
+- **Two separate upper bounds on the transmission stiffness**: (1) discrete
+  stability — the rotor and the load are coupled with one physics step of
+  delay, so the coupled mode √(K·(1/Jm + 1/J_load)) × Δt must stay below ~1 or
+  the joint self-oscillates (measured at 50 Hz with a light load: K ≈ 200–250).
+  Plain xDrive position servos (without servo_model) obey the same bound.
+  (2) **quantitative accuracy**, which binds first — the dead-zone argument is
+  one step stale, leaving a torque error of K·sech²(Δ/b)·ω·dt. At 50 Hz with
+  ω = 0.15 rad/s and 0.2 N·m under test, K ≲ 50 (measured: from K = 100 the
+  perceived contact flank inverts)
 - **Keep the gravity rest pose away from the joint limits**: a joint that
   comes to rest exactly ON a limit can stop responding to drive torques in
   this engine build, and releasing it by rewriting the drive limits at
@@ -143,10 +160,13 @@ MuJoCo mapping hints:
   value. `ServoJointModel` compensates automatically per environment, but
   for plain joints **write URDF `<drive>`/`<limit effort>` with a ×180/π
   factor for runtime deployments**
-- `jointVelocity` of runtime-spawned joints carries a gravity-induced bias
-  (~τ_g/J·Δt) even at rest, so the player estimates the load velocity by
-  finite differencing positions (the added one-step delay is one reason for
-  the stiffness bound above)
+- **`ArticulationBody.jointVelocity` is unusable in every environment**: it
+  does not report motion an xDrive is producing at all (a plain drive sweeping
+  at 0.15 rad/s reads −0.008 rad/s; a statically held joint carries a floor of
+  ~0.08 rad/s of garbage). On a joint with no drive it is exact, which is why a
+  free-swing check misses it. The model derives the load velocity from a
+  position finite difference. **The `velocity` field of `/joint_states` is that
+  same engine value, so treat it with care on the control side**
 - Free in-gap motion faster than the physics step (~20 ms) is smoothed out. Reduce `Fixed Timestep` if you need higher fidelity there
 - The `effort` field of `/joint_states` reports the transmitted torque (`driveForce`), which is close to what a real servo would estimate as output torque
 - Keep using the standard URDF `<dynamics friction>` (PhysX `jointFriction`) for load-side (joint bearing) friction

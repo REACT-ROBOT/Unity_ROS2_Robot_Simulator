@@ -223,28 +223,24 @@ public class ServoJointModel : MonoBehaviour
         // limits stay out of normal reach; the rotor clamp below keeps the
         // transmission from pressing the joint against a limit.
 
-        // Load velocity source differs per environment:
-        // - EDITOR: jointVelocity is clean and current -> use it directly
-        //   (a finite difference would add one step of delay, which
-        //   destabilizes stiff transmissions; verified: the pendulum tests
-        //   explode with FD at K = 400 N*m/rad).
-        // - PLAYER: jointVelocity of a runtime-imported joint held static
-        //   under gravity reports the pre-solve gravity step
-        //   (~ tau_g / J * dt) instead of zero. That bias feeds the load
-        //   extrapolation below and turns the transmission into positive
-        //   feedback (the joint runs away and pins at a limit). Use a
-        //   bias-free position finite difference instead and keep the
-        //   transmission stiffness low enough for the added delay (see the
-        //   stability note in docs/Servo-Model-Guide.md).
-#if UNITY_EDITOR
-        float omegaL = m_Body.jointVelocity[0];
-        m_PrevThetaL = thetaL;
-        m_HasPrevThetaL = true;
-#else
+        // Do NOT read m_Body.jointVelocity here, in any environment.
+        // ArticulationBody.jointVelocity does not report motion that an xDrive
+        // is producing: measured on a plain drive (no servo model) sweeping a
+        // joint at a steady 0.15 rad/s, jointVelocity reads about -0.008 rad/s
+        // -- wrong sign and a twentieth of the magnitude -- with and without
+        // gravity alike. On a joint with no drive at all it is exact to 4e-5,
+        // which is why the defect stays hidden in a free-swing check. The
+        // player-side symptom described earlier (a statically held joint
+        // reporting ~ tau_g/J*dt instead of zero) is the same defect seen from
+        // another angle.
+        // Feeding that value into the load extrapolation below inverts the
+        // predicted end-of-step load position, which fabricates transmission
+        // deflection, flips the perceived contact flank and lowers the
+        // discrete stability limit of the transmission. A position finite
+        // difference is bias-free and is what both environments now use.
         float omegaL = m_HasPrevThetaL ? (thetaL - m_PrevThetaL) / dt : 0f;
         m_PrevThetaL = thetaL;
         m_HasPrevThetaL = true;
-#endif
 
         int n = substeps > 0 ? substeps : AutoSubsteps(dt);
         float h = dt / n;
@@ -252,7 +248,14 @@ public class ServoJointModel : MonoBehaviour
         for (int i = 0; i < n; i++)
         {
             // Load state extrapolated linearly across the physics step.
-            float thetaLest = thetaL + omegaL * h * i;
+            // The load is held at its start-of-step position across the
+            // substeps. Advancing it by omegaL*h*i instead feeds the load's
+            // one-step-stale velocity into a term that the stiff K multiplies,
+            // and that is what destabilizes the loop: measured on the hold
+            // test, the substep extrapolation diverges from K = 100 N*m/rad
+            // upwards, while holding the load steady stays stable through
+            // K = 800.
+            float thetaLest = thetaL;
             // Real servos interpolate the 50 Hz command internally; without
             // this the zero-order-hold ripple excites the rotor at high speed.
             // The ramp reaches targetPosition at the end of this physics step.
@@ -317,12 +320,31 @@ public class ServoJointModel : MonoBehaviour
         // spring then injects energy out of nowhere (numeric restitution > 1).
         // The cost is that free in-gap motion is only resolved down to the
         // physics step duration, which is the right trade-off at 50 Hz.
-        // Evaluate the spring against the PREDICTED end-of-step load position.
-        // The drive target is held (ZOH) while the load moves omegaL*dt during
-        // the step; anchoring at the start-of-step position would bias the
-        // deflection by omegaL*dt, which exceeds the static deflection tau/K
-        // for stiff transmissions and flips the perceived contact flank.
-        float thetaLend = thetaL + omegaL * dt;
+        // Do NOT extrapolate the load position here. The drive target reduces
+        // to thetaM - b*tanh(delta/b), so the load position enters only
+        // through the dead-zone argument; the implicit drive resolves the
+        // end-of-step load position itself when it evaluates K*(target -
+        // theta_l). Adding our own prediction double-counts it and injects an
+        // error of order K*domega*dt, which is exactly the term that lowers
+        // the discrete stability limit (measured: the limit drops from
+        // K ~ 200 to K ~ 20-50 N*m/rad when the prediction uses a finite
+        // difference, whose one step of delay makes domega large). One step of
+        // load travel is negligible against the backlash half width b, which
+        // is all the dead zone needs.
+        // The drive target below reduces to thetaM - b*tanh(delta/b), so the
+        // load position enters only through the dead-zone argument; the
+        // implicit drive resolves the end-of-step load position itself when it
+        // evaluates K*(target - theta_l). That leaves the dead-zone argument
+        // one step of load travel stale, which reaches the joint as a torque
+        // error of K*sech^2(delta/b)*omegaL*dt -- and THAT, not the run mode
+        // or the engine version, is what bounds this model: the perceived
+        // contact flank is correct up to K = 50 N*m/rad at 50 Hz and wrong
+        // from K = 100 upwards (measured with the GravityCrossing sweep, where
+        // the transmission carries about 0.22 N*m). Extrapolating the load
+        // here does not extend that range -- it only changes the sign of the
+        // failure -- and it costs stability (the hold test chatters at
+        // 0.32 rad/s instead of 0.013 at K = 400), so no prediction is made.
+        float thetaLend = thetaL;
         float deltaEnd = m_ThetaM - thetaLend;
         ComputeDeadZone(deltaEnd, out float dzEnd, out float engageEnd);
         float dampScale = Mathf.Max(engageEnd, 0.1f);

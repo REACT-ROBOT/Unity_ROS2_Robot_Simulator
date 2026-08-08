@@ -23,11 +23,38 @@ public class ServoDemoCapture
 {
     const int W = 960, H = 540;
 
+    /// <summary>
+    /// The project renders through URP, where the built-in "Standard" and
+    /// "Legacy Shaders/*" shaders have no valid pass and every object comes out
+    /// magenta. Ask for the URP shader first and only fall back to the built-in
+    /// names, and set both colour properties since URP/Lit keys off _BaseColor
+    /// while Material.color writes _Color.
+    /// </summary>
     Material MakeMat(Color c, bool transparent = false)
     {
-        var mat = new Material(Shader.Find(transparent
-            ? "Legacy Shaders/Transparent/Diffuse" : "Standard"));
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        bool urp = shader != null;
+        if (!urp)
+            shader = Shader.Find(transparent
+                ? "Legacy Shaders/Transparent/Diffuse" : "Standard");
+        Assert.IsNotNull(shader, "no usable shader for the demo materials");
+
+        var mat = new Material(shader);
         mat.color = c;
+        if (mat.HasProperty("_BaseColor"))
+            mat.SetColor("_BaseColor", c);
+
+        if (transparent && urp)
+        {
+            mat.SetFloat("_Surface", 1f);   // 0 = opaque, 1 = transparent
+            mat.SetFloat("_Blend", 0f);     // alpha blend
+            mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetFloat("_ZWrite", 0f);
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.DisableKeyword("_ALPHATEST_ON");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        }
         return mat;
     }
 
@@ -95,7 +122,10 @@ public class ServoDemoCapture
         servo.stribeckVelocity = 0.1f;
         servo.viscousFriction = 0.005f;
         servo.backlashWidth = gapWidth;
-        servo.transmissionStiffness = 400f;
+        // Same 50 N*m/rad the backlash tests use. K = 400 is past the discrete
+        // stability limit at 50 Hz and past the range where the dead-zone term
+        // stays quantitative (see docs/Servo-Model-Validation.md).
+        servo.transmissionStiffness = 50f;
         servo.transmissionDamping = 0.5f;
 
         // --- visuals ---
