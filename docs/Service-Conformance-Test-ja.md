@@ -70,7 +70,7 @@ CI に組み込む場合は `--junit PATH` で JUnit XML を出力できます�
 | D1–D10 | **`reset_simulation` の全スコープ**。エンティティ生存、関節・姿勢の復元、リセット後の指令受付、サービス生存、デスポーン、再スポーン、時刻リセット、反復安定性 |
 | E1–E2 | `STATE_STOPPED` でのデスポーンと、その後の再スポーン |
 | F1–F2 | `step_simulation` の進み量 (`n` と `2n` の比が 2 になること)、空シーンへのリセット |
-| G1–G5 | **simulation_interfaces 2.x**。**申告とサービス実体の突き合わせ**、`Resource` によるスポーン、`spawn_entities` (複数生成・部分失敗の報告)、`entity_namespace` によるトピック分離 |
+| G1–G6 | **simulation_interfaces 2.x**。**申告とサービス実体の突き合わせ**、`Resource` によるスポーン、`spawn_entities` (複数生成・部分失敗の報告)、`entity_namespace` によるトピック分離、**`resource_string` からの生成** |
 | H1–H9 | **任意サービス**。`get_entities` / `get_entity_state` と `ground_truth` の一致、`set_entity_state`、`entity_info`、`get_entity_bounds`、`EntityFilters`、`delete_entity`、`get_spawnables` / 名前付き姿勢、world のライフサイクル、**world のタグ絞り込み** |
 
 | I1–I2 | **`simulate_steps` アクション**。1 ステップごとの feedback、途中キャンセル |
@@ -103,8 +103,8 @@ PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 I 群 (2 シナリオ) を足した後は、次のようになります。
 
 ```
-PASS 42  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
-PASS 41  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
+PASS 43  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 42  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
 ROS 2 Jazzy (Ubuntu 24.04) と Humble (Ubuntu 22.04) の両方で確認しています。
