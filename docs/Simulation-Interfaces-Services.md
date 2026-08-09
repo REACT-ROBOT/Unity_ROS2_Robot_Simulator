@@ -19,7 +19,7 @@ All 22 services defined in the srv directory are implemented, plus the `Simulate
 | Spawning | `spawn_entity` / `spawn_entities` | `spawn_entity` is deprecated since 2.0.0 |
 | | `delete_entity` | Despawns a single entity |
 | | `get_spawnables` | Scans `spawnable_paths` from the config file |
-| Entities | `get_entities` / `get_entities_states` | Filter by name, category, tags, bounds |
+| Entities | `get_entities` / `get_entities_states` | Filter by name, category, tags, bounds (box / sphere / convex hull) |
 | | `get_entity_state` / `set_entity_state` | Pose and twist |
 | | `get_entity_info` / `set_entity_info` | Category, description, tags |
 | | `get_entity_bounds` | AABB in the canonical link frame |
@@ -38,8 +38,6 @@ All 22 services defined in the srv directory are implemented, plus the `Simulate
   file, so a bare string leaves the assets unreachable. Use `entity_resource.uri` instead.
   Note that `resource_string` *is* supported for **worlds**, because scene JSON refers to its
   meshes by absolute path and therefore stands on its own as a string.
-- **`ENTITY_BOUNDS_CONVEX`** — bounds filtering supports `TYPE_BOX` and `TYPE_SPHERE` only.
-  A convex hull returns `RESULT_FEATURE_UNSUPPORTED`.
 - **`EntityState.acceleration`** — always reported as zero and ignored by
   `set_entity_state`. Unity offers no direct way to impose an acceleration, and
   `EntityState.msg` explicitly allows simulators to ignore the field. When it is requested,
@@ -67,6 +65,21 @@ The mapping to Unity's left-handed, Y-up convention is the same one used when pu
 For a URDF robot, `get_entity_state` reports the pose of the **base link**. The root
 GameObject does not follow the ArticulationBody solver, so reading it would make the robot
 look stuck at its spawn pose.
+
+### Bounds filtering
+
+`EntityFilters.bounds` supports `TYPE_BOX`, `TYPE_SPHERE` and `TYPE_CONVEX_HULL`
+(`TYPE_EMPTY` means no filter). Entities are treated as their AABB, and those overlapping the
+bounds are returned.
+
+Convex hulls are tested with **GJK**. The separating axis test would need the hull's face
+normals, but `Bounds.msg` carries only vertices — the faces are not in the message. GJK sees a
+shape purely as "given a direction, return the furthest point", so it decides the question
+without reconstructing any faces. Hulls whose points are all coplanar (a triangle or a quad) or
+even collinear work as-is, as degenerate convex sets.
+
+`TYPE_CONVEX_HULL` needs **at least three points**, as `Bounds.msg` specifies; fewer returns
+`RESULT_OPERATION_FAILED`.
 
 ### Name filter
 

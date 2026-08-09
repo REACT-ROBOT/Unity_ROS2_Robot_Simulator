@@ -17,7 +17,7 @@ srv で定義されている 22 サービスと `SimulateSteps` アクション�
 | スポーン | `spawn_entity` / `spawn_entities` | `spawn_entity` は 2.0.0 で deprecated |
 | | `delete_entity` | 1 体だけデスポーンする |
 | | `get_spawnables` | 設定ファイルの `spawnable_paths` を走査 |
-| エンティティ | `get_entities` / `get_entities_states` | 名前・カテゴリ・タグ・bounds で絞り込み |
+| エンティティ | `get_entities` / `get_entities_states` | 名前・カテゴリ・タグ・bounds (box / 球 / 凸包) で絞り込み |
 | | `get_entity_state` / `set_entity_state` | 姿勢と速度 |
 | | `get_entity_info` / `set_entity_info` | カテゴリ・説明・タグ |
 | | `get_entity_bounds` | 基準リンク座標系の AABB |
@@ -36,8 +36,6 @@ srv で定義されている 22 サービスと `SimulateSteps` アクション�
   文字列だけ受け取ってもアセットを見つけられません。`entity_resource.uri` を使ってください。
   なお **ワールド** の `resource_string` には対応しています (シーン JSON はメッシュを
   絶対パスで指すため、文字列だけでも成立するからです)。
-- **`ENTITY_BOUNDS_CONVEX`** — bounds による絞り込みは `TYPE_BOX` と `TYPE_SPHERE` のみ。
-  凸包を渡すと `RESULT_FEATURE_UNSUPPORTED` を返します。
 - **`EntityState.acceleration`** — 常にゼロを返し、`set_entity_state` でも無視します。
   Unity には加速度を直接与える入口が無く、`EntityState.msg` も「シミュレータによっては
   無視される」と明記している項目です。要求された場合は結果を `RESULT_OK` にしたまま
@@ -63,6 +61,21 @@ srv で定義されている 22 サービスと `SimulateSteps` アクション�
 `get_entity_state` が返す姿勢は、URDF ロボットの場合 **ベースリンク**のものです。
 ルートの GameObject は ArticulationBody のソルバに追随しないため、そちらを読むと
 スポーン位置から動かないように見えます。
+
+### bounds による絞り込み
+
+`EntityFilters.bounds` は `TYPE_BOX` / `TYPE_SPHERE` / `TYPE_CONVEX_HULL` に対応しています
+(`TYPE_EMPTY` は絞り込みなし)。エンティティ側は AABB として扱い、それが bounds と
+重なるものを返します。
+
+凸包は **GJK** で判定しています。分離軸判定 (SAT) には凸包の面法線が要りますが、
+`Bounds.msg` が持っているのは頂点だけで面の構成は入っていません。GJK は形状を
+「向きを与えると最も遠い点を返す関数」としてしか見ないので、面を組み立てずに判定できます。
+同一平面上の点しか無い凸包 (三角形や四角形) や一直線上の点でも、退化した凸集合として
+そのまま扱えます。
+
+`TYPE_CONVEX_HULL` は `Bounds.msg` の規定どおり **3 点以上**が必要で、足りなければ
+`RESULT_OPERATION_FAILED` です。
 
 ### 名前フィルタ
 

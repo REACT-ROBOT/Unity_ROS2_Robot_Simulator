@@ -387,6 +387,7 @@ public partial class SimulationControl : MonoBehaviour
             SimulatorFeaturesMsg.ENTITY_TAGS,               // EntityFilters.tags
             SimulatorFeaturesMsg.ENTITY_BOUNDS,             // get_entity_bounds
             SimulatorFeaturesMsg.ENTITY_BOUNDS_BOX,         // EntityFilters.bounds の TYPE_BOX
+            SimulatorFeaturesMsg.ENTITY_BOUNDS_CONVEX,      // EntityFilters.bounds の TYPE_CONVEX_HULL
             SimulatorFeaturesMsg.SIMULATION_RESET,          // reset_simulation
             SimulatorFeaturesMsg.SIMULATION_RESET_TIME,     // SCOPE_TIME
             SimulatorFeaturesMsg.SIMULATION_RESET_STATE,    // SCOPE_STATE
@@ -407,7 +408,6 @@ public partial class SimulationControl : MonoBehaviour
         // 申告していないもの:
         //  SPAWNING_RESOURCE_STRING  URDF の mesh 参照は URDF からの相対パスで解決するため、
         //                            文字列だけ受け取ってもアセットを見つけられない
-        //  ENTITY_BOUNDS_CONVEX      凸包での絞り込みは未実装 (TYPE_BOX と TYPE_SPHERE のみ)
         response.features.spawn_formats = new string[] { "urdf" };
         response.features.custom_info =
             "Unity_ROS2_Robot_Simulator. Mesh files (obj/stl/dae) can also be spawned by uri. " +

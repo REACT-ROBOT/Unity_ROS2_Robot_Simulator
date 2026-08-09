@@ -511,17 +511,24 @@ public partial class SimulationControl
         BoundsMsg bounds = filters != null ? filters.bounds : null;
         if (bounds != null && bounds.type != BoundsMsg.TYPE_EMPTY)
         {
-            if (bounds.type != BoundsMsg.TYPE_BOX && bounds.type != BoundsMsg.TYPE_SPHERE)
+            if (bounds.type != BoundsMsg.TYPE_BOX
+                && bounds.type != BoundsMsg.TYPE_SPHERE
+                && bounds.type != BoundsMsg.TYPE_CONVEX_HULL)
             {
                 error.result = ResultMsg.RESULT_FEATURE_UNSUPPORTED;
                 error.error_message =
-                    $"Bounds type {bounds.type} is not supported; only TYPE_BOX and TYPE_SPHERE are";
+                    $"Bounds type {bounds.type} is not supported; " +
+                    "only TYPE_BOX, TYPE_SPHERE and TYPE_CONVEX_HULL are";
                 return false;
             }
-            if (bounds.points == null || bounds.points.Length < 2)
+            // Bounds.msg では box / sphere は 2 点、凸包は「3 点以上」。
+            int requiredPoints = bounds.type == BoundsMsg.TYPE_CONVEX_HULL ? 3 : 2;
+            if (bounds.points == null || bounds.points.Length < requiredPoints)
             {
                 error.result = ResultMsg.RESULT_OPERATION_FAILED;
-                error.error_message = "Bounds filter needs two points";
+                error.error_message = bounds.type == BoundsMsg.TYPE_CONVEX_HULL
+                    ? "TYPE_CONVEX_HULL needs at least three points"
+                    : "Bounds filter needs two points";
                 return false;
             }
         }
@@ -647,6 +654,16 @@ public partial class SimulationControl
                 && min.z <= filterMax.z && max.z >= filterMin.z;
         }
 
+        if (bounds.type == BoundsMsg.TYPE_CONVEX_HULL)
+        {
+            Vector3[] hull = new Vector3[bounds.points.Length];
+            for (int i = 0; i < hull.Length; i++)
+            {
+                hull[i] = ToVector3(bounds.points[i]);
+            }
+            return ConvexHullOverlapsBox(hull, min, max);
+        }
+
         // TYPE_SPHERE: 1 点目が中心、2 点目の x が半径。
         Vector3 center = ToVector3(bounds.points[0]);
         float radius = (float)bounds.points[1].x;
@@ -655,6 +672,187 @@ public partial class SimulationControl
             Mathf.Clamp(center.y, min.y, max.y),
             Mathf.Clamp(center.z, min.z, max.z));
         return (closest - center).sqrMagnitude <= radius * radius;
+    }
+
+    // ====================================================================
+    // 凸包と AABB の交差判定 (GJK)
+    // ====================================================================
+    //
+    // Bounds.msg の TYPE_CONVEX_HULL が持っているのは**頂点だけ**で、どの頂点が
+    // どの面を作るかは入っていない。分離軸判定 (SAT) には凸包の面法線が要るので、
+    // 使うには 3 次元凸包を組み立てる必要がある (退化した入力の扱いも含めて面倒)。
+    //
+    // GJK は形状を「向きを与えると最も遠い点を返す関数 (support)」としてしか見ない。
+    // 頂点集合の support は内積が最大の頂点、AABB の support は符号で角を選ぶだけなので、
+    // 面の情報なしにそのまま判定できる。同一平面上の点しか無い凸包 (三角形) や
+    // 一直線上の点でも、退化した凸集合としてそのまま扱える。
+
+    // 収束しない入力は想定していないが、万一に備えて反復数を切る。
+    private const int k_GjkMaxIterations = 32;
+
+    private static Vector3 SupportOfPoints(Vector3[] points, Vector3 direction)
+    {
+        Vector3 best = points[0];
+        float bestDot = Vector3.Dot(best, direction);
+        for (int i = 1; i < points.Length; i++)
+        {
+            float dot = Vector3.Dot(points[i], direction);
+            if (dot > bestDot)
+            {
+                bestDot = dot;
+                best = points[i];
+            }
+        }
+        return best;
+    }
+
+    private static Vector3 SupportOfBox(Vector3 min, Vector3 max, Vector3 direction)
+    {
+        return new Vector3(
+            direction.x >= 0f ? max.x : min.x,
+            direction.y >= 0f ? max.y : min.y,
+            direction.z >= 0f ? max.z : min.z);
+    }
+
+    /// <summary>ミンコフスキー差の support。原点を含むかどうかが交差判定になる。</summary>
+    private static Vector3 SupportOfDifference(Vector3[] hull, Vector3 min, Vector3 max, Vector3 direction)
+    {
+        return SupportOfPoints(hull, direction) - SupportOfBox(min, max, -direction);
+    }
+
+    private static bool ConvexHullOverlapsBox(Vector3[] hull, Vector3 min, Vector3 max)
+    {
+        Vector3 seed = (min + max) * 0.5f - hull[0];
+        Vector3 direction = seed.sqrMagnitude > 1e-12f ? seed : Vector3.right;
+
+        var simplex = new List<Vector3>(4) { SupportOfDifference(hull, min, max, direction) };
+        direction = -simplex[0];
+
+        for (int i = 0; i < k_GjkMaxIterations; i++)
+        {
+            if (direction.sqrMagnitude < 1e-14f)
+            {
+                // 探索方向が消えるのは原点がシンプレックス上にあるとき = 接触。
+                return true;
+            }
+
+            Vector3 next = SupportOfDifference(hull, min, max, direction);
+            if (Vector3.Dot(next, direction) < 0f)
+            {
+                // その向きにミンコフスキー差が原点へ届かない = 分離軸が見つかった。
+                return false;
+            }
+
+            simplex.Insert(0, next);
+            if (SimplexContainsOrigin(simplex, ref direction))
+            {
+                return true;
+            }
+        }
+
+        // ここへ来ることは想定していない。取りこぼすより余計に返すほうが害が小さいので
+        // 重なり扱いにする。
+        Debug.LogWarning("[GetEntities] convex hull overlap test did not converge; treating as overlapping");
+        return true;
+    }
+
+    /// <summary>
+    /// GJK のシンプレックス更新。原点を含んでいれば true、そうでなければ
+    /// 次に探索すべき向きを direction に入れて false を返す。
+    /// </summary>
+    /// <remarks>simplex[0] が最後に足した点。</remarks>
+    private static bool SimplexContainsOrigin(List<Vector3> simplex, ref Vector3 direction)
+    {
+        Vector3 a = simplex[0];
+        Vector3 toOrigin = -a;
+
+        if (simplex.Count == 2)
+        {
+            Vector3 ab = simplex[1] - a;
+            if (Vector3.Dot(ab, toOrigin) > 0f)
+            {
+                direction = Vector3.Cross(Vector3.Cross(ab, toOrigin), ab);
+                if (direction.sqrMagnitude < 1e-14f)
+                {
+                    // 原点が線分上に載っている。
+                    return true;
+                }
+            }
+            else
+            {
+                simplex.RemoveAt(1);
+                direction = toOrigin;
+            }
+            return false;
+        }
+
+        if (simplex.Count == 3)
+        {
+            Vector3 ab = simplex[1] - a;
+            Vector3 ac = simplex[2] - a;
+            Vector3 abc = Vector3.Cross(ab, ac);
+
+            if (Vector3.Dot(Vector3.Cross(abc, ac), toOrigin) > 0f)
+            {
+                if (Vector3.Dot(ac, toOrigin) > 0f)
+                {
+                    simplex.RemoveAt(1);
+                    direction = Vector3.Cross(Vector3.Cross(ac, toOrigin), ac);
+                    return false;
+                }
+                simplex.RemoveAt(2);
+                return SimplexContainsOrigin(simplex, ref direction);
+            }
+            if (Vector3.Dot(Vector3.Cross(ab, abc), toOrigin) > 0f)
+            {
+                simplex.RemoveAt(2);
+                return SimplexContainsOrigin(simplex, ref direction);
+            }
+
+            float side = Vector3.Dot(abc, toOrigin);
+            if (side > 0f)
+            {
+                direction = abc;
+            }
+            else if (side < 0f)
+            {
+                Vector3 swap = simplex[1];
+                simplex[1] = simplex[2];
+                simplex[2] = swap;
+                direction = -abc;
+            }
+            else
+            {
+                // 原点が三角形の平面上。上の 2 つの判定を抜けているので内側。
+                return true;
+            }
+            return false;
+        }
+
+        // 四面体。原点がどの面の外側にあるかを調べ、その面から遠い頂点を落として
+        // 三角形の判定へ戻す。どの面の外側でもなければ原点を含んでいる。
+        {
+            Vector3 ab = simplex[1] - a;
+            Vector3 ac = simplex[2] - a;
+            Vector3 ad = simplex[3] - a;
+
+            if (Vector3.Dot(Vector3.Cross(ab, ac), toOrigin) > 0f)
+            {
+                simplex.RemoveAt(3);
+                return SimplexContainsOrigin(simplex, ref direction);
+            }
+            if (Vector3.Dot(Vector3.Cross(ac, ad), toOrigin) > 0f)
+            {
+                simplex.RemoveAt(1);
+                return SimplexContainsOrigin(simplex, ref direction);
+            }
+            if (Vector3.Dot(Vector3.Cross(ad, ab), toOrigin) > 0f)
+            {
+                simplex.RemoveAt(2);
+                return SimplexContainsOrigin(simplex, ref direction);
+            }
+            return true;
+        }
     }
 
     // ====================================================================
