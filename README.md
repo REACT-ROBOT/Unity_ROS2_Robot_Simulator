@@ -61,6 +61,12 @@ Use `spawn_entities` to spawn several at once (`spawn_entity` is deprecated as o
 spawning more than one entity from the same URDF, pass `entity_namespace` — the topic names baked
 into the URDF would otherwise collide.
 
+All 22 services defined in the srv directory are implemented, including entity queries and
+edits, `step_simulation`, and world loading. For what each one means here, why worlds map to
+scene JSON, and how to configure `get_spawnables` and named poses through
+`simulation_resources.json`, see
+[docs/Simulation-Interfaces-Services.md](docs/Simulation-Interfaces-Services.md).
+
 ## Verifying the services
 
 A conformance suite connects to a running simulator and checks that these services behave as

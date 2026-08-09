@@ -64,13 +64,14 @@ CI に組み込む場合は `--junit PATH` で JUnit XML を出力できます�
 
 | ID | 内容 |
 |----|------|
-| A1–A3 | 5 サービスの疎通、起動直後の状態、`Result` コードの規約適合 |
+| A1–A3 | 中核 7 サービスの疎通、起動直後の状態、`Result` コードの規約適合 |
 | B1–B3 | 状態遷移 (start / 同一状態 / 不正値の拒否) |
 | C1–C6 | スポーン、基準状態の記録、`ground_truth`、**指令が効くことの基準取り**、pause/resume |
 | D1–D10 | **`reset_simulation` の全スコープ**。エンティティ生存、関節・姿勢の復元、リセット後の指令受付、サービス生存、デスポーン、再スポーン、時刻リセット、反復安定性 |
 | E1–E2 | `STATE_STOPPED` でのデスポーンと、その後の再スポーン |
-| F1–F2 | `step_simulation` の未対応表明、空シーンへのリセット |
-| G1–G5 | **simulation_interfaces 2.x**。`get_simulator_features` の申告内容、`Resource` によるスポーン、`spawn_entities` (複数生成・部分失敗の報告)、`entity_namespace` によるトピック分離 |
+| F1–F2 | `step_simulation` の進み量 (`n` と `2n` の比が 2 になること)、空シーンへのリセット |
+| G1–G5 | **simulation_interfaces 2.x**。**申告とサービス実体の突き合わせ**、`Resource` によるスポーン、`spawn_entities` (複数生成・部分失敗の報告)、`entity_namespace` によるトピック分離 |
+| H1–H8 | **任意サービス**。`get_entities` / `get_entity_state` と `ground_truth` の一致、`set_entity_state`、`entity_info`、`get_entity_bounds`、`EntityFilters`、`delete_entity`、`get_spawnables` / 名前付き姿勢、world のライフサイクル |
 
 ★ 印 (D5 / D8 / D10) が報告されている不具合の直接検証にあたります。
 
@@ -95,6 +96,16 @@ PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
 同じ結果を ROS 2 Humble (Ubuntu 22.04) と Jazzy (Ubuntu 24.04) の両方で確認しています。
+
+残り 15 サービスを実装して H 群 (8 シナリオ) を足した後は、次のようになります。
+
+```
+PASS 39  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 38  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
+```
+
+こちらは ROS 2 Humble (Ubuntu 22.04) で確認した結果です。Jazzy では未確認ですが、
+テスト側もシミュレータ側も distro 依存の変更は入れていません。
 
 ### FAIL → 修正済: デスポーン後に再スポーンすると指令を受け付けない (D8 / D10 / E2)
 
@@ -290,10 +301,20 @@ KNOWN_GAP  D3  最大ずれ right_wheel_joint で 26.110 rad
 
 ### 対応していないもの
 
-world 系 4 サービス (`LoadWorld` / `UnloadWorld` / `GetCurrentWorld` / `GetAvailableWorlds`) と
-`step_simulation` は未実装で、`get_simulator_features` でも申告していません。
-`resource_string` からの生成 (`SPAWNING_RESOURCE_STRING`) も未対応です — URDF の mesh 参照は
+`resource_string` からの生成 (`SPAWNING_RESOURCE_STRING`) は未対応です — URDF の mesh 参照は
 URDF ファイルからの相対パスで解決するため、文字列だけ受け取ってもアセットを見つけられません。
+
+> **その後の変更**: この節に挙げていた world 系 4 サービス
+> (`LoadWorld` / `UnloadWorld` / `GetCurrentWorld` / `GetAvailableWorlds`) と `step_simulation` は
+> 実装済みです。あわせてエンティティ系 (`GetEntities` / `GetEntityState` / `SetEntityState` /
+> `DeleteEntity` など) と `GetSpawnables` / 名前付き姿勢も入れたので、srv で定義されている
+> 22 サービスすべてに対応しています。解釈と設定方法は
+> [docs/Simulation-Interfaces-Services-ja.md](Simulation-Interfaces-Services-ja.md) を参照してください。
+>
+> テスト側 (Unity_ROS2_sample) も追従済みです。**F1** は進み量まで測るようになり
+> (`n` ステップと `2n` ステップの比が 2 になること)、**G1** は「未実装のはず」の名前を
+> ベタ書きするのをやめて、申告と ROS グラフ上のサービスを機械的に突き合わせるように
+> なりました。新しく実装した 15 サービスは **H1–H8** が検証します。
 
 ## テストを読み書きするときの前提
 

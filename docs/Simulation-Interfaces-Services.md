@@ -1,0 +1,240 @@
+# simulation_interfaces service reference
+
+The services this simulator exposes from
+[simulation_interfaces](https://github.com/ros-simulation/simulation_interfaces) **2.1.0**,
+and how they are interpreted here. What is implemented always matches what
+`get_simulator_features` advertises (the conformance test's G1 check fails the build if the
+two drift apart).
+
+```bash
+ros2 service call /get_simulator_features simulation_interfaces/srv/GetSimulatorFeatures "{}"
+```
+
+## Coverage
+
+All 22 services defined in the srv directory are implemented.
+
+| Group | Service | Notes |
+|---|---|---|
+| Spawning | `spawn_entity` / `spawn_entities` | `spawn_entity` is deprecated since 2.0.0 |
+| | `delete_entity` | Despawns a single entity |
+| | `get_spawnables` | Scans `spawnable_paths` from the config file |
+| Entities | `get_entities` / `get_entities_states` | Filter by name, category, tags, bounds |
+| | `get_entity_state` / `set_entity_state` | Pose and twist |
+| | `get_entity_info` / `set_entity_info` | Category, description, tags |
+| | `get_entity_bounds` | AABB in the canonical link frame |
+| Named poses | `get_named_poses` / `get_named_pose_bounds` | Read from the config file |
+| Simulation | `get_simulation_state` / `set_simulation_state` | |
+| | `reset_simulation` | SCOPE_TIME / STATE / SPAWNED |
+| | `step_simulation` | Only while paused |
+| | `get_simulator_features` | |
+| Worlds | `load_world` / `unload_world` | Scene JSON |
+| | `get_current_world` / `get_available_worlds` | |
+
+### Not supported
+
+- **The `SimulateSteps` action** — ROS-TCP-Connector has no way to implement an action
+  server, and that cannot be added from the simulator side alone. Use `step_simulation` for
+  multi-step runs (`STEP_SIMULATION_MULTIPLE` is advertised, `STEP_SIMULATION_ACTION` is not).
+- **`SPAWNING_RESOURCE_STRING`** — mesh references in a URDF resolve relative to the URDF
+  file, so a bare string leaves the assets unreachable. Use `entity_resource.uri` instead.
+  Note that `resource_string` *is* supported for **worlds**, because scene JSON refers to its
+  meshes by absolute path and therefore stands on its own as a string.
+- **`ENTITY_BOUNDS_CONVEX`** — bounds filtering supports `TYPE_BOX` and `TYPE_SPHERE` only.
+  A convex hull returns `RESULT_FEATURE_UNSUPPORTED`.
+- **`WORLD_TAGS`** — there is no mechanism for tagging worlds. Passing a tag filter to
+  `get_available_worlds` returns `RESULT_FEATURE_UNSUPPORTED`, which is more honest than
+  silently returning everything.
+- **`EntityState.acceleration`** — always reported as zero and ignored by
+  `set_entity_state`. Unity offers no direct way to impose an acceleration, and
+  `EntityState.msg` explicitly allows simulators to ignore the field. When it is requested,
+  the result stays `RESULT_OK` and `error_message` records that it was ignored.
+
+## What counts as an entity
+
+Entities are **only the things created through `spawn_entity` / `spawn_entities`**. Floors,
+obstacles and lights placed through the UI are world scenery and do not appear in
+`get_entities`.
+
+Otherwise `delete_entity` and `set_entity_state` would straddle two populations — objects
+created from ROS and objects placed in the GUI — which does not fit `load_world` replacing
+the scenery wholesale.
+
+Default categories are `CATEGORY_ROBOT` for anything built from a URDF and
+`CATEGORY_OBJECT` for a bare mesh. `set_entity_info` overrides them at any time.
+
+### Frames
+
+Poses, twists and bounds are all exchanged in ROS convention (right-handed, Z up, metres).
+The mapping to Unity's left-handed, Y-up convention is the same one used when publishing
+`/ground_truth`.
+
+For a URDF robot, `get_entity_state` reports the pose of the **base link**. The root
+GameObject does not follow the ArticulationBody solver, so reading it would make the robot
+look stuck at its spawn pose.
+
+### Name filter
+
+`EntityFilters.filter` is matched against the **whole** name, following the
+simulation_interfaces reference implementation's use of `std::regex_match`. Use `.*foo.*`
+for a substring match. The spec calls for POSIX extended regular expressions; evaluation
+happens through .NET's engine, which accepts ordinary expressions unchanged.
+
+## Worlds are scene JSON
+
+A "world" here is the scene JSON that the GUI's Save Scene writes (the `SavedSceneData`
+format). Switching Unity scenes was the alternative, but that would require rebuilding the
+player for every new world. JSON stays entirely at runtime, so scenery assembled in the GUI
+can be handed straight to `load_world`.
+
+The **built-in stage — ground plane, default lighting — is always present**; a world is
+scenery layered on top of it. At startup the built-in scene counts as the loaded world, so
+the long-standing behaviour of starting in `STATE_STOPPED` is unchanged.
+
+```bash
+# Swap the scenery (all entities are removed, state returns to stopped, time is reset)
+ros2 service call /load_world simulation_interfaces/srv/LoadWorld \
+  "{ world_resource: { uri: 'file:///home/user/worlds/warehouse.json', resource_string: '' },
+     fail_on_unsupported_element: false, ignore_missing_or_unsupported_assets: false }"
+
+# Inspect the current world
+ros2 service call /get_current_world simulation_interfaces/srv/GetCurrentWorld "{}"
+
+# Unload it
+ros2 service call /unload_world simulation_interfaces/srv/UnloadWorld "{}"
+```
+
+After `unload_world` the state is `STATE_NO_WORLD`. In that state:
+
+- `set_simulation_state` rejects everything except `STATE_QUITTING` with
+  `INCORRECT_TRANSITION`
+- `spawn_entity` / `spawn_entities` / `reset_simulation` / `step_simulation` return
+  `RESULT_INCORRECT_STATE`
+
+`load_world` brings it back. Note that the **built-in scene cannot be exported as a file**,
+so the `world_resource.uri` reported by `get_current_world` is empty at startup, and once
+unloaded there is no way to load that exact world again.
+
+`load_world` validates the JSON before clearing anything, so a file that cannot be read
+never leaves you with the scenery deleted and nothing in its place.
+
+| Situation | Result code |
+|---|---|
+| `uri` is not a file URI, or does not end in `.json` | `UNSUPPORTED_FORMAT` (101) |
+| Both `uri` and `resource_string` are empty | `NO_RESOURCE` (102) |
+| Not readable as JSON | `RESOURCE_PARSE_ERROR` (103) |
+| File missing, or a mesh could not be loaded | `MISSING_ASSETS` (104) |
+| An element has an unknown `type` | `UNSUPPORTED_ELEMENTS` (106) |
+
+`ignore_missing_or_unsupported_assets` and `fail_on_unsupported_element` suppress
+`MISSING_ASSETS` and `UNSUPPORTED_ELEMENTS` respectively. Skipped elements are listed in
+`error_message` either way.
+
+## step_simulation
+
+Only while paused: advance the requested number of steps and stop again.
+
+```bash
+ros2 service call /set_simulation_state simulation_interfaces/srv/SetSimulationState "{ state: { state: 2 } }"
+ros2 service call /step_simulation simulation_interfaces/srv/StepSimulation "{ steps: 10 }"
+```
+
+- Returns `RESULT_OPERATION_FAILED` when the simulation is not paused, as specified.
+- Does not respond until stepping finishes. A single call may advance at most 100000 steps;
+  beyond that it returns `RESULT_OPERATION_FAILED`. The cap keeps a mistyped request from
+  taking the simulator away for hours.
+- A `set_simulation_state`, a `reset_simulation` or the on-screen button arriving mid-run
+  aborts the stepping and returns `RESULT_OPERATION_FAILED`.
+
+Stepping restores `Time.timeScale` rather than calling `Physics.Simulate()`, because the
+latter does not run `FixedUpdate`: physics would advance while `ServoJointModel`,
+`JointStateSub` and the rest of the control path stood still.
+
+## simulation_resources.json
+
+`get_spawnables`, `get_named_poses`, `get_named_pose_bounds` and `get_available_worlds` all
+draw their contents from this config file. A Unity player has nothing equivalent to ament's
+package search path, so what the simulator "can see" has to be stated explicitly.
+
+The search order is below; if none exist, the services return empty lists with `RESULT_OK`
+(starting without any configuration is the priority, so a missing file is not an error).
+
+1. The path in the `SIMULATION_RESOURCES_CONFIG` environment variable
+2. `simulation_resources.json` next to the player executable (the project root in the Editor)
+3. `Application.persistentDataPath/simulation_resources.json`
+
+```json
+{
+  "spawnable_paths": [
+    "/root/colcon_ws/install/diffbot_description/share",
+    "/root/models"
+  ],
+  "world_paths": [
+    "/root/worlds"
+  ],
+  "named_poses": [
+    {
+      "name": "charger",
+      "description": "In front of the charging station",
+      "tags": ["spawn", "parking"],
+      "position": [1.0, 2.0, 0.0],
+      "rpy": [0.0, 0.0, 1.5708],
+      "bounds": {
+        "type": "box",
+        "min": [-0.3, -0.3, 0.0],
+        "max": [0.3, 0.3, 0.5]
+      }
+    },
+    {
+      "name": "gate",
+      "position": [-4.0, 0.0, 0.0],
+      "orientation": [0.0, 0.0, 0.0, 1.0],
+      "bounds": { "type": "sphere", "center": [0.0, 0.0, 0.5], "radius": 1.0 }
+    }
+  ]
+}
+```
+
+- All coordinates are ROS convention (right-handed, Z up, metres, radians).
+- Give an orientation either as `orientation` (quaternion `[x, y, z, w]`) or as `rpy`
+  (`[roll, pitch, yaw]`). If both are present, `orientation` wins.
+- `bounds` is optional (it becomes `TYPE_EMPTY`). `type` may only be `box` or `sphere`.
+- `spawnable_paths` is walked recursively, collecting `.urdf`, `.obj`, `.stl`, `.dae`,
+  `.fbx` and `.ply`.
+- From `world_paths`, only `.json` files that **parse as a scene** become candidates, since
+  unrelated JSON such as config files will be sitting in the same directories.
+- Scanning stops after 2000 files in total. When it does, the truncation is reported in
+  `error_message` rather than silently dropped.
+
+`sources` on `get_spawnables` and `additional_sources` on `get_available_worlds` add
+one-off search locations. Passing something that does not exist is not a failure; the
+`error_message` names what could not be read (`get_available_worlds` does return
+`DEFAULT_SOURCES_FAILED` unless `continue_on_error` is set).
+
+## Examples
+
+```bash
+# List the current entities
+ros2 service call /get_entities simulation_interfaces/srv/GetEntities "{ filters: { filter: '' } }"
+
+# Robots only, with their states
+ros2 service call /get_entities_states simulation_interfaces/srv/GetEntitiesStates \
+  "{ filters: { categories: [{ category: 1 }] } }"
+
+# Only what overlaps a 3 m sphere
+ros2 service call /get_entities simulation_interfaces/srv/GetEntities \
+  "{ filters: { bounds: { type: 3, points: [{x: 0.0, y: 0.0, z: 0.0}, {x: 3.0, y: 0.0, z: 0.0}] } } }"
+
+# Move an entity without touching its twist or acceleration
+ros2 service call /set_entity_state simulation_interfaces/srv/SetEntityState \
+  "{ entity: 'diffbot', set_pose: true, set_twist: false, set_acceleration: false,
+     state: { pose: { position: {x: 1.0, y: 0.0, z: 0.0},
+                      orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0} } } }"
+
+# Tag it
+ros2 service call /set_entity_info simulation_interfaces/srv/SetEntityInfo \
+  "{ entity: 'diffbot', info: { category: { category: 1 }, description: 'Differential drive base', tags: ['agv'] } }"
+
+# Remove just this one
+ros2 service call /delete_entity simulation_interfaces/srv/DeleteEntity "{ entity: 'diffbot' }"
+```

@@ -64,13 +64,14 @@ Outputs (default `/tmp/service_conformance/`):
 
 | ID | Area |
 |----|------|
-| A1–A3 | Reachability of all five services, initial state, `Result` code convention |
+| A1–A3 | Reachability of the seven core services, initial state, `Result` code convention |
 | B1–B3 | State transitions (start / same-state / rejection of invalid values) |
 | C1–C6 | Spawn, baseline capture, `ground_truth`, **baseline proof that commands work**, pause/resume |
 | D1–D10 | **All `reset_simulation` scopes**: entity survival, joint and pose restoration, command acceptance after reset, service liveness, despawn, respawn, time reset, repeat stability |
 | E1–E2 | Despawn on `STATE_STOPPED`, and respawning afterwards |
-| F1–F2 | `step_simulation` reporting non-support, resetting an empty scene |
-| G1–G5 | **simulation_interfaces 2.x**: what `get_simulator_features` advertises, spawning through `Resource`, `spawn_entities` (batch spawn and partial-failure reporting), topic separation via `entity_namespace` |
+| F1–F2 | How far `step_simulation` actually advances (`n` versus `2n` steps must come out 2:1), resetting an empty scene |
+| G1–G5 | **simulation_interfaces 2.x**: **advertised features cross-checked against the services on the graph**, spawning through `Resource`, `spawn_entities` (batch spawn and partial-failure reporting), topic separation via `entity_namespace` |
+| H1–H8 | **Optional services**: `get_entities` / `get_entity_state` agreeing with `ground_truth`, `set_entity_state`, `entity_info`, `get_entity_bounds`, `EntityFilters`, `delete_entity`, `get_spawnables` / named poses, world lifecycle |
 
 The starred scenarios (D5 / D8 / D10) are the direct checks for the reported bug.
 
@@ -95,6 +96,16 @@ PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
 Same results on both ROS 2 Humble (Ubuntu 22.04) and Jazzy (Ubuntu 24.04).
+
+After implementing the remaining 15 services and adding the H group (8 scenarios):
+
+```
+PASS 39  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 38  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
+```
+
+Those numbers were measured on ROS 2 Humble (Ubuntu 22.04). Jazzy was not re-run, though
+neither the suite nor the simulator picked up any distro-dependent change.
 
 ### FAIL, now fixed: a respawned robot ignores commands (D8 / D10 / E2)
 
@@ -290,10 +301,22 @@ Updated from 1.0.0. The jump includes breaking changes, so clients built against
 
 ### Not supported
 
-The four world services (`LoadWorld` / `UnloadWorld` / `GetCurrentWorld` / `GetAvailableWorlds`)
-and `step_simulation` are unimplemented and are not advertised. Spawning from `resource_string`
-(`SPAWNING_RESOURCE_STRING`) is also unsupported: a URDF's mesh references resolve relative to the
-URDF file, so a bare string leaves the assets unfindable.
+Spawning from `resource_string` (`SPAWNING_RESOURCE_STRING`) is unsupported: a URDF's mesh
+references resolve relative to the URDF file, so a bare string leaves the assets unfindable.
+
+> **Since changed**: the four world services (`LoadWorld` / `UnloadWorld` / `GetCurrentWorld` /
+> `GetAvailableWorlds`) and `step_simulation`, both listed here as unimplemented, are now
+> implemented. The entity services (`GetEntities` / `GetEntityState` / `SetEntityState` /
+> `DeleteEntity` and friends), `GetSpawnables` and the named-pose pair went in at the same time,
+> so all 22 services defined in the srv directory are covered. See
+> [docs/Simulation-Interfaces-Services.md](Simulation-Interfaces-Services.md) for the semantics
+> and configuration.
+>
+> The suite in Unity_ROS2_sample has been updated to match. **F1** now measures how far
+> stepping actually advances the clock (`n` versus `2n` steps must come out 2:1), and **G1**
+> no longer hard-codes a list of "features that should be unimplemented" — it cross-checks
+> the advertised features against the services present on the ROS graph. The 15 newly
+> implemented services are covered by **H1–H8**.
 
 ## Assumptions to know when writing tests
 

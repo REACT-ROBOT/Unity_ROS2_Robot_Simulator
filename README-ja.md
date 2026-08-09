@@ -61,6 +61,12 @@ ros2 service call /get_simulator_features simulation_interfaces/srv/GetSimulator
 同じ URDF から複数体出すときは、URDF に書かれたトピック名が衝突するため `entity_namespace` を
 指定してください。
 
+srv で定義されている 22 サービスすべてに対応しています (エンティティの取得・変更・削除、
+`step_simulation`、ワールドの読み込みを含みます)。各サービスの解釈、ワールドをシーン JSON に
+対応づけている理由、`get_spawnables` や名前付き姿勢の設定ファイル `simulation_resources.json`
+については [docs/Simulation-Interfaces-Services-ja.md](docs/Simulation-Interfaces-Services-ja.md)
+を参照してください。
+
 ## サービスの動作確認
 
 上記のサービス群が仕様どおりに動くかを、実際に動いているシミュレータへ接続して自動検証する
