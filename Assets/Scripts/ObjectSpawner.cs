@@ -26,6 +26,20 @@ public class SavedSceneData
     public List<SavedObjectData> objects = new List<SavedObjectData>();
 }
 
+/// <summary>
+/// シーン JSON の読み込み結果。LoadWorld が MISSING_ASSETS / UNSUPPORTED_ELEMENTS /
+/// RESOURCE_PARSE_ERROR を区別して返せるように、失敗の種類ごとにフラグを持つ。
+/// </summary>
+public class SceneLoadReport
+{
+    public bool parseError;
+    public bool missingAssets;
+    public bool unsupportedElements;
+    public List<string> messages = new List<string>();
+
+    public bool HasIssues => parseError || missingAssets || unsupportedElements;
+}
+
 public class ObjectSpawner : MonoBehaviour
 {
     [Header("UI：生成リスト")]
@@ -121,86 +135,235 @@ public class ObjectSpawner : MonoBehaviour
 
     public void LoadSpawnedObjects()
     {
-        string path = StandaloneFileBrowser.OpenFilePanel("Load Scene", "", "json", false)[0];
-        if (string.IsNullOrEmpty(path))
+        string[] selection = StandaloneFileBrowser.OpenFilePanel("Load Scene", "", "json", false);
+        // キャンセルすると空配列が返る。添字で取ると例外になるので先に見る。
+        if (selection == null || selection.Length == 0 || string.IsNullOrEmpty(selection[0]))
         {
             Debug.LogWarning("No file selected.");
             return;
         }
-        string json = File.ReadAllText(path);
-        SavedSceneData savedSceneData = JsonUtility.FromJson<SavedSceneData>(json);
-        foreach (var objData in savedSceneData.objects)
+
+        SceneLoadReport report = LoadSceneFile(selection[0]);
+        foreach (string message in report.messages)
         {
-            if (objData.type == "Mesh")
-            {
-                var ob = MeshImporter.Load(objData.meshPath);
-                if (ob == null)
-                {
-                    Debug.LogError("Failed to load object from File.");
-                    return;
-                }
-                ob.name = $"Mesh_{spawnedObjects.Count}";
-                ob.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
-                ob.transform.rotation = Quaternion.Euler(objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
-                ob.transform.localScale = new Vector3(objData.scale[0], objData.scale[1], objData.scale[2]);
-                // 大規模メッシュの場合はLODを設定
-                SetupLODForLargeMesh(ob);
-                // MeshColliderの設定（当たり判定を有効化）
-                SetupMeshColliders(ob);
-                // 両面レンダリング用の白いマテリアルを作成して適用
-                ApplyDoubleSidedMaterial(ob);
-                ob.SetActive(objData.isActive);
-                AddListItem(ob, objData.meshPath);
-                continue;
-            }
-            if (objData.type == "Directional Light")
-            {
-                var ob = new GameObject($"DirectionalLight_{spawnedObjects.Count}");
-                var light = ob.AddComponent<Light>();
-                light.type = LightType.Directional;
-                light.shadows = LightShadows.Soft;
-                ob.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
-                ob.transform.rotation = Quaternion.Euler(objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
-                ob.SetActive(objData.isActive);
-                AddListItem(ob);
-                continue;
-            }
-            if (objData.type == "Point Light")
-            {
-                var ob = new GameObject($"PointLight_{spawnedObjects.Count}");
-                var light = ob.AddComponent<Light>();
-                light.type = LightType.Point;
-                light.shadows = LightShadows.Soft;
-                light.range = 10f;
-                light.intensity = 20f;
-                ob.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
-                ob.SetActive(objData.isActive);
-                AddListItem(ob);
-                continue;
-            }
-            if (objData.type == "Spot Light")
-            {
-                var ob = new GameObject($"SpotLight_{spawnedObjects.Count}");
-                var light = ob.AddComponent<Light>();
-                light.type = LightType.Spot;
-                light.shadows = LightShadows.Soft;
-                light.range = 15f;
-                light.intensity = 1f;
-                light.spotAngle = 30f;
-                ob.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
-                ob.transform.rotation = Quaternion.Euler(objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
-                ob.SetActive(objData.isActive);
-                AddListItem(ob);
-                continue;
-            }
-            GameObject go = GameObject.CreatePrimitive((PrimitiveType)System.Enum.Parse(typeof(PrimitiveType), objData.type));
-            go.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
-            go.transform.rotation = Quaternion.Euler(objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
-            go.transform.localScale = new Vector3(objData.scale[0], objData.scale[1], objData.scale[2]);
-            go.SetActive(objData.isActive);
-            RegisterSpawn(go);
+            Debug.LogError($"[LoadScene] {message}");
         }
     }
+
+    /// <summary>
+    /// 保存済みシーン JSON を読み込む。ROS の LoadWorld から呼ぶのでダイアログを挟まない。
+    /// </summary>
+    public SceneLoadReport LoadSceneFile(string path)
+    {
+        try
+        {
+            return LoadSceneFromJson(File.ReadAllText(path));
+        }
+        catch (Exception e)
+        {
+            var report = new SceneLoadReport { parseError = true };
+            report.messages.Add($"{path} を読めなかった: {e.Message}");
+            return report;
+        }
+    }
+
+    /// <summary>
+    /// シーン JSON の中身から景観を組み立てる。読み込めなかった要素があっても
+    /// 残りは続行し、何が起きたかを SceneLoadReport にまとめて返す。
+    /// </summary>
+    /// <remarks>
+    /// 呼び出し元 (LoadWorld) が MISSING_ASSETS と UNSUPPORTED_ELEMENTS を
+    /// 区別して返す必要があるので、種類ごとにフラグを立てている。
+    /// </remarks>
+    public SceneLoadReport LoadSceneFromJson(string json)
+    {
+        if (!TryParseSceneJson(json, out SavedSceneData savedSceneData, out string error))
+        {
+            var failed = new SceneLoadReport { parseError = true };
+            failed.messages.Add(error);
+            return failed;
+        }
+        return LoadSceneData(savedSceneData);
+    }
+
+    /// <summary>
+    /// シーン JSON を構文だけ確認する。LoadWorld は「読めなければ既存のシーンを壊さない」
+    /// 必要があるので、消す前にこれで検査する。GetAvailableWorlds の候補選別にも使う。
+    /// </summary>
+    public static bool TryParseSceneJson(string json, out SavedSceneData data, out string error)
+    {
+        data = null;
+        error = "";
+
+        // JsonUtility は知らないキーを黙って捨て、対応するキーが無くてもフィールド
+        // 初期化子 (objects = new List<>()) をそのまま残す。つまり無関係な JSON も
+        // 「オブジェクト 0 個のシーン」として通ってしまうので、キーの有無は自分で見る。
+        if (json == null || json.IndexOf("\"objects\"", StringComparison.Ordinal) < 0)
+        {
+            error = "シーン JSON に objects が無い";
+            return false;
+        }
+
+        try
+        {
+            data = JsonUtility.FromJson<SavedSceneData>(json);
+        }
+        catch (Exception e)
+        {
+            error = $"シーン JSON を解釈できなかった: {e.Message}";
+            return false;
+        }
+        if (data == null || data.objects == null)
+        {
+            error = "シーン JSON に objects が無い";
+            data = null;
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>解釈済みのシーンデータから景観を組み立てる。</summary>
+    public SceneLoadReport LoadSceneData(SavedSceneData savedSceneData)
+    {
+        var report = new SceneLoadReport();
+        foreach (var objData in savedSceneData.objects)
+        {
+            SpawnFromSavedData(objData, report);
+        }
+        return report;
+    }
+
+    /// <summary>シーン JSON の 1 要素を生成する。</summary>
+    private void SpawnFromSavedData(SavedObjectData objData, SceneLoadReport report)
+    {
+        if (objData == null || string.IsNullOrEmpty(objData.type))
+        {
+            report.unsupportedElements = true;
+            report.messages.Add("type の無い要素を読み飛ばした");
+            return;
+        }
+
+        if (objData.type == "Mesh")
+        {
+            GameObject ob = null;
+            try
+            {
+                ob = MeshImporter.Load(objData.meshPath);
+            }
+            catch (Exception e)
+            {
+                report.messages.Add($"メッシュ '{objData.meshPath}' の読み込みで例外: {e.Message}");
+            }
+            if (ob == null)
+            {
+                report.missingAssets = true;
+                report.messages.Add($"メッシュ '{objData.meshPath}' を読み込めなかった");
+                return;
+            }
+            ob.name = $"Mesh_{spawnedObjects.Count}";
+            ApplyTransform(ob, objData, applyScale: true);
+            // 大規模メッシュの場合はLODを設定
+            SetupLODForLargeMesh(ob);
+            // MeshColliderの設定（当たり判定を有効化）
+            SetupMeshColliders(ob);
+            // 両面レンダリング用の白いマテリアルを作成して適用
+            ApplyDoubleSidedMaterial(ob);
+            ob.SetActive(objData.isActive);
+            AddListItem(ob, objData.meshPath);
+            return;
+        }
+        if (objData.type == "Directional Light")
+        {
+            var ob = new GameObject($"DirectionalLight_{spawnedObjects.Count}");
+            var light = ob.AddComponent<Light>();
+            light.type = LightType.Directional;
+            light.shadows = LightShadows.Soft;
+            ApplyTransform(ob, objData, applyScale: false);
+            ob.SetActive(objData.isActive);
+            AddListItem(ob);
+            return;
+        }
+        if (objData.type == "Point Light")
+        {
+            var ob = new GameObject($"PointLight_{spawnedObjects.Count}");
+            var light = ob.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.shadows = LightShadows.Soft;
+            light.range = 10f;
+            light.intensity = 20f;
+            ApplyTransform(ob, objData, applyScale: false);
+            ob.SetActive(objData.isActive);
+            AddListItem(ob);
+            return;
+        }
+        if (objData.type == "Spot Light")
+        {
+            var ob = new GameObject($"SpotLight_{spawnedObjects.Count}");
+            var light = ob.AddComponent<Light>();
+            light.type = LightType.Spot;
+            light.shadows = LightShadows.Soft;
+            light.range = 15f;
+            light.intensity = 1f;
+            light.spotAngle = 30f;
+            ApplyTransform(ob, objData, applyScale: false);
+            ob.SetActive(objData.isActive);
+            AddListItem(ob);
+            return;
+        }
+
+        // 残りはプリミティブ。知らない type で例外を投げると、そこから先の要素が
+        // 丸ごと生成されなくなるので、報告して読み飛ばす。
+        if (!Enum.TryParse(objData.type, out PrimitiveType primitiveType))
+        {
+            report.unsupportedElements = true;
+            report.messages.Add($"未対応の要素 '{objData.type}' を読み飛ばした");
+            return;
+        }
+        GameObject go = GameObject.CreatePrimitive(primitiveType);
+        ApplyTransform(go, objData, applyScale: true);
+        go.SetActive(objData.isActive);
+        RegisterSpawn(go);
+    }
+
+    private static void ApplyTransform(GameObject go, SavedObjectData objData, bool applyScale)
+    {
+        if (objData.position != null && objData.position.Length >= 3)
+        {
+            go.transform.position = new Vector3(objData.position[0], objData.position[1], objData.position[2]);
+        }
+        if (objData.rotationEuler != null && objData.rotationEuler.Length >= 3)
+        {
+            go.transform.rotation = Quaternion.Euler(
+                objData.rotationEuler[0], objData.rotationEuler[1], objData.rotationEuler[2]);
+        }
+        if (applyScale && objData.scale != null && objData.scale.Length >= 3)
+        {
+            go.transform.localScale = new Vector3(objData.scale[0], objData.scale[1], objData.scale[2]);
+        }
+    }
+
+    /// <summary>
+    /// このスポナーが作ったオブジェクトを全部消す。UnloadWorld / LoadWorld から呼ぶ。
+    /// </summary>
+    public void ClearSpawnedObjects()
+    {
+        foreach (var obj in spawnedObjects)
+        {
+            if (obj.gameObject != null)
+            {
+                Destroy(obj.gameObject);
+            }
+            if (obj.button != null)
+            {
+                Destroy(obj.button.gameObject);
+            }
+        }
+        spawnedObjects.Clear();
+        selectedObject = null;
+    }
+
+    /// <summary>このスポナーが管理しているオブジェクトの数。</summary>
+    public int SpawnedObjectCount => spawnedObjects.Count;
 
     // === 公開メソッド：ボタンから呼び出し ===
     public void SpawnCube() => SpawnPrimitive(PrimitiveType.Cube);

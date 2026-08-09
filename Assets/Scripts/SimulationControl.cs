@@ -43,7 +43,7 @@ public class FileLogger
     }
 }
 
-public class SimulationControl : MonoBehaviour
+public partial class SimulationControl : MonoBehaviour
 {
     [SerializeField]
     string m_SetSimulationStateServiceName = "set_simulation_state";
@@ -59,6 +59,36 @@ public class SimulationControl : MonoBehaviour
     string m_SpawnEntitiesServiceName = "spawn_entities";
     [SerializeField]
     string m_GetSimulatorFeaturesServiceName = "get_simulator_features";
+    [SerializeField]
+    string m_DeleteEntityServiceName = "delete_entity";
+    [SerializeField]
+    string m_GetEntitiesServiceName = "get_entities";
+    [SerializeField]
+    string m_GetEntitiesStatesServiceName = "get_entities_states";
+    [SerializeField]
+    string m_GetEntityStateServiceName = "get_entity_state";
+    [SerializeField]
+    string m_SetEntityStateServiceName = "set_entity_state";
+    [SerializeField]
+    string m_GetEntityInfoServiceName = "get_entity_info";
+    [SerializeField]
+    string m_SetEntityInfoServiceName = "set_entity_info";
+    [SerializeField]
+    string m_GetEntityBoundsServiceName = "get_entity_bounds";
+    [SerializeField]
+    string m_GetSpawnablesServiceName = "get_spawnables";
+    [SerializeField]
+    string m_GetNamedPosesServiceName = "get_named_poses";
+    [SerializeField]
+    string m_GetNamedPoseBoundsServiceName = "get_named_pose_bounds";
+    [SerializeField]
+    string m_LoadWorldServiceName = "load_world";
+    [SerializeField]
+    string m_UnloadWorldServiceName = "unload_world";
+    [SerializeField]
+    string m_GetCurrentWorldServiceName = "get_current_world";
+    [SerializeField]
+    string m_GetAvailableWorldsServiceName = "get_available_worlds";
 
     [Header("再生/停止 Button の Image コンポーネント")]
     public Image playStopImage;
@@ -105,6 +135,61 @@ public class SimulationControl : MonoBehaviour
             m_GetSimulatorFeaturesServiceName,
             GetSimulatorFeatures);
 
+        // エンティティ系 (SimulationEntityServices.cs)
+        ROSConnection.GetOrCreateInstance().ImplementService<DeleteEntityRequest, DeleteEntityResponse>(
+            m_DeleteEntityServiceName,
+            DeleteEntity);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetEntitiesRequest, GetEntitiesResponse>(
+            m_GetEntitiesServiceName,
+            GetEntities);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetEntitiesStatesRequest, GetEntitiesStatesResponse>(
+            m_GetEntitiesStatesServiceName,
+            GetEntitiesStates);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetEntityStateRequest, GetEntityStateResponse>(
+            m_GetEntityStateServiceName,
+            GetEntityState);
+        ROSConnection.GetOrCreateInstance().ImplementService<SetEntityStateRequest, SetEntityStateResponse>(
+            m_SetEntityStateServiceName,
+            SetEntityState);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetEntityInfoRequest, GetEntityInfoResponse>(
+            m_GetEntityInfoServiceName,
+            GetEntityInfo);
+        ROSConnection.GetOrCreateInstance().ImplementService<SetEntityInfoRequest, SetEntityInfoResponse>(
+            m_SetEntityInfoServiceName,
+            SetEntityInfo);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetEntityBoundsRequest, GetEntityBoundsResponse>(
+            m_GetEntityBoundsServiceName,
+            GetEntityBounds);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetSpawnablesRequest, GetSpawnablesResponse>(
+            m_GetSpawnablesServiceName,
+            GetSpawnables);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetNamedPosesRequest, GetNamedPosesResponse>(
+            m_GetNamedPosesServiceName,
+            GetNamedPoses);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetNamedPoseBoundsRequest, GetNamedPoseBoundsResponse>(
+            m_GetNamedPoseBoundsServiceName,
+            GetNamedPoseBounds);
+
+        // world 系 (SimulationWorldServices.cs)
+        ROSConnection.GetOrCreateInstance().ImplementService<LoadWorldRequest, LoadWorldResponse>(
+            m_LoadWorldServiceName,
+            LoadWorld);
+        ROSConnection.GetOrCreateInstance().ImplementService<UnloadWorldRequest, UnloadWorldResponse>(
+            m_UnloadWorldServiceName,
+            UnloadWorld);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetCurrentWorldRequest, GetCurrentWorldResponse>(
+            m_GetCurrentWorldServiceName,
+            GetCurrentWorld);
+        ROSConnection.GetOrCreateInstance().ImplementService<GetAvailableWorldsRequest, GetAvailableWorldsResponse>(
+            m_GetAvailableWorldsServiceName,
+            GetAvailableWorlds);
+
+        // 起動直後の組み込みシーンをロード済みワールドとして登録する。
+        // これをやらないと GetCurrentWorld が「ワールド無し」になり、
+        // 起動直後が STATE_STOPPED という従来の挙動とも食い違う。
+        InitializeWorld();
+        SimulationResources.Reload();
+
         m_SimulationState = SimulationStateMsg.STATE_STOPPED;
         Time.timeScale = 0f;
     }
@@ -122,6 +207,29 @@ public class SimulationControl : MonoBehaviour
             response.result.error_message = "Already in requested state";
             return response;
         }
+
+        // SimulationState.msg では STATE_NO_WORLD は「シミュレーションが不活性で
+        // 開始も停止も一時停止もできない」状態。LoadWorld を経ずに動かそうとする
+        // 要求はここで弾く。QUITTING だけはワールドの有無に関係なく通す。
+        if (!IsWorldLoaded && request.state.state != SimulationStateMsg.STATE_QUITTING)
+        {
+            response.result.result = SetSimulationStateResponse.INCORRECT_TRANSITION;
+            response.result.error_message = "No world is loaded; call load_world first";
+            return response;
+        }
+        if (request.state.state == SimulationStateMsg.STATE_NO_WORLD ||
+            request.state.state == SimulationStateMsg.STATE_LOADING_WORLD)
+        {
+            // この 2 つはワールドの読み書きの結果として入る状態で、外から指定して
+            // 遷移するものではない。
+            response.result.result = SetSimulationStateResponse.INCORRECT_TRANSITION;
+            response.result.error_message =
+                "STATE_NO_WORLD / STATE_LOADING_WORLD are set by the world interfaces, not by this service";
+            return response;
+        }
+
+        // 進行中の step_simulation は、こちらが timeScale を決め直す前に降ろす。
+        CancelStepping();
 
         // TODO: implement the logic to set SetSimulationStateResponse.STATE_TRANSITION_ERROR
 
@@ -161,6 +269,10 @@ public class SimulationControl : MonoBehaviour
 
     public void StartStopSimulation()
     {
+        // 画面のボタンからの操作でも、進行中の step_simulation は先に降ろす。
+        // 残しておくと、コルーチンが後から timeScale を 0 に戻して再生が止まる。
+        CancelStepping();
+
         if (m_SimulationState == SimulationStateMsg.STATE_PAUSED || m_SimulationState == SimulationStateMsg.STATE_STOPPED)
         {
             m_SimulationState = SimulationStateMsg.STATE_PLAYING;
@@ -177,6 +289,8 @@ public class SimulationControl : MonoBehaviour
     }
     public void PauseSimulation()
     {
+        CancelStepping();
+
         if (m_SimulationState == SimulationStateMsg.STATE_PLAYING)
         {
             m_SimulationState = SimulationStateMsg.STATE_PAUSED;
@@ -198,6 +312,14 @@ public class SimulationControl : MonoBehaviour
         var response = new ResetSimulationResponse();
         response.result.result = ResultMsg.RESULT_OK;
 
+        if (!IsWorldLoaded)
+        {
+            response.result.result = ResultMsg.RESULT_INCORRECT_STATE;
+            response.result.error_message = "No world is loaded; call load_world first";
+            return response;
+        }
+
+        CancelStepping();
         m_SimulationState = SimulationStateMsg.STATE_STOPPED;
         Time.timeScale = 0f;
         if (playStopImage != null)
@@ -246,6 +368,18 @@ public class SimulationControl : MonoBehaviour
         {
             SimulatorFeaturesMsg.SPAWNING,                  // spawn_entity
             SimulatorFeaturesMsg.SPAWNING_ENTITIES,         // spawn_entities
+            SimulatorFeaturesMsg.DELETING,                  // delete_entity
+            SimulatorFeaturesMsg.SPAWNABLES,                // get_spawnables
+            SimulatorFeaturesMsg.NAMED_POSES,               // get_named_poses
+            SimulatorFeaturesMsg.POSE_BOUNDS,               // get_named_pose_bounds
+            SimulatorFeaturesMsg.ENTITY_STATE_GETTING,      // get_entity_state / get_entities_states
+            SimulatorFeaturesMsg.ENTITY_STATE_SETTING,      // set_entity_state
+            SimulatorFeaturesMsg.ENTITY_INFO_GETTING,       // get_entity_info
+            SimulatorFeaturesMsg.ENTITY_INFO_SETTING,       // set_entity_info
+            SimulatorFeaturesMsg.ENTITY_CATEGORIES,         // EntityFilters.categories
+            SimulatorFeaturesMsg.ENTITY_TAGS,               // EntityFilters.tags
+            SimulatorFeaturesMsg.ENTITY_BOUNDS,             // get_entity_bounds
+            SimulatorFeaturesMsg.ENTITY_BOUNDS_BOX,         // EntityFilters.bounds の TYPE_BOX
             SimulatorFeaturesMsg.SIMULATION_RESET,          // reset_simulation
             SimulatorFeaturesMsg.SIMULATION_RESET_TIME,     // SCOPE_TIME
             SimulatorFeaturesMsg.SIMULATION_RESET_STATE,    // SCOPE_STATE
@@ -253,25 +387,25 @@ public class SimulationControl : MonoBehaviour
             SimulatorFeaturesMsg.SIMULATION_STATE_GETTING,  // get_simulation_state
             SimulatorFeaturesMsg.SIMULATION_STATE_SETTING,  // set_simulation_state
             SimulatorFeaturesMsg.SIMULATION_STATE_PAUSE,    // STATE_PAUSED への遷移
+            SimulatorFeaturesMsg.STEP_SIMULATION_SINGLE,    // step_simulation (steps = 1)
+            SimulatorFeaturesMsg.STEP_SIMULATION_MULTIPLE,  // step_simulation (steps > 1)
+            SimulatorFeaturesMsg.WORLD_LOADING,             // load_world
+            SimulatorFeaturesMsg.WORLD_RESOURCE_STRING,     // load_world の resource_string
+            SimulatorFeaturesMsg.WORLD_UNLOADING,           // unload_world
+            SimulatorFeaturesMsg.WORLD_INFO_GETTING,        // get_current_world
+            SimulatorFeaturesMsg.AVAILABLE_WORLDS,          // get_available_worlds
         };
-        // URDF のみ。mesh は URDF からの相対パスで解決するため、
-        // SPAWNING_RESOURCE_STRING (文字列からの生成) は申告しない。
+        // 申告していないもの:
+        //  SPAWNING_RESOURCE_STRING  URDF の mesh 参照は URDF からの相対パスで解決するため、
+        //                            文字列だけ受け取ってもアセットを見つけられない
+        //  ENTITY_BOUNDS_CONVEX      凸包での絞り込みは未実装 (TYPE_BOX と TYPE_SPHERE のみ)
+        //  WORLD_TAGS                ワールドにタグを付ける仕組みが無い
+        //  STEP_SIMULATION_ACTION    ROS-TCP-Connector にアクションの口が無い
         response.features.spawn_formats = new string[] { "urdf" };
         response.features.custom_info =
             "Unity_ROS2_Robot_Simulator. Mesh files (obj/stl/dae) can also be spawned by uri. " +
-            "step_simulation and the world interfaces are not implemented.";
-        return response;
-    }
-
-    private StepSimulationResponse StepSimulation(StepSimulationRequest request)
-    {
-        var response = new StepSimulationResponse();
-
-        // TODO: implement the logic to step the simulation
-        // For now, we just return an error
-
-        response.result.result = ResultMsg.RESULT_OPERATION_FAILED;
-        response.result.error_message = "Step simulation not implemented";
+            "Worlds are ObjectSpawner scene JSON files; spawnable, world and named-pose sources " +
+            "come from simulation_resources.json.";
         return response;
     }
 
@@ -350,6 +484,15 @@ public class SimulationControl : MonoBehaviour
 
         // process the service request
         Debug.Log("Received request for object: " + requestedName);
+
+        if (!IsWorldLoaded)
+        {
+            // ワールドが降ろされている間は置き場所が無い。
+            Debug.LogError("Cannot spawn while no world is loaded");
+            spawnEntityResponse.result.result = ResultMsg.RESULT_INCORRECT_STATE;
+            spawnEntityResponse.result.error_message = "No world is loaded; call load_world first";
+            return spawnEntityResponse;
+        }
 
         // 2.0.0 で uri / resource_string は Resource メッセージへまとめられた。
         string resourceUri = entityResource != null ? entityResource.uri : null;
@@ -449,7 +592,10 @@ public class SimulationControl : MonoBehaviour
             );
             ob.transform.rotation = newMeshRotation;
             m_EntityInitialRotation[ob.name] = newMeshRotation;
-            
+            // メッシュ単体は関節も ROS インターフェースも持たないので「物体」扱い。
+            // 分類を変えたい場合は set_entity_info で上書きできる。
+            RegisterEntityInfo(ob.name, EntityCategoryMsg.CATEGORY_OBJECT, "Spawned from " + resourceUri);
+
             return spawnEntityResponse;
         }
 
@@ -498,6 +644,8 @@ public class SimulationControl : MonoBehaviour
             );
         robotObject.transform.rotation = newRotation;
         m_EntityInitialRotation[robotObject.name] = newRotation;
+        // URDF から作ったものは ros2_control 相当のトピックを持つので「ロボット」扱い。
+        RegisterEntityInfo(robotObject.name, EntityCategoryMsg.CATEGORY_ROBOT, "Spawned from " + resourceUri);
 
         // 最初に見つかった UrdfLink に対してベースリンク設定と固定フラグを適用
         List<GameObject> childObjectsWithUrdfLink = GetChildObjectsWithComponent<UrdfLink>(robotObject);
@@ -2405,39 +2553,55 @@ public class SimulationControl : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Entity を 1 体デスポーンする。m_EntityList からの除去は呼び出し側の責任。
+    /// </summary>
+    /// <remarks>
+    /// delete_entity と DespawnAllEntities の共通実装。
+    /// </remarks>
+    private void DespawnEntity(GameObject entity)
+    {
+        if (entity == null)
+            return;
+
+        // まず非アクティブにして、この Entity 配下の Update / FixedUpdate を止める。
+        // Destroy はフレーム終端まで遅延されるので、これをやらないと
+        // UnitySensors の RosMsgPublisher.Update() が「未登録なら登録する」
+        // 遅延登録を行い、下で解除した publisher をその場で登録し直してしまう。
+        entity.SetActive(false);
+
+        // Destroy より前に ROS の受信経路から切り離す。Unity の Destroy は
+        // フレーム終端まで遅延されるため、OnDestroy 任せにすると破棄済みの
+        // コールバックが 1 フレーム分生き残って例外を投げ、同じトピックの
+        // 後続コールバック (再スポーンしたロボット) まで止めてしまう。
+        foreach (JointStateSub sub in entity.GetComponentsInChildren<JointStateSub>(true))
+        {
+            sub.DetachFromRos();
+        }
+        foreach (LinkThruster thruster in entity.GetComponentsInChildren<LinkThruster>(true))
+        {
+            thruster.DetachFromRos();
+        }
+        // publisher 側も解除する。こちらは購読と違いコンポーネントに解除 API が無い
+        // (センサ系は UnitySensors のクラス) ため、スポーン時に控えたトピック名で外す。
+        ReleasePublishedTopics(entity.name);
+
+        m_EntityInitialPose.Remove(entity.name);
+        m_EntityInitialRotation.Remove(entity.name);
+        m_EntityInfo.Remove(entity.name);
+
+        GameObject.Destroy(entity);
+    }
+
     private void DespawnAllEntities()
     {
         foreach (GameObject entity in m_EntityList)
         {
-            if (entity == null)
-                continue;
-
-            // まず非アクティブにして、この Entity 配下の Update / FixedUpdate を止める。
-            // Destroy はフレーム終端まで遅延されるので、これをやらないと
-            // UnitySensors の RosMsgPublisher.Update() が「未登録なら登録する」
-            // 遅延登録を行い、下で解除した publisher をその場で登録し直してしまう。
-            entity.SetActive(false);
-
-            // Destroy より前に ROS の受信経路から切り離す。Unity の Destroy は
-            // フレーム終端まで遅延されるため、OnDestroy 任せにすると破棄済みの
-            // コールバックが 1 フレーム分生き残って例外を投げ、同じトピックの
-            // 後続コールバック (再スポーンしたロボット) まで止めてしまう。
-            foreach (JointStateSub sub in entity.GetComponentsInChildren<JointStateSub>(true))
-            {
-                sub.DetachFromRos();
-            }
-            foreach (LinkThruster thruster in entity.GetComponentsInChildren<LinkThruster>(true))
-            {
-                thruster.DetachFromRos();
-            }
-            // publisher 側も解除する。こちらは購読と違いコンポーネントに解除 API が無い
-            // (センサ系は UnitySensors のクラス) ため、スポーン時に控えたトピック名で外す。
-            ReleasePublishedTopics(entity.name);
-
-            GameObject.Destroy(entity);
+            DespawnEntity(entity);
         }
         m_EntityList.Clear();
         m_EntityInitialPose.Clear();
         m_EntityInitialRotation.Clear();
+        m_EntityInfo.Clear();
     }
 }
