@@ -27,7 +27,7 @@ srv で定義されている 22 サービスすべてに対応しています。
 | | `step_simulation` | 一時停止中のみ |
 | | `get_simulator_features` | |
 | ワールド | `load_world` / `unload_world` | シーン JSON |
-| | `get_current_world` / `get_available_worlds` | |
+| | `get_current_world` / `get_available_worlds` | タグで絞り込める |
 
 ### 対応していないもの
 
@@ -40,9 +40,6 @@ srv で定義されている 22 サービスすべてに対応しています。
   絶対パスで指すため、文字列だけでも成立するからです)。
 - **`ENTITY_BOUNDS_CONVEX`** — bounds による絞り込みは `TYPE_BOX` と `TYPE_SPHERE` のみ。
   凸包を渡すと `RESULT_FEATURE_UNSUPPORTED` を返します。
-- **`WORLD_TAGS`** — ワールドにタグを付ける仕組みがありません。`get_available_worlds` に
-  タグフィルタを渡すと `RESULT_FEATURE_UNSUPPORTED` を返します (黙って全件返すより
-  正直なので、こうしています)。
 - **`EntityState.acceleration`** — 常にゼロを返し、`set_entity_state` でも無視します。
   Unity には加速度を直接与える入口が無く、`EntityState.msg` も「シミュレータによっては
   無視される」と明記している項目です。要求された場合は結果を `RESULT_OK` にしたまま
@@ -109,6 +106,47 @@ ros2 service call /unload_world simulation_interfaces/srv/UnloadWorld "{}"
 ようにしてあります。`load_world` を呼べば元に戻ります。ただし**組み込みシーンは
 ファイルとして取り出せない**ので、`get_current_world` が返す `world_resource.uri` は
 起動直後は空です。降ろしたあとに同じものへ戻すことはできません。
+
+### ワールドの名前・説明・タグ
+
+シーン JSON の先頭に書けます。3 つとも省略可で、省略すると名前はファイル名、説明は
+オブジェクト数、タグは空になります。メタデータをワールドファイル自身に持たせているので、
+ファイルを配るだけでタグまで一緒に運べます (別置きの索引を同期する必要がありません)。
+
+```json
+{
+  "name": "warehouse",
+  "description": "棚とパレットのある屋内環境",
+  "tags": ["indoor", "warehouse"],
+  "objects": [ ... ]
+}
+```
+
+ここに書いた内容が `get_available_worlds` の一覧にも `get_current_world` にも載ります。
+GUI の Save Scene は、読み込んだワールドのメタデータを引き継いで書き戻すので、
+開いて保存し直してもタグは消えません。
+
+`get_available_worlds` の `filter` でタグ絞り込みができます (`WORLD_TAGS`)。
+
+```bash
+# indoor か outdoor のどちらかを持つワールド (FILTER_MODE_ANY)
+ros2 service call /get_available_worlds simulation_interfaces/srv/GetAvailableWorlds \
+  "{ filter: { tags: ['indoor', 'outdoor'], filter_mode: 0 } }"
+
+# indoor と warehouse を両方持つワールド (FILTER_MODE_ALL)
+ros2 service call /get_available_worlds simulation_interfaces/srv/GetAvailableWorlds \
+  "{ filter: { tags: ['indoor', 'warehouse'], filter_mode: 1 } }"
+```
+
+- タグを指定すると、**タグを持たないワールドは外れます**。
+- 一致するものが無ければ空リストを `RESULT_OK` で返します。見つからないことは
+  エラーではありません。
+- `filter_mode` が `0` / `1` 以外なら `RESULT_OPERATION_FAILED` です。黙って `ANY` として
+  扱うと、要求とは違う絞り込み結果を「正常」として返してしまうためです。同じ理由で、
+  `get_entities` / `get_entities_states` / `get_named_poses` のタグ絞り込みも未知の
+  `filter_mode` を弾きます。
+
+### 読み込み時の結果コード
 
 `load_world` は消す前に JSON の構文を確かめます。読めないものを渡したときに景観だけ
 消えて何も残らない、という壊れ方をしないためです。

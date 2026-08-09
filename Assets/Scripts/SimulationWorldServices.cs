@@ -44,6 +44,27 @@ public partial class SimulationControl
 
     private bool IsWorldLoaded => m_CurrentWorld != null;
 
+    /// <summary>
+    /// シーン JSON から WorldResource を組み立てる。world_resource は呼び出し側で入れる。
+    /// </summary>
+    /// <remarks>
+    /// name / description / tags はワールドファイルに書かれていればそれを使い、
+    /// 無ければファイル名と既定の説明で埋める。GetAvailableWorlds と
+    /// GetCurrentWorld / LoadWorld が同じ内容を返すよう、ここに寄せている。
+    /// </remarks>
+    private static WorldResourceMsg DescribeWorld(SavedSceneData sceneData, string fallbackName)
+    {
+        return new WorldResourceMsg
+        {
+            name = !string.IsNullOrEmpty(sceneData.name) ? sceneData.name : fallbackName,
+            world_resource = new ResourceMsg { uri = "", resource_string = "" },
+            description = !string.IsNullOrEmpty(sceneData.description)
+                ? sceneData.description
+                : $"Scene JSON with {sceneData.objects.Count} object(s)",
+            tags = sceneData.tags ?? Array.Empty<string>()
+        };
+    }
+
     /// <summary>起動直後の組み込みシーンを、ロード済みのワールドとして登録する。</summary>
     private void InitializeWorld()
     {
@@ -154,13 +175,11 @@ public partial class SimulationControl
 
         SceneLoadReport report = m_ObjectSpawner.LoadSceneData(sceneData);
 
-        m_CurrentWorld = new WorldResourceMsg
-        {
-            name = worldName,
-            world_resource = new ResourceMsg { uri = resolvedUri, resource_string = "" },
-            description = $"Scene JSON with {sceneData.objects.Count} object(s)",
-            tags = Array.Empty<string>()
-        };
+        // 名前・説明・タグはワールドファイルに書かれていればそれを使う。
+        // 一覧 (GetAvailableWorlds) と同じ内容が GetCurrentWorld からも見えるように
+        // 組み立ては DescribeWorld に寄せてある。
+        m_CurrentWorld = DescribeWorld(sceneData, worldName);
+        m_CurrentWorld.world_resource = new ResourceMsg { uri = resolvedUri, resource_string = "" };
         m_SimulationState = SimulationStateMsg.STATE_STOPPED;
         Time.timeScale = 0f;
         if (playStopImage != null)
@@ -238,12 +257,14 @@ public partial class SimulationControl
         var response = new GetAvailableWorldsResponse();
         response.worlds = Array.Empty<WorldResourceMsg>();
 
-        if (request.filter != null && request.filter.tags != null && request.filter.tags.Length > 0)
+        // タグは各ワールドの JSON に書かれている (SavedSceneData.tags)。
+        // 未知の filter_mode を黙って ANY として扱うと、要求と違う絞り込み結果を
+        // 正常応答として返してしまうので、ここで弾く。
+        if (!IsKnownTagFilterMode(request.filter))
         {
-            // ワールドにタグを付ける仕組みが無いので WORLD_TAGS は申告していない。
-            // タグで絞れと言われたら、黙って全部返すより未対応と答えるほうが正しい。
-            response.result.result = ResultMsg.RESULT_FEATURE_UNSUPPORTED;
-            response.result.error_message = "World tags are not supported by this simulator";
+            response.result.result = ResultMsg.RESULT_OPERATION_FAILED;
+            response.result.error_message =
+                $"Unknown tags filter_mode {request.filter.filter_mode}; expected FILTER_MODE_ANY(0) or FILTER_MODE_ALL(1)";
             return response;
         }
 
@@ -293,13 +314,13 @@ public partial class SimulationControl
                     continue;
                 }
 
-                worlds.Add(new WorldResourceMsg
+                WorldResourceMsg world = DescribeWorld(sceneData, Path.GetFileNameWithoutExtension(file));
+                world.world_resource = new ResourceMsg { uri = ToFileUri(file), resource_string = "" };
+                if (!MatchesTags(world.tags, request.filter))
                 {
-                    name = Path.GetFileNameWithoutExtension(file),
-                    world_resource = new ResourceMsg { uri = ToFileUri(file), resource_string = "" },
-                    description = $"Scene JSON with {sceneData.objects.Count} object(s)",
-                    tags = Array.Empty<string>()
-                });
+                    continue;
+                }
+                worlds.Add(world);
             }
         }
 

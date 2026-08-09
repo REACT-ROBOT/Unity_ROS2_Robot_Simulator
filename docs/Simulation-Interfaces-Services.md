@@ -29,7 +29,7 @@ All 22 services defined in the srv directory are implemented.
 | | `step_simulation` | Only while paused |
 | | `get_simulator_features` | |
 | Worlds | `load_world` / `unload_world` | Scene JSON |
-| | `get_current_world` / `get_available_worlds` | |
+| | `get_current_world` / `get_available_worlds` | Filterable by tag |
 
 ### Not supported
 
@@ -42,9 +42,6 @@ All 22 services defined in the srv directory are implemented.
   meshes by absolute path and therefore stands on its own as a string.
 - **`ENTITY_BOUNDS_CONVEX`** — bounds filtering supports `TYPE_BOX` and `TYPE_SPHERE` only.
   A convex hull returns `RESULT_FEATURE_UNSUPPORTED`.
-- **`WORLD_TAGS`** — there is no mechanism for tagging worlds. Passing a tag filter to
-  `get_available_worlds` returns `RESULT_FEATURE_UNSUPPORTED`, which is more honest than
-  silently returning everything.
 - **`EntityState.acceleration`** — always reported as zero and ignored by
   `set_entity_state`. Unity offers no direct way to impose an acceleration, and
   `EntityState.msg` explicitly allows simulators to ignore the field. When it is requested,
@@ -114,6 +111,47 @@ After `unload_world` the state is `STATE_NO_WORLD`. In that state:
 `load_world` brings it back. Note that the **built-in scene cannot be exported as a file**,
 so the `world_resource.uri` reported by `get_current_world` is empty at startup, and once
 unloaded there is no way to load that exact world again.
+
+### World name, description and tags
+
+These go at the top of the scene JSON. All three are optional; without them the name falls
+back to the file name, the description to the object count, and the tags to empty. Keeping
+the metadata inside the world file means shipping the file ships its tags too — there is no
+separate index to keep in sync.
+
+```json
+{
+  "name": "warehouse",
+  "description": "Indoor environment with shelving and pallets",
+  "tags": ["indoor", "warehouse"],
+  "objects": [ ... ]
+}
+```
+
+Whatever is written here shows up both in the `get_available_worlds` listing and in
+`get_current_world`. The GUI's Save Scene carries the loaded world's metadata back out, so
+opening a world and saving it again does not drop its tags.
+
+`get_available_worlds` can filter on those tags (`WORLD_TAGS`):
+
+```bash
+# Worlds carrying either indoor or outdoor (FILTER_MODE_ANY)
+ros2 service call /get_available_worlds simulation_interfaces/srv/GetAvailableWorlds \
+  "{ filter: { tags: ['indoor', 'outdoor'], filter_mode: 0 } }"
+
+# Worlds carrying both indoor and warehouse (FILTER_MODE_ALL)
+ros2 service call /get_available_worlds simulation_interfaces/srv/GetAvailableWorlds \
+  "{ filter: { tags: ['indoor', 'warehouse'], filter_mode: 1 } }"
+```
+
+- Asking for tags **excludes worlds that carry none**.
+- No match returns an empty list with `RESULT_OK`. Finding nothing is not an error.
+- A `filter_mode` other than `0` or `1` returns `RESULT_OPERATION_FAILED`. Silently treating
+  it as `ANY` would return a differently-filtered result and call it success. For the same
+  reason the tag filters on `get_entities`, `get_entities_states` and `get_named_poses`
+  reject an unknown `filter_mode` too.
+
+### Result codes when loading
 
 `load_world` validates the JSON before clearing anything, so a file that cannot be read
 never leaves you with the scenery deleted and nothing in its place.

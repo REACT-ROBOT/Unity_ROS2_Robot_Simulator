@@ -372,6 +372,15 @@ public partial class SimulationControl
     private GetNamedPosesResponse GetNamedPoses(GetNamedPosesRequest request)
     {
         var response = new GetNamedPosesResponse();
+        if (!IsKnownTagFilterMode(request.tags))
+        {
+            response.result.result = ResultMsg.RESULT_OPERATION_FAILED;
+            response.result.error_message =
+                $"Unknown tags filter_mode {request.tags.filter_mode}; expected FILTER_MODE_ANY(0) or FILTER_MODE_ALL(1)";
+            response.poses = Array.Empty<NamedPoseMsg>();
+            return response;
+        }
+
         var poses = new List<NamedPoseMsg>();
         foreach (NamedPoseMsg pose in SimulationResources.NamedPoses)
         {
@@ -491,6 +500,14 @@ public partial class SimulationControl
             }
         }
 
+        if (filters != null && !IsKnownTagFilterMode(filters.tags))
+        {
+            error.result = ResultMsg.RESULT_OPERATION_FAILED;
+            error.error_message =
+                $"Unknown tags filter_mode {filters.tags.filter_mode}; expected FILTER_MODE_ANY(0) or FILTER_MODE_ALL(1)";
+            return false;
+        }
+
         BoundsMsg bounds = filters != null ? filters.bounds : null;
         if (bounds != null && bounds.type != BoundsMsg.TYPE_EMPTY)
         {
@@ -556,6 +573,23 @@ public partial class SimulationControl
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// TagsFilter の filter_mode が解釈できる値か。タグが空なら絞り込まないので常に true。
+    /// </summary>
+    /// <remarks>
+    /// 未知の filter_mode を黙って ANY として扱うと、要求とは違う絞り込み結果を
+    /// 「正常」として返してしまう。呼び出し側はこれで弾いてから MatchesTags を使う。
+    /// </remarks>
+    private static bool IsKnownTagFilterMode(TagsFilterMsg filter)
+    {
+        if (filter == null || filter.tags == null || filter.tags.Length == 0)
+        {
+            return true;
+        }
+        return filter.filter_mode == TagsFilterMsg.FILTER_MODE_ANY
+            || filter.filter_mode == TagsFilterMsg.FILTER_MODE_ALL;
     }
 
     private static bool MatchesTags(string[] entityTags, TagsFilterMsg filter)

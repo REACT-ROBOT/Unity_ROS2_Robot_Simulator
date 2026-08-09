@@ -71,7 +71,7 @@ Outputs (default `/tmp/service_conformance/`):
 | E1–E2 | Despawn on `STATE_STOPPED`, and respawning afterwards |
 | F1–F2 | How far `step_simulation` actually advances (`n` versus `2n` steps must come out 2:1), resetting an empty scene |
 | G1–G5 | **simulation_interfaces 2.x**: **advertised features cross-checked against the services on the graph**, spawning through `Resource`, `spawn_entities` (batch spawn and partial-failure reporting), topic separation via `entity_namespace` |
-| H1–H8 | **Optional services**: `get_entities` / `get_entity_state` agreeing with `ground_truth`, `set_entity_state`, `entity_info`, `get_entity_bounds`, `EntityFilters`, `delete_entity`, `get_spawnables` / named poses, world lifecycle |
+| H1–H9 | **Optional services**: `get_entities` / `get_entity_state` agreeing with `ground_truth`, `set_entity_state`, `entity_info`, `get_entity_bounds`, `EntityFilters`, `delete_entity`, `get_spawnables` / named poses, world lifecycle, **filtering worlds by tag** |
 
 The starred scenarios (D5 / D8 / D10) are the direct checks for the reported bug.
 
@@ -97,11 +97,12 @@ PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 
 Same results on both ROS 2 Humble (Ubuntu 22.04) and Jazzy (Ubuntu 24.04).
 
-After implementing the remaining 15 services and adding the H group (8 scenarios):
+After implementing the remaining 15 services plus `WORLD_TAGS`, and adding the H group
+(9 scenarios):
 
 ```
-PASS 39  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
-PASS 38  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
+PASS 40  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 39  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
 Those numbers were measured on ROS 2 Humble (Ubuntu 22.04). Jazzy was not re-run, though
@@ -316,7 +317,7 @@ references resolve relative to the URDF file, so a bare string leaves the assets
 > stepping actually advances the clock (`n` versus `2n` steps must come out 2:1), and **G1**
 > no longer hard-codes a list of "features that should be unimplemented" — it cross-checks
 > the advertised features against the services present on the ROS graph. The 15 newly
-> implemented services are covered by **H1–H8**.
+> implemented services are covered by **H1–H9**.
 
 ## Assumptions to know when writing tests
 

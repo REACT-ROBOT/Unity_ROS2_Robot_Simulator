@@ -391,6 +391,7 @@ public partial class SimulationControl : MonoBehaviour
             SimulatorFeaturesMsg.STEP_SIMULATION_MULTIPLE,  // step_simulation (steps > 1)
             SimulatorFeaturesMsg.WORLD_LOADING,             // load_world
             SimulatorFeaturesMsg.WORLD_RESOURCE_STRING,     // load_world の resource_string
+            SimulatorFeaturesMsg.WORLD_TAGS,                // ワールドのタグと絞り込み
             SimulatorFeaturesMsg.WORLD_UNLOADING,           // unload_world
             SimulatorFeaturesMsg.WORLD_INFO_GETTING,        // get_current_world
             SimulatorFeaturesMsg.AVAILABLE_WORLDS,          // get_available_worlds
@@ -399,7 +400,6 @@ public partial class SimulationControl : MonoBehaviour
         //  SPAWNING_RESOURCE_STRING  URDF の mesh 参照は URDF からの相対パスで解決するため、
         //                            文字列だけ受け取ってもアセットを見つけられない
         //  ENTITY_BOUNDS_CONVEX      凸包での絞り込みは未実装 (TYPE_BOX と TYPE_SPHERE のみ)
-        //  WORLD_TAGS                ワールドにタグを付ける仕組みが無い
         //  STEP_SIMULATION_ACTION    ROS-TCP-Connector にアクションの口が無い
         response.features.spawn_formats = new string[] { "urdf" };
         response.features.custom_info =

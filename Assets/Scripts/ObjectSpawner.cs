@@ -23,6 +23,14 @@ public class SavedObjectData
 [Serializable]
 public class SavedSceneData
 {
+    // 以下 3 つは省略可。simulation_interfaces の WorldResource へそのまま載る。
+    // ワールドのメタデータをワールドファイル自身に持たせておくと、ファイルを
+    // 配るだけでタグまで一緒に運べる (別置きの索引を同期する必要がない)。
+    // 省略されている既存のシーン JSON は「名前はファイル名、タグ無し」になる。
+    public string name;
+    public string description;
+    public string[] tags;
+
     public List<SavedObjectData> objects = new List<SavedObjectData>();
 }
 
@@ -64,6 +72,11 @@ public class ObjectSpawner : MonoBehaviour
         public Button button;
         public string meshPath;
     }
+
+    // いま載っているワールドのメタデータ。読み込み時に控えて保存時に書き戻す。
+    private string m_SceneName = "";
+    private string m_SceneDescription = "";
+    private string[] m_SceneTags = Array.Empty<string>();
 
     private Vector3 spawnPosition;
     private Vector3 spawnRotation;
@@ -108,7 +121,14 @@ public class ObjectSpawner : MonoBehaviour
 
     public void SaveSpawnedObjects()
     {
-        SavedSceneData savedSceneData = new SavedSceneData();
+        SavedSceneData savedSceneData = new SavedSceneData
+        {
+            // 読み込んだワールドのメタデータを引き継ぐ。これをやらないと、
+            // タグ付きワールドを開いて保存し直しただけでタグが消える。
+            name = m_SceneName,
+            description = m_SceneDescription,
+            tags = m_SceneTags,
+        };
         foreach (var obj in spawnedObjects)
         {
             SavedObjectData savedObjectData = new SavedObjectData
@@ -226,6 +246,9 @@ public class ObjectSpawner : MonoBehaviour
     public SceneLoadReport LoadSceneData(SavedSceneData savedSceneData)
     {
         var report = new SceneLoadReport();
+        m_SceneName = savedSceneData.name ?? "";
+        m_SceneDescription = savedSceneData.description ?? "";
+        m_SceneTags = savedSceneData.tags ?? Array.Empty<string>();
         foreach (var objData in savedSceneData.objects)
         {
             SpawnFromSavedData(objData, report);
@@ -360,6 +383,9 @@ public class ObjectSpawner : MonoBehaviour
         }
         spawnedObjects.Clear();
         selectedObject = null;
+        m_SceneName = "";
+        m_SceneDescription = "";
+        m_SceneTags = Array.Empty<string>();
     }
 
     /// <summary>このスポナーが管理しているオブジェクトの数。</summary>
