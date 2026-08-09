@@ -10,7 +10,7 @@ ros2 service call /get_simulator_features simulation_interfaces/srv/GetSimulator
 
 ## 対応状況
 
-srv で定義されている 22 サービスすべてに対応しています。
+srv で定義されている 22 サービスと `SimulateSteps` アクションのすべてに対応しています。
 
 | 分類 | サービス | 備考 |
 |---|---|---|
@@ -28,12 +28,10 @@ srv で定義されている 22 サービスすべてに対応しています。
 | | `get_simulator_features` | |
 | ワールド | `load_world` / `unload_world` | シーン JSON |
 | | `get_current_world` / `get_available_worlds` | タグで絞り込める |
+| アクション | `simulate_steps` | 一時停止中のみ。1 ステップごとに feedback、途中キャンセル可 |
 
 ### 対応していないもの
 
-- **`SimulateSteps` アクション** — ROS-TCP-Connector にアクションを実装する口が無く、
-  シミュレータ側だけでは足せません。多ステップ実行は `step_simulation` を使ってください
-  (`STEP_SIMULATION_MULTIPLE` は申告していますが `STEP_SIMULATION_ACTION` は申告していません)。
 - **`SPAWNING_RESOURCE_STRING`** — URDF の mesh 参照は URDF ファイルからの相対パスで解決するため、
   文字列だけ受け取ってもアセットを見つけられません。`entity_resource.uri` を使ってください。
   なお **ワールド** の `resource_string` には対応しています (シーン JSON はメッシュを
@@ -182,6 +180,34 @@ ros2 service call /step_simulation simulation_interfaces/srv/StepSimulation "{ s
 `Physics.Simulate()` ではなく `Time.timeScale` を戻して回しているのは、前者だと
 `FixedUpdate` が呼ばれず、`ServoJointModel` や `JointStateSub` といった制御側が
 動かないまま物理だけ進んでしまうためです。
+
+## simulate_steps アクション
+
+`step_simulation` と同じことを、**1 ステップごとの経過報告**と**途中キャンセル**つきで
+行います。長いステップ数を進める場合はこちらが向いています。
+
+```bash
+ros2 service call /set_simulation_state simulation_interfaces/srv/SetSimulationState "{ state: { state: 2 } }"
+ros2 action send_goal -f /simulate_steps simulation_interfaces/action/SimulateSteps "{ steps: 100 }"
+```
+
+- ゴールは**常に受理**します。一時停止していないなどの失敗は、結果の
+  `result` (`OPERATION_FAILED`) と goal の status (`ABORTED`) で伝えます。ゴールを
+  拒否するには実行開始前にもう 1 往復必要になるうえ、`SimulateSteps.action` 自身が
+  「一時停止していなければ結果で OPERATION_FAILED を返す」と書いているためです。
+- feedback は 1 物理ステップにつき 1 回、`completed_steps` と `remaining_steps` を返します。
+- キャンセルするとその時点で止まり、status は `CANCELED` になります。進んだぶんは
+  有効なので結果の `result` 自体は `RESULT_OK` です。
+- 上限とキャンセルの扱いは `step_simulation` と共有しています。サービスとアクションが
+  同時に走ることはなく、後から来たほうは `OPERATION_FAILED` になります。
+
+### エンドポイント側の要件
+
+アクションは ROS-TCP-Connector / ROS-TCP-Endpoint の**両方**に手を入れて実現しています
+(本家にはアクションの口がありません)。Connector に
+`ROSConnection.ImplementAction<TGoal, TResult>` を、Endpoint に `__unity_action` /
+`__action_goal` / `__action_cancel` / `__action_feedback` / `__action_result` の
+システムコマンドを追加してあります。**どちらも hijimasa fork の対応版が要ります。**
 
 ## simulation_resources.json
 

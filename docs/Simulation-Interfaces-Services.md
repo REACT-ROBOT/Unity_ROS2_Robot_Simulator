@@ -12,7 +12,7 @@ ros2 service call /get_simulator_features simulation_interfaces/srv/GetSimulator
 
 ## Coverage
 
-All 22 services defined in the srv directory are implemented.
+All 22 services defined in the srv directory are implemented, plus the `SimulateSteps` action.
 
 | Group | Service | Notes |
 |---|---|---|
@@ -30,12 +30,10 @@ All 22 services defined in the srv directory are implemented.
 | | `get_simulator_features` | |
 | Worlds | `load_world` / `unload_world` | Scene JSON |
 | | `get_current_world` / `get_available_worlds` | Filterable by tag |
+| Actions | `simulate_steps` | Only while paused; feedback per step, cancellable |
 
 ### Not supported
 
-- **The `SimulateSteps` action** — ROS-TCP-Connector has no way to implement an action
-  server, and that cannot be added from the simulator side alone. Use `step_simulation` for
-  multi-step runs (`STEP_SIMULATION_MULTIPLE` is advertised, `STEP_SIMULATION_ACTION` is not).
 - **`SPAWNING_RESOURCE_STRING`** — mesh references in a URDF resolve relative to the URDF
   file, so a bare string leaves the assets unreachable. Use `entity_resource.uri` instead.
   Note that `resource_string` *is* supported for **worlds**, because scene JSON refers to its
@@ -187,6 +185,34 @@ ros2 service call /step_simulation simulation_interfaces/srv/StepSimulation "{ s
 Stepping restores `Time.timeScale` rather than calling `Physics.Simulate()`, because the
 latter does not run `FixedUpdate`: physics would advance while `ServoJointModel`,
 `JointStateSub` and the rest of the control path stood still.
+
+## The simulate_steps action
+
+The same thing `step_simulation` does, with **per-step progress** and **cancellation**. It
+is the better fit when advancing a large number of steps.
+
+```bash
+ros2 service call /set_simulation_state simulation_interfaces/srv/SetSimulationState "{ state: { state: 2 } }"
+ros2 action send_goal -f /simulate_steps simulation_interfaces/action/SimulateSteps "{ steps: 100 }"
+```
+
+- Goals are **always accepted**. Failures such as "not paused" come back as
+  `OPERATION_FAILED` in the result with the goal status set to `ABORTED`. Rejecting a goal
+  would need another round trip before execution starts, and `SimulateSteps.action` itself
+  specifies reporting that case through the result.
+- One feedback message per physics step, carrying `completed_steps` and `remaining_steps`.
+- Cancelling stops at that point and the status becomes `CANCELED`. The steps already taken
+  are valid, so the result's own `result` stays `RESULT_OK`.
+- The step limit and the cancellation path are shared with `step_simulation`. The service and
+  the action never run at the same time; whichever arrives second gets `OPERATION_FAILED`.
+
+### Endpoint requirement
+
+Actions required changes to **both** ROS-TCP-Connector and ROS-TCP-Endpoint, neither of which
+had any action support upstream: `ROSConnection.ImplementAction<TGoal, TResult>` on the
+connector, and the `__unity_action` / `__action_goal` / `__action_cancel` /
+`__action_feedback` / `__action_result` system commands on the endpoint. **Both hijimasa
+forks must be at a version that carries them.**
 
 ## simulation_resources.json
 

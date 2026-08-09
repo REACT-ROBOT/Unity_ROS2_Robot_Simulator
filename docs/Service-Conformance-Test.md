@@ -73,6 +73,8 @@ Outputs (default `/tmp/service_conformance/`):
 | G1–G5 | **simulation_interfaces 2.x**: **advertised features cross-checked against the services on the graph**, spawning through `Resource`, `spawn_entities` (batch spawn and partial-failure reporting), topic separation via `entity_namespace` |
 | H1–H9 | **Optional services**: `get_entities` / `get_entity_state` agreeing with `ground_truth`, `set_entity_state`, `entity_info`, `get_entity_bounds`, `EntityFilters`, `delete_entity`, `get_spawnables` / named poses, world lifecycle, **filtering worlds by tag** |
 
+| I1–I2 | **The `simulate_steps` action**: per-step feedback, cancellation mid-run |
+
 The starred scenarios (D5 / D8 / D10) are the direct checks for the reported bug.
 
 Verdicts are `PASS` / `FAIL` / `KNOWN_GAP` (a gap known to be unimplemented; not counted toward
@@ -97,12 +99,12 @@ PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 
 Same results on both ROS 2 Humble (Ubuntu 22.04) and Jazzy (Ubuntu 24.04).
 
-After implementing the remaining 15 services plus `WORLD_TAGS`, and adding the H group
-(9 scenarios):
+After implementing the remaining 15 services plus `WORLD_TAGS` and the `SimulateSteps`
+action, and adding the H group (9 scenarios) and the I group (2 scenarios):
 
 ```
-PASS 40  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
-PASS 39  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
+PASS 42  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 41  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
 Those numbers were measured on ROS 2 Humble (Ubuntu 22.04). Jazzy was not re-run, though

@@ -89,6 +89,8 @@ public partial class SimulationControl : MonoBehaviour
     string m_GetCurrentWorldServiceName = "get_current_world";
     [SerializeField]
     string m_GetAvailableWorldsServiceName = "get_available_worlds";
+    [SerializeField]
+    string m_SimulateStepsActionName = "simulate_steps";
 
     [Header("再生/停止 Button の Image コンポーネント")]
     public Image playStopImage;
@@ -183,6 +185,11 @@ public partial class SimulationControl : MonoBehaviour
         ROSConnection.GetOrCreateInstance().ImplementService<GetAvailableWorldsRequest, GetAvailableWorldsResponse>(
             m_GetAvailableWorldsServiceName,
             GetAvailableWorlds);
+
+        // アクション (SimulationWorldServices.cs)
+        ROSConnection.GetOrCreateInstance().ImplementAction<SimulateStepsGoal, SimulateStepsResult>(
+            m_SimulateStepsActionName,
+            SimulateSteps);
 
         // 起動直後の組み込みシーンをロード済みワールドとして登録する。
         // これをやらないと GetCurrentWorld が「ワールド無し」になり、
@@ -389,6 +396,7 @@ public partial class SimulationControl : MonoBehaviour
             SimulatorFeaturesMsg.SIMULATION_STATE_PAUSE,    // STATE_PAUSED への遷移
             SimulatorFeaturesMsg.STEP_SIMULATION_SINGLE,    // step_simulation (steps = 1)
             SimulatorFeaturesMsg.STEP_SIMULATION_MULTIPLE,  // step_simulation (steps > 1)
+            SimulatorFeaturesMsg.STEP_SIMULATION_ACTION,    // simulate_steps アクション
             SimulatorFeaturesMsg.WORLD_LOADING,             // load_world
             SimulatorFeaturesMsg.WORLD_RESOURCE_STRING,     // load_world の resource_string
             SimulatorFeaturesMsg.WORLD_TAGS,                // ワールドのタグと絞り込み
@@ -400,7 +408,6 @@ public partial class SimulationControl : MonoBehaviour
         //  SPAWNING_RESOURCE_STRING  URDF の mesh 参照は URDF からの相対パスで解決するため、
         //                            文字列だけ受け取ってもアセットを見つけられない
         //  ENTITY_BOUNDS_CONVEX      凸包での絞り込みは未実装 (TYPE_BOX と TYPE_SPHERE のみ)
-        //  STEP_SIMULATION_ACTION    ROS-TCP-Connector にアクションの口が無い
         response.features.spawn_formats = new string[] { "urdf" };
         response.features.custom_info =
             "Unity_ROS2_Robot_Simulator. Mesh files (obj/stl/dae) can also be spawned by uri. " +

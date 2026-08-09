@@ -73,6 +73,8 @@ CI に組み込む場合は `--junit PATH` で JUnit XML を出力できます�
 | G1–G5 | **simulation_interfaces 2.x**。**申告とサービス実体の突き合わせ**、`Resource` によるスポーン、`spawn_entities` (複数生成・部分失敗の報告)、`entity_namespace` によるトピック分離 |
 | H1–H9 | **任意サービス**。`get_entities` / `get_entity_state` と `ground_truth` の一致、`set_entity_state`、`entity_info`、`get_entity_bounds`、`EntityFilters`、`delete_entity`、`get_spawnables` / 名前付き姿勢、world のライフサイクル、**world のタグ絞り込み** |
 
+| I1–I2 | **`simulate_steps` アクション**。1 ステップごとの feedback、途中キャンセル |
+
 ★ 印 (D5 / D8 / D10) が報告されている不具合の直接検証にあたります。
 
 判定は `PASS` / `FAIL` / `KNOWN_GAP` (未実装と分かっている項目、既定では終了コードに数えない) /
@@ -97,11 +99,12 @@ PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 
 同じ結果を ROS 2 Humble (Ubuntu 22.04) と Jazzy (Ubuntu 24.04) の両方で確認しています。
 
-残り 15 サービスと `WORLD_TAGS` を実装して H 群 (9 シナリオ) を足した後は、次のようになります。
+残り 15 サービスと `WORLD_TAGS`、`SimulateSteps` アクションを実装して H 群 (9 シナリオ) と
+I 群 (2 シナリオ) を足した後は、次のようになります。
 
 ```
-PASS 40  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
-PASS 39  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
+PASS 42  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 41  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
 こちらは ROS 2 Humble (Ubuntu 22.04) で確認した結果です。Jazzy では未確認ですが、

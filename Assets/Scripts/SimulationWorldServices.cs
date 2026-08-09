@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 using Unity.Robotics.Core;
+using Unity.Robotics.ROSTCPConnector;
 
 using RosMessageTypes.SimulationInterfaces;
 
@@ -400,11 +401,7 @@ public partial class SimulationControl
             return response;
         }
 
-        m_Stepping = true;
-        m_StepCompletion = new TaskCompletionSource<bool>();
-        Task<bool> pending = m_StepCompletion.Task;
-        m_StepCoroutine = StartCoroutine(StepRoutine((int)request.steps, m_StepCompletion));
-        bool completed = await pending;
+        bool completed = await RunSteps(request.steps, null);
 
         if (!completed)
         {
@@ -416,14 +413,106 @@ public partial class SimulationControl
         return response;
     }
 
-    private IEnumerator StepRoutine(int steps, TaskCompletionSource<bool> completion)
+    /// <summary>
+    /// simulate_steps アクション。step_simulation と同じことを、1 ステップごとの
+    /// 経過報告と途中キャンセルつきで行う。
+    /// </summary>
+    /// <remarks>
+    /// 進行状態 (m_Stepping / m_StepCoroutine) はサービス版と共有している。
+    /// 別々に持つと、サービスとアクションが同時に timeScale を奪い合って
+    /// どちらのステップ数も合わなくなる。
+    /// </remarks>
+    private async Task<SimulateStepsResult> SimulateSteps(SimulateStepsGoal goal, ActionGoalHandle handle)
+    {
+        var result = new SimulateStepsResult();
+
+        if (!IsWorldLoaded)
+        {
+            result.result.result = ResultMsg.RESULT_INCORRECT_STATE;
+            result.result.error_message = "No world is loaded";
+            handle.Abort();
+            return result;
+        }
+        if (m_SimulationState != SimulationStateMsg.STATE_PAUSED)
+        {
+            // SimulateSteps.action も「一時停止していなければ OPERATION_FAILED」と
+            // 明示している。
+            result.result.result = ResultMsg.RESULT_OPERATION_FAILED;
+            result.result.error_message =
+                $"Simulation must be paused to step; it is in state {m_SimulationState}";
+            handle.Abort();
+            return result;
+        }
+        if (m_Stepping)
+        {
+            result.result.result = ResultMsg.RESULT_OPERATION_FAILED;
+            result.result.error_message = "Another stepping request is still running";
+            handle.Abort();
+            return result;
+        }
+        if (goal.steps > k_MaxStepsPerCall)
+        {
+            result.result.result = ResultMsg.RESULT_OPERATION_FAILED;
+            result.result.error_message =
+                $"steps={goal.steps} exceeds the per-call limit of {k_MaxStepsPerCall}";
+            handle.Abort();
+            return result;
+        }
+        if (goal.steps == 0)
+        {
+            result.result.result = ResultMsg.RESULT_OK;
+            return result;
+        }
+
+        bool completed = await RunSteps(goal.steps, handle);
+
+        if (!completed)
+        {
+            result.result.result = ResultMsg.RESULT_OPERATION_FAILED;
+            result.result.error_message = "Stepping was interrupted by another state change";
+            handle.Abort();
+            return result;
+        }
+        // 途中でキャンセルされた場合、進んだぶんは有効なので結果自体は OK にする。
+        // 「最後までは進まなかった」ことは goal の status (CANCELED) が伝える。
+        result.result.result = ResultMsg.RESULT_OK;
+        return result;
+    }
+
+    /// <summary>
+    /// steps 回だけ物理を進める。handle が非 null ならステップごとに feedback を出し、
+    /// キャンセル要求で打ち切る。完走・キャンセルなら true、割り込まれたら false。
+    /// </summary>
+    private Task<bool> RunSteps(ulong steps, ActionGoalHandle handle)
+    {
+        m_Stepping = true;
+        m_StepCompletion = new TaskCompletionSource<bool>();
+        Task<bool> pending = m_StepCompletion.Task;
+        m_StepCoroutine = StartCoroutine(StepRoutine(steps, handle, m_StepCompletion));
+        return pending;
+    }
+
+    private IEnumerator StepRoutine(ulong steps, ActionGoalHandle handle, TaskCompletionSource<bool> completion)
     {
         Time.timeScale = 1f;
-        for (int i = 0; i < steps; i++)
+        for (ulong i = 0; i < steps; i++)
         {
             // WaitForFixedUpdate はその回の物理ステップが終わってから再開するので、
             // これを steps 回まわすとちょうど steps ステップ進んだところで止まる。
             yield return new WaitForFixedUpdate();
+
+            if (handle != null)
+            {
+                handle.PublishFeedback(new SimulateStepsFeedback
+                {
+                    completed_steps = i + 1,
+                    remaining_steps = steps - (i + 1)
+                });
+                if (handle.IsCancelRequested)
+                {
+                    break;
+                }
+            }
         }
         Time.timeScale = 0f;
         m_Stepping = false;
