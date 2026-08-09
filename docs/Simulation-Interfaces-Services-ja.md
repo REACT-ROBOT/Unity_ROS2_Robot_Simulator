@@ -10,11 +10,12 @@ ros2 service call /get_simulator_features simulation_interfaces/srv/GetSimulator
 
 ## 対応状況
 
-srv で定義されている 22 サービスと `SimulateSteps` アクションのすべてに対応しています。
+srv で定義されている 22 サービスと `SimulateSteps` アクション、および
+`SimulatorFeatures` に並ぶ機能のすべてに対応しています。
 
 | 分類 | サービス | 備考 |
 |---|---|---|
-| スポーン | `spawn_entity` / `spawn_entities` | `spawn_entity` は 2.0.0 で deprecated |
+| スポーン | `spawn_entity` / `spawn_entities` | `uri` と `resource_string` の両方。`spawn_entity` は 2.0.0 で deprecated |
 | | `delete_entity` | 1 体だけデスポーンする |
 | | `get_spawnables` | 設定ファイルの `spawnable_paths` を走査 |
 | エンティティ | `get_entities` / `get_entities_states` | 名前・カテゴリ・タグ・bounds (box / 球 / 凸包) で絞り込み |
@@ -32,10 +33,7 @@ srv で定義されている 22 サービスと `SimulateSteps` アクション�
 
 ### 対応していないもの
 
-- **`SPAWNING_RESOURCE_STRING`** — URDF の mesh 参照は URDF ファイルからの相対パスで解決するため、
-  文字列だけ受け取ってもアセットを見つけられません。`entity_resource.uri` を使ってください。
-  なお **ワールド** の `resource_string` には対応しています (シーン JSON はメッシュを
-  絶対パスで指すため、文字列だけでも成立するからです)。
+srv で定義されているサービスと `SimulatorFeatures` の機能はすべて実装しています。
 - **`EntityState.acceleration`** — 常にゼロを返し、`set_entity_state` でも無視します。
   Unity には加速度を直接与える入口が無く、`EntityState.msg` も「シミュレータによっては
   無視される」と明記している項目です。要求された場合は結果を `RESULT_OK` にしたまま
@@ -193,6 +191,39 @@ ros2 service call /step_simulation simulation_interfaces/srv/StepSimulation "{ s
 `Physics.Simulate()` ではなく `Time.timeScale` を戻して回しているのは、前者だと
 `FixedUpdate` が呼ばれず、`ServoJointModel` や `JointStateSub` といった制御側が
 動かないまま物理だけ進んでしまうためです。
+
+## resource_string からのスポーン
+
+`entity_resource.uri` を空にして `resource_string` に URDF そのものを入れられます
+(`SPAWNING_RESOURCE_STRING`)。xacro を展開した結果をファイルに落とさず直接渡す用途です。
+
+受け取った定義は一時ファイルへ書き出してから通常の経路に合流させます。URDF Importer も
+こちらの XML 解析もパスを受け取る作りなので、文字列専用の経路を別に作るより読み口を
+1 本にしたほうが分岐が増えないためです。一時ファイルはスポーンの完了時に削除します。
+
+### mesh の解決先
+
+文字列で渡すと「URDF の隣」という起点が無くなるので、mesh 参照の解決先を別に与える
+必要があります。`simulation_resources.json` の **`spawnable_paths` が検索パス**として
+使われます (Gazebo の `GZ_SIM_RESOURCE_PATH` にあたるもの)。あわせて
+**`AMENT_PREFIX_PATH`** も見るので、ROS 2 環境を source してから起動していれば
+`package://` は設定なしで解決します。
+
+`package://<pkg>/<rest>` は検索パスごとに次の順で探します。
+
+| 候補 | 検索パスが指しているもの |
+|---|---|
+| `<root>/<pkg>/<rest>` | パッケージが並ぶディレクトリ |
+| `<root>/share/<pkg>/<rest>` | ament の install prefix |
+| `<root>/<pkg>/share/<pkg>/<rest>` | colcon の install (分離配置) |
+| `<root>/<rest>` | そのパッケージのディレクトリそのもの |
+
+この探索は **URDF の隣に見つからなかったときだけ**走るので、これまで読めていた URDF の
+挙動は変わりません。絶対パスの `file://` 参照 (このリポジトリの description が使っている形)
+は元から起点に依存しないため、検索パスなしでも解決します。
+
+なおこの検索パスは URDF Importer 側に入れたので、`uri` で渡す通常のスポーンでも
+`package://` が引けるようになっています。
 
 ## simulate_steps アクション
 

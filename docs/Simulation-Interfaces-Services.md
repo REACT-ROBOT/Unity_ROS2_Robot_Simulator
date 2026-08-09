@@ -12,11 +12,12 @@ ros2 service call /get_simulator_features simulation_interfaces/srv/GetSimulator
 
 ## Coverage
 
-All 22 services defined in the srv directory are implemented, plus the `SimulateSteps` action.
+All 22 services defined in the srv directory are implemented, plus the `SimulateSteps`
+action and every feature flag in `SimulatorFeatures`.
 
 | Group | Service | Notes |
 |---|---|---|
-| Spawning | `spawn_entity` / `spawn_entities` | `spawn_entity` is deprecated since 2.0.0 |
+| Spawning | `spawn_entity` / `spawn_entities` | Both `uri` and `resource_string`; `spawn_entity` is deprecated since 2.0.0 |
 | | `delete_entity` | Despawns a single entity |
 | | `get_spawnables` | Scans `spawnable_paths` from the config file |
 | Entities | `get_entities` / `get_entities_states` | Filter by name, category, tags, bounds (box / sphere / convex hull) |
@@ -34,10 +35,7 @@ All 22 services defined in the srv directory are implemented, plus the `Simulate
 
 ### Not supported
 
-- **`SPAWNING_RESOURCE_STRING`** — mesh references in a URDF resolve relative to the URDF
-  file, so a bare string leaves the assets unreachable. Use `entity_resource.uri` instead.
-  Note that `resource_string` *is* supported for **worlds**, because scene JSON refers to its
-  meshes by absolute path and therefore stands on its own as a string.
+Every service in the srv directory and every flag in `SimulatorFeatures` is implemented.
 - **`EntityState.acceleration`** — always reported as zero and ignored by
   `set_entity_state`. Unity offers no direct way to impose an acceleration, and
   `EntityState.msg` explicitly allows simulators to ignore the field. When it is requested,
@@ -198,6 +196,41 @@ ros2 service call /step_simulation simulation_interfaces/srv/StepSimulation "{ s
 Stepping restores `Time.timeScale` rather than calling `Physics.Simulate()`, because the
 latter does not run `FixedUpdate`: physics would advance while `ServoJointModel`,
 `JointStateSub` and the rest of the control path stood still.
+
+## Spawning from resource_string
+
+Leave `entity_resource.uri` empty and put the URDF itself in `resource_string`
+(`SPAWNING_RESOURCE_STRING`) — the point being to hand over an expanded xacro without
+writing it to disk first.
+
+The description is written to a temporary file and then joins the normal path. Both the URDF
+Importer and the XML parsing here take a path, so funnelling everything through one entry
+point avoids a second, string-only code path. The temporary file is removed once the spawn
+finishes.
+
+### Where meshes are looked up
+
+Passing a string removes the "next to the URDF" anchor, so mesh references need somewhere
+else to resolve from. **`spawnable_paths` in `simulation_resources.json` doubles as the
+search path** — the equivalent of Gazebo's `GZ_SIM_RESOURCE_PATH`. **`AMENT_PREFIX_PATH`** is
+consulted too, so `package://` resolves with no extra configuration when the simulator is
+launched from a sourced ROS 2 environment.
+
+For each root, `package://<pkg>/<rest>` is tried in this order:
+
+| Candidate | What the root points at |
+|---|---|
+| `<root>/<pkg>/<rest>` | A directory holding packages side by side |
+| `<root>/share/<pkg>/<rest>` | An ament install prefix |
+| `<root>/<pkg>/share/<pkg>/<rest>` | A colcon install with isolated prefixes |
+| `<root>/<rest>` | That package's own directory |
+
+The search runs **only when the asset is not found next to the URDF**, so URDFs that already
+loaded behave exactly as before. Absolute `file://` references — the form this repository's
+descriptions use — never depended on the anchor and resolve without any search path.
+
+The search paths live in the URDF Importer, so `package://` now also resolves for ordinary
+`uri` spawns.
 
 ## The simulate_steps action
 

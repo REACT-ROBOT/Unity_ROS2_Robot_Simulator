@@ -197,6 +197,11 @@ public partial class SimulationControl : MonoBehaviour
         InitializeWorld();
         SimulationResources.Reload();
 
+        // URDF の mesh 参照が URDF ファイルの隣に無いとき (resource_string で渡された
+        // 定義や、別パッケージを指す package://) の探索先。Gazebo の
+        // GZ_SIM_RESOURCE_PATH にあたるものを URDF Importer へ渡している。
+        UrdfAssetPathHandler.SetSearchPaths(SimulationResources.SpawnablePaths);
+
         m_SimulationState = SimulationStateMsg.STATE_STOPPED;
         Time.timeScale = 0f;
     }
@@ -375,6 +380,7 @@ public partial class SimulationControl : MonoBehaviour
         {
             SimulatorFeaturesMsg.SPAWNING,                  // spawn_entity
             SimulatorFeaturesMsg.SPAWNING_ENTITIES,         // spawn_entities
+            SimulatorFeaturesMsg.SPAWNING_RESOURCE_STRING,  // entity_resource.resource_string
             SimulatorFeaturesMsg.DELETING,                  // delete_entity
             SimulatorFeaturesMsg.SPAWNABLES,                // get_spawnables
             SimulatorFeaturesMsg.NAMED_POSES,               // get_named_poses
@@ -405,9 +411,6 @@ public partial class SimulationControl : MonoBehaviour
             SimulatorFeaturesMsg.WORLD_INFO_GETTING,        // get_current_world
             SimulatorFeaturesMsg.AVAILABLE_WORLDS,          // get_available_worlds
         };
-        // 申告していないもの:
-        //  SPAWNING_RESOURCE_STRING  URDF の mesh 参照は URDF からの相対パスで解決するため、
-        //                            文字列だけ受け取ってもアセットを見つけられない
         response.features.spawn_formats = new string[] { "urdf" };
         response.features.custom_info =
             "Unity_ROS2_Robot_Simulator. Mesh files (obj/stl/dae) can also be spawned by uri. " +
@@ -476,7 +479,13 @@ public partial class SimulationControl : MonoBehaviour
 
     /// <summary>
     /// 1 体分のスポーン処理。spawn_entity と spawn_entities の共通実装。
+    /// Resource をファイルパスへ解決してから本体へ渡す。
     /// </summary>
+    /// <remarks>
+    /// resource_string で渡された定義は一時ファイルへ書き出してから通常の経路に
+    /// 合流させる。URDF Importer もこのクラスの XML 解析もパスを受け取る作りなので、
+    /// 文字列専用の経路を別に作るより読み口を 1 本にしたほうが分岐が増えない。
+    /// </remarks>
     private SpawnResultMsg SpawnEntityCore(
         string requestedName,
         bool allowRenaming,
@@ -484,12 +493,10 @@ public partial class SimulationControl : MonoBehaviour
         string entityNamespace,
         RosMessageTypes.Geometry.PoseStampedMsg initialPose)
     {
-        // prepare a response
         SpawnResultMsg spawnEntityResponse = new SpawnResultMsg();
         spawnEntityResponse.result.result = ResultMsg.RESULT_OK;
         spawnEntityResponse.entity_name = requestedName;
 
-        // process the service request
         Debug.Log("Received request for object: " + requestedName);
 
         if (!IsWorldLoaded)
@@ -505,43 +512,111 @@ public partial class SimulationControl : MonoBehaviour
         string resourceUri = entityResource != null ? entityResource.uri : null;
         string resourceString = entityResource != null ? entityResource.resource_string : null;
 
-        if (string.IsNullOrEmpty(resourceUri))
+        string filePath;
+        string resourceLabel;
+        string temporaryFile = null;
+
+        if (!string.IsNullOrEmpty(resourceUri))
         {
-            if (!string.IsNullOrEmpty(resourceString))
+            Uri uri;
+            if (!Uri.TryCreate(resourceUri, UriKind.Absolute, out uri) || !uri.IsFile)
             {
-                // resource_string からの生成 (SPAWNING_RESOURCE_STRING) は未対応。
-                // URDF の mesh 参照は URDF ファイルからの相対パスで解決されるため、
-                // 文字列だけ受け取ってもアセットを見つけられない。
-                Debug.LogError("Spawning from resource_string is not supported");
-                spawnEntityResponse.result.result = SpawnResultMsg.UNSUPPORTED_FORMAT;
-                spawnEntityResponse.result.error_message =
-                    "Spawning from resource_string is not supported; provide a file uri instead";
+                Debug.LogError("Invalid URI: " + resourceUri);
+                spawnEntityResponse.result.result = SpawnResultMsg.RESOURCE_PARSE_ERROR;
+                spawnEntityResponse.result.error_message = "Invalid URI: " + resourceUri;
                 return spawnEntityResponse;
             }
+            filePath = uri.LocalPath;
+            resourceLabel = resourceUri;
+
+            if (!File.Exists(filePath))
+            {
+                Debug.LogError("Resource file not found: " + filePath);
+                spawnEntityResponse.result.result = SpawnResultMsg.MISSING_ASSETS;
+                spawnEntityResponse.result.error_message = "Resource file not found: " + filePath;
+                return spawnEntityResponse;
+            }
+        }
+        else if (!string.IsNullOrEmpty(resourceString))
+        {
+            if (!TryWriteTemporaryUrdf(resourceString, out temporaryFile, out string writeError))
+            {
+                Debug.LogError("Cannot materialise resource_string: " + writeError);
+                spawnEntityResponse.result.result = ResultMsg.RESULT_OPERATION_FAILED;
+                spawnEntityResponse.result.error_message =
+                    "Cannot write resource_string to a temporary file: " + writeError;
+                return spawnEntityResponse;
+            }
+            filePath = temporaryFile;
+            resourceLabel = "resource_string";
+        }
+        else
+        {
             Debug.LogError("Neither uri nor resource_string was provided");
             spawnEntityResponse.result.result = SpawnResultMsg.NO_RESOURCE;
             spawnEntityResponse.result.error_message = "Both uri and resource_string are empty";
             return spawnEntityResponse;
         }
 
-        string filePath;
-        Uri uri;
-        if (!Uri.TryCreate(resourceUri, UriKind.Absolute, out uri) || !uri.IsFile)
+        try
         {
-            Debug.LogError("Invalid URI: " + resourceUri);
-            spawnEntityResponse.result.result = SpawnResultMsg.RESOURCE_PARSE_ERROR;
-            spawnEntityResponse.result.error_message = "Invalid URI: " + resourceUri;
-            return spawnEntityResponse;
+            return SpawnEntityFromFile(
+                filePath, resourceLabel, requestedName, allowRenaming, entityNamespace, initialPose);
         }
-        filePath = uri.LocalPath;
+        finally
+        {
+            if (temporaryFile != null)
+            {
+                try
+                {
+                    File.Delete(temporaryFile);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"Could not delete {temporaryFile}: {e.Message}");
+                }
+            }
+        }
+    }
 
-        if (!File.Exists(filePath))
+    /// <summary>
+    /// resource_string を一時ファイルへ書き出す。
+    /// </summary>
+    private static bool TryWriteTemporaryUrdf(string contents, out string path, out string error)
+    {
+        path = null;
+        error = null;
+        try
         {
-            Debug.LogError("Resource file not found: " + filePath);
-            spawnEntityResponse.result.result = SpawnResultMsg.MISSING_ASSETS;
-            spawnEntityResponse.result.error_message = "Resource file not found: " + filePath;
-            return spawnEntityResponse;
+            string directory = Path.Combine(Application.temporaryCachePath, "spawn_resource_string");
+            Directory.CreateDirectory(directory);
+            // 拡張子で URDF と判断する箇所があるので .urdf で書く。
+            path = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".urdf");
+            File.WriteAllText(path, contents);
+            return true;
         }
+        catch (Exception e)
+        {
+            error = e.Message;
+            path = null;
+            return false;
+        }
+    }
+
+    /// <summary>ファイルになったリソースから 1 体スポーンする。</summary>
+    private SpawnResultMsg SpawnEntityFromFile(
+        string filePath,
+        string resourceLabel,
+        string requestedName,
+        bool allowRenaming,
+        string entityNamespace,
+        RosMessageTypes.Geometry.PoseStampedMsg initialPose)
+    {
+        SpawnResultMsg spawnEntityResponse = new SpawnResultMsg();
+        spawnEntityResponse.result.result = ResultMsg.RESULT_OK;
+        spawnEntityResponse.entity_name = requestedName;
+
+        string resourceUri = resourceLabel;
 
         double robot_x = initialPose.pose.position.x;
         double robot_y = initialPose.pose.position.y;
