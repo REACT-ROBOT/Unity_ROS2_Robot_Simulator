@@ -107,8 +107,13 @@ PASS 42  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
 PASS 41  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
-こちらは ROS 2 Humble (Ubuntu 22.04) で確認した結果です。Jazzy では未確認ですが、
-テスト側もシミュレータ側も distro 依存の変更は入れていません。
+ROS 2 Jazzy (Ubuntu 24.04) と Humble (Ubuntu 22.04) の両方で確認しています。
+
+`simulate_steps` の feedback は、届く件数が要求ステップ数より少ないことがあります。
+終了直前に出した feedback は結果 (サービス応答) に追い越されることがあり、rclpy の
+クライアントは結果を受け取った時点でその goal の feedback 購読を畳むためです。
+実際に何ステップ進んだかは sim 時刻で確かめているので、I1 は件数ではなく
+「経過が逐次報告されていること」を判定します。
 
 ### FAIL → 修正済: デスポーン後に再スポーンすると指令を受け付けない (D8 / D10 / E2)
 

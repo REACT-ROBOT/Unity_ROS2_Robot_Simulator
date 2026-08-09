@@ -107,8 +107,13 @@ PASS 42  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
 PASS 41  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 ```
 
-Those numbers were measured on ROS 2 Humble (Ubuntu 22.04). Jazzy was not re-run, though
-neither the suite nor the simulator picked up any distro-dependent change.
+Confirmed on both ROS 2 Jazzy (Ubuntu 24.04) and Humble (Ubuntu 22.04).
+
+Fewer `simulate_steps` feedback messages may arrive than steps were requested. Feedback
+published just before the goal finishes can be overtaken by the result, and the rclpy client
+drops that goal's feedback subscription as soon as it has the result. How far the simulation
+actually advanced is checked against the sim clock instead, so I1 asserts that progress is
+reported incrementally rather than asserting a count.
 
 ### FAIL, now fixed: a respawned robot ignores commands (D8 / D10 / E2)
 
