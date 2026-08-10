@@ -2720,6 +2720,7 @@ public partial class SimulationControl : MonoBehaviour
         m_EntityInitialPose.Remove(entity.name);
         m_EntityInitialRotation.Remove(entity.name);
         m_EntityInfo.Remove(entity.name);
+        m_EntityMotion.Remove(entity.name);
 
         GameObject.Destroy(entity);
     }
@@ -2734,5 +2735,6 @@ public partial class SimulationControl : MonoBehaviour
         m_EntityInitialPose.Clear();
         m_EntityInitialRotation.Clear();
         m_EntityInfo.Clear();
+        m_EntityMotion.Clear();
     }
 }

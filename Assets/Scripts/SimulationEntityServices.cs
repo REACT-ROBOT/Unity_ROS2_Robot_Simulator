@@ -28,6 +28,65 @@ public partial class SimulationControl
     // スポーン時に既定値を入れ、SetEntityInfo で上書きする。
     private Dictionary<string, EntityInfoMsg> m_EntityInfo = new Dictionary<string, EntityInfoMsg>();
 
+    /// <summary>ルートボディの速度と、そこから差分で求めた加速度。</summary>
+    private struct EntityMotion
+    {
+        public Vector3 LinearVelocity;
+        public Vector3 AngularVelocity;
+        public Vector3 LinearAcceleration;
+        public Vector3 AngularAcceleration;
+        public bool HasPrevious;
+    }
+
+    // 加速度は Unity から直接読めないので、物理ステップごとに速度の差分を取る。
+    private Dictionary<string, EntityMotion> m_EntityMotion = new Dictionary<string, EntityMotion>();
+
+    /// <summary>
+    /// 各エンティティのルートボディの加速度を、速度の 1 階差分として更新する。
+    /// </summary>
+    /// <remarks>
+    /// FixedUpdate なので刻みは fixedDeltaTime で一定。平滑化はしていない
+    /// (生の差分をそのまま返す) ため、接触の瞬間などは大きく振れる。均した値が
+    /// 要るなら受け取り側で処理する前提。timeScale = 0 の間は FixedUpdate 自体が
+    /// 回らないので、停止中は最後に計算した値がそのまま残る。
+    /// </remarks>
+    private void FixedUpdate()
+    {
+        float dt = Time.fixedDeltaTime;
+        if (dt <= 0f)
+        {
+            return;
+        }
+
+        foreach (GameObject entity in m_EntityList)
+        {
+            if (entity == null)
+            {
+                continue;
+            }
+            ArticulationBody body = GetEntityRootBody(entity);
+            if (body == null)
+            {
+                continue;
+            }
+
+            Vector3 linear = body.linearVelocity;
+            Vector3 angular = body.angularVelocity;
+
+            EntityMotion motion;
+            m_EntityMotion.TryGetValue(entity.name, out motion);
+            if (motion.HasPrevious)
+            {
+                motion.LinearAcceleration = (linear - motion.LinearVelocity) / dt;
+                motion.AngularAcceleration = (angular - motion.AngularVelocity) / dt;
+            }
+            motion.LinearVelocity = linear;
+            motion.AngularVelocity = angular;
+            motion.HasPrevious = true;
+            m_EntityMotion[entity.name] = motion;
+        }
+    }
+
     // GetSpawnables が拾うファイル。MeshImporter が読めるものと URDF。
     private static readonly string[] k_SpawnableExtensions =
         { ".urdf", ".obj", ".stl", ".dae", ".fbx", ".ply" };
@@ -887,7 +946,7 @@ public partial class SimulationControl
         return entity.GetComponent<ArticulationBody>();
     }
 
-    private static EntityStateMsg BuildEntityState(GameObject entity)
+    private EntityStateMsg BuildEntityState(GameObject entity)
     {
         Transform frame = GetEntityFrame(entity);
         ArticulationBody rootBody = GetEntityRootBody(entity);
@@ -913,9 +972,23 @@ public partial class SimulationControl
                 linear = UnityToRosVector(linear),
                 angular = UnityToRosAngular(angular)
             },
-            // 加速度は Unity から素直に取れないので常にゼロ。EntityState.msg が
-            // 「無視されうる」としている項目なのでこれで規約違反にはならない。
-            acceleration = new AccelMsg()
+            // 加速度は FixedUpdate で速度の差分から求めたもの (Unity に直接読む口が無い)。
+            acceleration = BuildAcceleration(entity.name)
+        };
+    }
+
+    /// <summary>差分から求めた加速度を ROS 座標系で返す。まだ 1 ステップも回っていなければゼロ。</summary>
+    private AccelMsg BuildAcceleration(string entityName)
+    {
+        EntityMotion motion;
+        if (!m_EntityMotion.TryGetValue(entityName, out motion) || !motion.HasPrevious)
+        {
+            return new AccelMsg();
+        }
+        return new AccelMsg
+        {
+            linear = UnityToRosVector(motion.LinearAcceleration),
+            angular = UnityToRosAngular(motion.AngularAcceleration)
         };
     }
 
