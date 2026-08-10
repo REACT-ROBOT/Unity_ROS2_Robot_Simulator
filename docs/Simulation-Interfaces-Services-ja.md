@@ -41,7 +41,8 @@ srv で定義されているサービスと `SimulatorFeatures` の機能はす�
 
 ## 「エンティティ」の範囲
 
-エンティティは **`spawn_entity` / `spawn_entities` で生成したものだけ**です。UI から置いた
+エンティティは **スポーン経路で生成したものだけ**です — `spawn_entity` / `spawn_entities`
+サービス、および同じ実装を呼ぶ GUI の「Spawn Robot (URDF)」ボタン。UI から置いた
 床や障害物、ライトはワールド側の景観として扱い、`get_entities` にも出てきません。
 
 こうしないと、`delete_entity` や `set_entity_state` の対象が「ROS から作ったもの」と

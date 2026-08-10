@@ -16,7 +16,8 @@ using RosMessageTypes.Std;
 /// 名前付き姿勢の問い合わせ。
 /// </summary>
 /// <remarks>
-/// ここで言う「エンティティ」は spawn_entity / spawn_entities で生成したものだけ
+/// ここで言う「エンティティ」はスポーン経路 (spawn_entity / spawn_entities と、
+/// 同じ実装を呼ぶ GUI の URDF ボタン) で生成したものだけ
 /// (m_EntityList の中身)。UI から置いた床や障害物はワールド側の景観として扱い、
 /// エンティティには含めない。そうしないと DeleteEntity や SetEntityState の対象が
 /// 「ROS から作ったもの」と「GUI で置いたもの」で二重になり、LoadWorld が景観を

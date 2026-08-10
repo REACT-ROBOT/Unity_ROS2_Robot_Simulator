@@ -84,9 +84,17 @@ public class ObjectSpawner : MonoBehaviour
     private List<SpawnedObject> spawnedObjects = new List<SpawnedObject>();
     private SpawnedObject selectedObject;
 
+    // ロボット (URDF) スポーン用。ロボットはエンティティ (SimulationControl 管理)
+    // なので、景観リスト (spawnedObjects) には入れない。
+    private SimulationControl m_SimulationControl;
+
     void Start()
     {
         spawnPosition = Vector3.zero;
+
+        // GUI からのロボットスポーンは /spawn_entity と同じ経路に流すので、
+        // サービスを実装している SimulationControl を握っておく。
+        m_SimulationControl = FindFirstObjectByType<SimulationControl>();
         inputX.onEndEdit.AddListener(OnInputXInputEnd);
         inputY.onEndEdit.AddListener(OnInputYInputEnd);
         inputZ.onEndEdit.AddListener(OnInputZInputEnd);
@@ -117,6 +125,36 @@ public class ObjectSpawner : MonoBehaviour
                 inputScaleZ.text = spawnScale.y.ToString("F2");
             }
         });
+    }
+
+    /// <summary>
+    /// URDF ファイルを 1 件、/spawn_entity サービスと同じ経路
+    /// (SimulationControl.TrySpawnRobotFromUrdf) でエンティティとしてスポーンする。
+    /// 生成物はエンティティなので、景観リスト (spawnedObjects) には追加しない。
+    /// </summary>
+    private void SpawnRobotEntityFromUrdf(string path)
+    {
+        if (m_SimulationControl == null)
+        {
+            Debug.LogError("[RobotSpawn] SimulationControl not found; cannot spawn robots from the GUI.");
+            return;
+        }
+        // spawn_entity と同じ規則: ワールドがロードされていない間 (unload_world 後) は
+        // スポーンできない。
+        if (!m_SimulationControl.CanSpawnFromGui)
+        {
+            Debug.LogError("[RobotSpawn] Cannot spawn: no world is loaded. Load a world first (load_world).");
+            return;
+        }
+
+        if (m_SimulationControl.TrySpawnRobotFromUrdf(path, out string entityName, out string errorMessage))
+        {
+            Debug.Log($"[RobotSpawn] Spawned robot entity '{entityName}' from {path}. It is a regular entity: it appears in get_entities and can be removed with delete_entity.");
+        }
+        else
+        {
+            Debug.LogError($"[RobotSpawn] Failed to spawn robot from {path}: {errorMessage}");
+        }
     }
 
     public void SaveSpawnedObjects()
@@ -506,20 +544,23 @@ public class ObjectSpawner : MonoBehaviour
         // - TrueSpace (.cob, .scn)
         // - XGL-3D-Format (.xgl)
         // ExtensionFilter配列を使用（Linux版のエンコーディング問題を回避）
+        // URDF もここから選べる。メッシュは景観オブジェクト、URDF はロボット
+        // エンティティ (/spawn_entity と同じ経路) としてスポーンされる。
         var extensions = new SFB.ExtensionFilter[] {
-            new SFB.ExtensionFilter("3D Models", new string[] {
+            new SFB.ExtensionFilter("3D Models / URDF", new string[] {
                 "3mf", "dae", "blend", "bvh", "3ds", "ase", "gltf", "glb",
                 "fbx", "ply", "dxf", "ifc", "nff", "smd", "vta", "mdl",
                 "md2", "md3", "pk3", "mdc", "md5mesh", "x",
-                "q3o", "q3s", "raw", "ac", "stl"
+                "q3o", "q3s", "raw", "ac", "stl", "urdf"
             }),
+            new SFB.ExtensionFilter("Robot Model (URDF)", "urdf"),
             new SFB.ExtensionFilter("All Files", "*")
         };
         // 複数ファイル選択を有効化（最後の引数をtrueに）
         string[] filePaths = null;
         try
         {
-            filePaths = StandaloneFileBrowser.OpenFilePanel("Select Mesh File(s)", "", extensions, true);
+            filePaths = StandaloneFileBrowser.OpenFilePanel("Select Mesh / URDF File(s)", "", extensions, true);
             Debug.Log($"[DEBUG] OpenFilePanel returned: filePaths={filePaths}, Length={filePaths?.Length ?? -1}");
             if (filePaths != null && filePaths.Length > 0)
             {
@@ -570,8 +611,32 @@ public class ObjectSpawner : MonoBehaviour
 
         Debug.Log($"Valid paths after cleanup: {pathList.Count}");
 
+        // URDF はロボットエンティティ、それ以外はメッシュ (景観) として振り分ける
+        List<string> meshPaths = new List<string>();
+        foreach (string path in pathList)
+        {
+            if (path.EndsWith(".urdf", StringComparison.OrdinalIgnoreCase))
+            {
+                SpawnRobotEntityFromUrdf(path);
+            }
+            else if (path.EndsWith(".xacro", StringComparison.OrdinalIgnoreCase))
+            {
+                // xacro はランタイムでは展開できない。展開の仕方まで含めて伝える。
+                Debug.LogError($"[RobotSpawn] .xacro files are not supported: {path}. Expand it first, e.g.: ros2 run xacro xacro robot.urdf.xacro > robot.urdf");
+            }
+            else
+            {
+                meshPaths.Add(path);
+            }
+        }
+
+        if (meshPaths.Count == 0)
+        {
+            return;
+        }
+
         // コルーチンで順次ロード（WSL2のファイルシステム問題を回避）
-        StartCoroutine(LoadMeshFilesCoroutine(pathList));
+        StartCoroutine(LoadMeshFilesCoroutine(meshPaths));
     }
 
     // サポートされているメッシュファイルの拡張子

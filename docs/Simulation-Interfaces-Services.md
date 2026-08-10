@@ -43,9 +43,10 @@ Every service in the srv directory and every flag in `SimulatorFeatures` is impl
 
 ## What counts as an entity
 
-Entities are **only the things created through `spawn_entity` / `spawn_entities`**. Floors,
-obstacles and lights placed through the UI are world scenery and do not appear in
-`get_entities`.
+Entities are **only the things created through the spawn path** — the `spawn_entity` /
+`spawn_entities` services, or the GUI's Spawn Robot (URDF) button, which calls the same
+implementation. Floors, obstacles and lights placed through the UI are world scenery and do
+not appear in `get_entities`.
 
 Otherwise `delete_entity` and `set_entity_state` would straddle two populations — objects
 created from ROS and objects placed in the GUI — which does not fit `load_world` replacing

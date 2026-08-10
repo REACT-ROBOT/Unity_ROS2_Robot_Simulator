@@ -61,6 +61,21 @@ ros2 service call /get_simulator_features simulation_interfaces/srv/GetSimulator
 同じ URDF から複数体出すときは、URDF に書かれたトピック名が衝突するため `entity_namespace` を
 指定してください。
 
+### GUI からロボットをスポーンする
+
+ROS を使わずにロボットを出すこともできます。サイドバーの**メッシュファイルボタン**は
+メッシュ形式に加えて `.urdf` も受け付けます。メッシュを選べば景観オブジェクト、URDF を
+選べば `/spawn_entity` と同じ経路を通ってロボットがスポーンされます。生成されたロボットは
+通常のエンティティです: `get_entities` に載り、`/joint_states` などのロボット単位の
+トピックを publish し、`delete_entity` で消せて、`reset_simulation` の `SCOPE_SPAWNED` で
+デスポーンされます。エンティティ名はファイル名由来 (衝突時は `_1`, `_2`, … を付加) で、
+名前空間は付きません。位置は原点から ROS x 方向へ 1 m 刻みで探した最初の空き地点の
+地面上です。`.xacro` は非対応なので、先に展開してください
+(`ros2 run xacro xacro robot.urdf.xacro > robot.urdf`)。サービスと同じく、ロボットの
+スポーンにはワールドがロード済みである必要があります。URDF の隣で解決できない
+`package://` のメッシュ参照は `simulation_resources.json` の探索パスから解決されます。
+失敗の理由はログに出ます。
+
 srv で定義されている 22 サービスすべてに対応しています (エンティティの取得・変更・削除、
 `step_simulation`、ワールドの読み込みを含みます)。各サービスの解釈、ワールドをシーン JSON に
 対応づけている理由、`get_spawnables` や名前付き姿勢の設定ファイル `simulation_resources.json`

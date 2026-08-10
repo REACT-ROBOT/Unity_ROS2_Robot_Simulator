@@ -61,6 +61,21 @@ Use `spawn_entities` to spawn several at once (`spawn_entity` is deprecated as o
 spawning more than one entity from the same URDF, pass `entity_namespace` — the topic names baked
 into the URDF would otherwise collide.
 
+### Spawning a robot from the GUI
+
+Robots can also be spawned without ROS. The sidebar's **mesh file button** accepts `.urdf`
+alongside the mesh formats: pick a mesh and it becomes a scenery object, pick a URDF and it
+goes through the same internal path as `/spawn_entity`, so the robot is a regular entity — it
+appears in `get_entities`, publishes `/joint_states` and the other per-robot topics, can be
+removed with `delete_entity`, and is despawned by `reset_simulation` with `SCOPE_SPAWNED`.
+The entity name comes from the file name (`_1`, `_2`, … appended on collision), with no
+namespace. The robot spawns upright on the ground at the first free 1 m step along the ROS x
+axis from the origin. `.xacro` files are rejected — expand them first
+(`ros2 run xacro xacro robot.urdf.xacro > robot.urdf`). As with the service, spawning a robot
+needs a loaded world. `package://` mesh references that do not resolve next to the URDF are
+looked up through the search paths in `simulation_resources.json`; failure reasons are written
+to the log.
+
 All 22 services defined in the srv directory are implemented, including entity queries and
 edits, `step_simulation`, and world loading. For what each one means here, why worlds map to
 scene JSON, and how to configure `get_spawnables` and named poses through
