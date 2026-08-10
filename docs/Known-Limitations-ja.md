@@ -4,7 +4,7 @@
 一覧です。詳細は各ドキュメントにあるので、ここには **何が・なぜ保留なのか**と、
 着手するとしたら何を決める必要があるかだけを書きます。
 
-最終更新: 2026-08-10
+最終更新: 2026-08-11
 
 ## 保留中 (直しうるが、いま直していない)
 
@@ -45,6 +45,31 @@ G6 / F3 / H2b) は入っていません。
 詳細は [Unity_ROS2_sample の README](https://github.com/hijimasa/Unity_ROS2_sample) の
 「ブランチ」節を参照。
 
+### 3. 水要素を持つロボットは衝突ジオメトリ 1 個につき約 1 kg 重くなる
+
+URDF が `<buoyancy_material>` または `<hydrodynamics>` を宣言している場合、スポーン処理は
+各リンクの衝突ジオメトリの GameObject に `ArticulationFloatingObject` /
+`HydrodynamicFloatingObject` を付与します。両コンポーネントは
+`[RequireComponent(typeof(ArticulationBody))]` を持つため、衝突ジオメトリごとに余分な
+`ArticulationBody` (既定質量 1 kg、リンクに FixedJoint で剛結) が暗黙に生成されます。
+水要素を**持たない** URDF にはコンポーネントを付けなくなったので余分なボディはできません
+が、**持つ**ロボットには今も残ります。衝突ジオメトリ 1 個につき全体質量が約 1 kg 増え、
+リンクの重心がコライダー原点側へずれ、接地反力や車輪の垂直荷重もその分だけ膨らみます。
+
+**なぜ保留か**: 浮力はこの暗黙ボディ自身の質量から
+`water.Density * (body.mass / density) * g` として計算されるため、質量を 0 に近づけると
+既存の水上ロボットの浮遊釣り合いが黙って変わってしまいます。正しい修正は
+NaughtyWaterBuoyancy パッケージ側 (git ピン参照でローカルクローン無し) の変更です:
+`RequireComponent(ArticulationBody)` を外し、`GetComponentInParent<ArticulationBody>()` で
+リンク本体のボディに力を掛け、押しのけ体積は mass/density 比ではなくコライダー形状から
+計算します。本リポジトリの `HydrodynamicFloatingObject` も同じ変更が必要で、こちらは
+スラミング力も `body.mass` を直接参照しています。
+
+**着手するなら**: 上記の方針でパッケージをフォークまたはパッチし、
+`HydrodynamicFloatingObject` を追従させたうえで、既存の水上 URDF の `density` 値を
+再調整してください。現状の mass/density 比は「幻の 1 kg ボディ」を基準にした
+押しのけ体積の符号化になっています。
+
 ## 仕様上できないこと
 
 こちらは設計として受け入れているもので、着手予定はありません。
@@ -53,7 +78,7 @@ G6 / F3 / H2b) は入っていません。
 |---|---|---|
 | `set_entity_state` の加速度 | 取得はできるが設定は無視する。Unity に加速度を与える口が無く、力へ読み替えるには質量の扱いを決める必要がある | [Simulation-Interfaces-Services-ja.md](Simulation-Interfaces-Services-ja.md) |
 | 加速度の平滑化 | 速度の 1 階差分をそのまま返すので接触時に振れる。均すのは受け取り側の責務 | 同上 |
-| エンティティの範囲 | `spawn_entity` / `spawn_entities` で作ったものだけ。GUI で置いた物は景観扱い | 同上 |
+| エンティティの範囲 | スポーン経路 (`spawn_entity` / `spawn_entities`、および同じ実装を呼ぶ GUI の URDF ボタン) で作ったものだけ。それ以外の GUI で置いた物は景観扱い | 同上 |
 | 固定台ロボットで測れない検証 | ベースリンクが `immovable` なので、ルート姿勢が動く前提の項目 (C5 / H2b) は SKIP になる | [Service-Conformance-Test-ja.md](Service-Conformance-Test-ja.md) |
 | 本家 ROS-TCP-Endpoint との併用 | 購読解除と Unity 側アクションのシステムコマンドを本家が持たないため、組み合わせられない | 同上 |
 | 高速走行時の車輪の滑り | 物理刻みあたりの接触点の移動が大きくなり接触が保てない。摩擦係数では解消しない (50 Hz で 1.5 m/s なら滑り 74%、200 Hz なら 7%) | [URDF-Collision-Material-ja.md](URDF-Collision-Material-ja.md) |

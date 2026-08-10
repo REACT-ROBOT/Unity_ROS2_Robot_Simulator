@@ -4,7 +4,7 @@ Things that are **left alone on purpose** rather than left broken, plus the thin
 rules out. The details live in the other documents, so this page only records **what is
 deferred and why**, and what you would have to decide before picking it up.
 
-Last updated: 2026-08-10
+Last updated: 2026-08-11
 
 ## Deferred (fixable, but not being fixed now)
 
@@ -47,6 +47,31 @@ branches should carry the same checks, or whether `humble` should stay frozen wh
 See the "Branches" section of the
 [Unity_ROS2_sample README](https://github.com/hijimasa/Unity_ROS2_sample).
 
+### 3. Robots with water features still gain ~1 kg per collision geometry
+
+When a URDF declares `<buoyancy_material>` or `<hydrodynamics>`, the spawner attaches
+`ArticulationFloatingObject` / `HydrodynamicFloatingObject` to each link's collision-geometry
+GameObject. Both components carry `[RequireComponent(typeof(ArticulationBody))]`, so Unity
+implicitly creates an extra `ArticulationBody` (default mass 1 kg, fixed-jointed to the link)
+on every collision geometry. Robots **without** water elements in the URDF no longer receive
+these components, so they carry no extra bodies; robots **with** them still do — each collision
+geometry adds about 1 kg to the robot's total mass, shifts the link's centre of mass toward the
+collider origin, and inflates ground-contact forces and wheel normal loads accordingly.
+
+**Why deferred**: the buoyancy force is computed as `water.Density * (body.mass / density) * g`
+from that implicit body's own mass, so zeroing or shrinking the mass would silently change the
+floating equilibrium of every existing water robot. The clean fix belongs in the
+NaughtyWaterBuoyancy package (referenced by git pin, no local clone): drop the
+`RequireComponent(ArticulationBody)`, resolve the body via
+`GetComponentInParent<ArticulationBody>()` so forces apply to the link body, and compute
+displaced volume from the collider geometry instead of the mass/density ratio.
+`HydrodynamicFloatingObject` (in this repo) would need the same change, and its slamming force
+also reads `body.mass` directly.
+
+**To pick it up**: patch or fork the package as above, migrate `HydrodynamicFloatingObject` in
+step, and re-tune the `density` values of existing water URDFs — today the mass/density ratio
+effectively encodes displaced volume relative to the phantom 1 kg body.
+
 ## Ruled out by design
 
 Accepted as-is; no work planned.
@@ -55,7 +80,7 @@ Accepted as-is; no work planned.
 |---|---|---|
 | `acceleration` on `set_entity_state` | Readable but ignored when set. Unity has no way to impose an acceleration, and converting to a force means deciding how to treat mass | [Simulation-Interfaces-Services.md](Simulation-Interfaces-Services.md) |
 | Acceleration smoothing | A raw first difference of velocity, so contacts make it spike. Smoothing is the caller's job | ditto |
-| What counts as an entity | Only what `spawn_entity` / `spawn_entities` created; GUI-placed objects are scenery | ditto |
+| What counts as an entity | Only what the spawn path created (`spawn_entity` / `spawn_entities`, or the GUI's URDF button which calls the same implementation); other GUI-placed objects are scenery | ditto |
 | Checks a fixed-base robot cannot run | Its base link is `immovable`, so anything assuming the root moves (C5 / H2b) is skipped | [Service-Conformance-Test.md](Service-Conformance-Test.md) |
 | Pairing with upstream ROS-TCP-Endpoint | It lacks the unsubscribe and Unity-action system commands, so the two cannot be combined | ditto |
 | Wheel slip at speed | The contact point moves too far per physics step for the contact to follow; friction cannot fix it (74 % slip at 1.5 m/s at 50 Hz, 7 % at 200 Hz) | [URDF-Collision-Material.md](URDF-Collision-Material.md) |

@@ -995,8 +995,26 @@ public partial class SimulationControl : MonoBehaviour
             }
         }
 
-        // 全リンクに ArticulationFloatingObject または HydrodynamicFloatingObject を付与
-        if (robotNode != null)
+        // URDF が水関係の要素 (buoyancy_material / hydrodynamics) を一つでも
+        // 宣言している場合に限り、全リンクに ArticulationFloatingObject または
+        // HydrodynamicFloatingObject を付与する。
+        //
+        // 無条件に付与してはいけない: 両コンポーネントとも
+        // [RequireComponent(typeof(ArticulationBody))] を持つため、衝突ジオメトリ
+        // の子 GameObject (Collisions/…) に AddComponent した瞬間、そこへ質量
+        // 1 kg (Unity 既定値) の ArticulationBody が暗黙に生成される。この入れ子
+        // ボディは既定で FixedJoint としてリンクに剛結され、衝突ジオメトリ
+        // 1 個につき約 1 kg の見えない質量がロボットに加算されていた
+        // (例: 質量 1 kg の単一リンクで接地反力が 19.6 N = 2 倍になる)。
+        // 水要素を持たないロボットには余分なボディを一切作らない。
+        bool robotDeclaresWaterFeatures =
+            buoyancyMaterialDict.Count > 0 ||
+            useHydrodynamics ||
+            (robotNode != null &&
+             (robotNode.SelectSingleNode("link/collision/buoyancy_material") != null ||
+              robotNode.SelectSingleNode("link/collision/hydrodynamics") != null));
+
+        if (robotNode != null && robotDeclaresWaterFeatures)
         {
             XmlNodeList links = robotNode.SelectNodes("link");
             foreach (XmlNode link in links)
