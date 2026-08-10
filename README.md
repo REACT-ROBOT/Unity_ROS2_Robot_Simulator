@@ -67,6 +67,15 @@ scene JSON, and how to configure `get_spawnables` and named poses through
 `simulation_resources.json`, see
 [docs/Simulation-Interfaces-Services.md](docs/Simulation-Interfaces-Services.md).
 
+## Simulated time
+
+The simulator publishes its simulation clock on `/clock` (`rosgraph_msgs/msg/Clock`, up to
+100 Hz; the actual cadence is capped by the application frame rate, which starts at 10 FPS and
+can be raised in the UI), so ROS 2 nodes launched with `use_sim_time` follow the simulator. Publishing keeps
+going while the simulation is stopped or paused — the value simply freezes, as in Gazebo — and
+`reset_simulation` with `SCOPE_TIME` puts it back to zero. All message stamps published here
+(`/joint_states`, `/ground_truth`, `/tf`) come from this same clock.
+
 ## Verifying the services
 
 A conformance suite connects to a running simulator and checks that these services behave as

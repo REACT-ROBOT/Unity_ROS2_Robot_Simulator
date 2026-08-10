@@ -183,6 +183,24 @@ never leaves you with the scenery deleted and nothing in its place.
 `MISSING_ASSETS` and `UNSUPPORTED_ELEMENTS` respectively. Skipped elements are listed in
 `error_message` either way.
 
+## Simulated time and /clock
+
+The simulation clock is published on `/clock` (`rosgraph_msgs/msg/Clock`) at a fixed
+wall-clock rate, 100 Hz by default. The publisher runs in `Update()`, so the actual cadence
+is `min(publish rate, frame rate)` — with the startup default of `Application.targetFrameRate
+= 10` that means roughly 10 Hz until the frame rate is raised in the UI. It is a single
+global topic: it is registered once at
+startup, never namespaced per entity, and survives despawns and `reset_simulation`.
+
+Publishing runs on a wall-clock cadence rather than the physics step, because pausing sets
+`Time.timeScale` to 0 and `FixedUpdate` stops running. While stopped or paused the topic
+therefore keeps flowing with a **frozen value** — the same behaviour as Gazebo — so
+`use_sim_time` nodes downstream keep a clock instead of stalling. `reset_simulation` with
+`SCOPE_TIME` rewinds the clock to zero, and the very next `/clock` message reflects that.
+
+Message stamps on `/joint_states`, `/ground_truth` and `/tf` are taken from this same clock,
+so everything published here shares one timeline.
+
 ## step_simulation
 
 Only while paused: advance the requested number of steps and stop again.

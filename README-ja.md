@@ -67,6 +67,15 @@ srv で定義されている 22 サービスすべてに対応しています (�
 については [docs/Simulation-Interfaces-Services-ja.md](docs/Simulation-Interfaces-Services-ja.md)
 を参照してください。
 
+## シミュレーション時刻
+
+シミュレーション時刻は `/clock` (`rosgraph_msgs/msg/Clock`、最大 100 Hz。実際の周期は
+アプリのフレームレート — 起動時 10 FPS、UI から変更可 — で頭打ちになります) で配信されるので、
+`use_sim_time` を付けて起動した ROS 2 ノードはシミュレータの時計に従います。停止中・一時
+停止中も配信は止まらず、Gazebo と同じく値が凍結するだけです。`reset_simulation` を
+`SCOPE_TIME` で呼ぶと時刻はゼロに戻ります。ここから配信されるメッセージのスタンプ
+(`/joint_states`、`/ground_truth`、`/tf`) もすべて同じ時計から取っています。
+
 ## サービスの動作確認
 
 上記のサービス群が仕様どおりに動くかを、実際に動いているシミュレータへ接続して自動検証する

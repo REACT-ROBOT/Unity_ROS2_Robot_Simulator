@@ -24,9 +24,6 @@ public class GroundTruthPub : MonoBehaviour
 
     public string frameId = "";
 
-    // Cached DateTime for Unix epoch (avoid allocation every frame)
-    private static readonly System.DateTime UnixEpoch = new System.DateTime(1970, 1, 1, 0, 0, 0, System.DateTimeKind.Utc);
-
     // Pre-allocated messages to avoid GC allocations
     private PoseStampedMsg _poseMsg;
     private TFMessageMsg _tfMsg;
@@ -82,12 +79,12 @@ public class GroundTruthPub : MonoBehaviour
         if (time<0.02f) return;  // 50Hz update rate for better tf performance
         time = 0.0f;
 
-        // Use ROS time (Unix epoch time) - use cached UnixEpoch to avoid allocation
-        var currentTime = System.DateTime.UtcNow;
-        var timeSpan = currentTime - UnixEpoch;
-
-        int sec = (int)timeSpan.TotalSeconds;
-        uint nanosec = (uint)((timeSpan.TotalSeconds - sec) * 1e9);
+        // /joint_states や /clock と同じシミュレーション時刻 (Clock) でスタンプする。
+        // 以前は DateTime.UtcNow (実時間) を使っていて、他のトピックと時系列が
+        // 食い違っていた。
+        var timestamp = new TimeStamp(Clock.Now);
+        int sec = timestamp.Seconds;
+        uint nanosec = timestamp.NanoSeconds;
 
         // Convert Unity coordinates (left-handed) to ROS coordinates (right-handed)
         // Unity: X=right, Y=up, Z=forward

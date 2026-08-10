@@ -192,6 +192,16 @@ public partial class SimulationControl : MonoBehaviour
             m_SimulateStepsActionName,
             SimulateSteps);
 
+        // /clock の publisher。ロボット単位ではなくシミュレータ全体で 1 本の
+        // グローバルトピックなので、スポーン時ではなくここで 1 度だけ取り付ける。
+        // TrackPublishedTopic には通さない (名前空間を付けず、デスポーンや
+        // reset_simulation でも解除しない)。シーンファイル (YAML) の手編集は
+        // 事故りやすいので、常駐コンポーネントはコードから足す。
+        if (GetComponent<ClockPub>() == null)
+        {
+            gameObject.AddComponent<ClockPub>();
+        }
+
         // 起動直後の組み込みシーンをロード済みワールドとして登録する。
         // これをやらないと GetCurrentWorld が「ワールド無し」になり、
         // 起動直後が STATE_STOPPED という従来の挙動とも食い違う。

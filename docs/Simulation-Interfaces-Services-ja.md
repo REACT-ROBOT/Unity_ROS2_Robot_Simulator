@@ -180,6 +180,24 @@ ros2 service call /get_available_worlds simulation_interfaces/srv/GetAvailableWo
 `MISSING_ASSETS` / `UNSUPPORTED_ELEMENTS` を無視させられます。読み飛ばした要素は
 どちらの場合も `error_message` に残ります。
 
+## シミュレーション時刻と /clock
+
+シミュレーション時刻は `/clock` (`rosgraph_msgs/msg/Clock`) で、実時間基準の固定レート
+(既定 100 Hz) で配信します。publisher は `Update()` 駆動なので、実際の周期は
+`min(配信レート, フレームレート)` になります。起動時は `Application.targetFrameRate = 10`
+のため約 10 Hz で、UI からフレームレートを上げると追従します。エンティティ単位ではなくシミュレータ全体で 1 本の
+グローバルトピックで、起動時に 1 度だけ登録され、名前空間も付かず、デスポーンや
+`reset_simulation` でも消えません。
+
+物理ステップではなく実時間の周期で publish しているのは、一時停止が `Time.timeScale` を
+0 にする実装で、その間 `FixedUpdate` が回らないためです。停止中・一時停止中も
+**凍結した値のまま**配信が続くので (Gazebo と同じ挙動)、下流の `use_sim_time` な
+ノードが時計を失って止まることはありません。`reset_simulation` を `SCOPE_TIME` で呼ぶと
+時刻はゼロに戻り、直後の `/clock` からそれが反映されます。
+
+`/joint_states`・`/ground_truth`・`/tf` のスタンプも同じ時計から取っているので、
+ここから配信されるものは 1 本の時間軸を共有します。
+
 ## step_simulation
 
 一時停止中に限り、指定ステップだけ進めてまた止めます。
