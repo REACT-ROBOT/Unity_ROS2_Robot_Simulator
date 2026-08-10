@@ -32,6 +32,7 @@ using UnityMeshImporter;
 using NaughtyWaterBuoyancy;
 using Hydrodynamics;
 using Aerodynamics;
+using UrdfProperties;
 
 public class FileLogger
 {
@@ -873,7 +874,6 @@ public partial class SimulationControl : MonoBehaviour
         groundTruthPub.tfTopicName =
             TrackPublishedTopic(robotObject.name, entityNamespace, groundTruthPub.tfTopicName);
 
-        // Physics Material の生成（ランタイムでは AssetDatabase は使用不可のため new で生成）
         string directoryPath = Path.GetDirectoryName(filePath);
         int assetsIndex = directoryPath.IndexOf("Assets");
         if (assetsIndex >= 0)
@@ -881,109 +881,10 @@ public partial class SimulationControl : MonoBehaviour
             directoryPath = directoryPath.Substring(assetsIndex);
         }
         XmlNode robotNode = xmlDoc.SelectSingleNode("/robot");
-        List<PhysicsMaterial> physicsMaterialList = new List<PhysicsMaterial>();
-        Dictionary<string, float> contactOffsetDict = new Dictionary<string, float>();
-        if (robotNode != null)
-        {
-            XmlNodeList physicsMaterials = robotNode.SelectNodes("collision_material");
-            if (physicsMaterials.Count == 0)
-            {
-                Debug.LogWarning("<physics_material> is deprecated. Use <collision_material> instead.");
-                physicsMaterials = robotNode.SelectNodes("physics_material");
-            }
-            foreach (XmlNode physicsMaterial in physicsMaterials)
-            {
-                string materialName = physicsMaterial.Attributes["name"]?.Value;
-                PhysicsMaterial newMaterial = new PhysicsMaterial(materialName);
-                XmlNode frictionNode = physicsMaterial.SelectSingleNode("friction");
-                if (frictionNode != null)
-                {
-                    newMaterial.staticFriction = TryParseFloat(frictionNode.Attributes["static"]?.Value);
-                    newMaterial.dynamicFriction = TryParseFloat(frictionNode.Attributes["dynamic"]?.Value);
-                    string combineMode = frictionNode.Attributes["combine"]?.Value?.ToLower();
-                    switch (combineMode)
-                    {
-                        case "average":
-                            newMaterial.frictionCombine = PhysicsMaterialCombine.Average;
-                            break;
-                        case "multiply":
-                            newMaterial.frictionCombine = PhysicsMaterialCombine.Multiply;
-                            break;
-                        case "maximum":
-                            newMaterial.frictionCombine = PhysicsMaterialCombine.Maximum;
-                            break;
-                        case "minimum":
-                            newMaterial.frictionCombine = PhysicsMaterialCombine.Minimum;
-                            break;
-                        default:
-                            newMaterial.frictionCombine = PhysicsMaterialCombine.Average;
-                            break;
-                    }
-                }
-                XmlNode contactOffsetNode = physicsMaterial.SelectSingleNode("contact_offset");
-                if (contactOffsetNode != null)
-                {
-                    contactOffsetDict[materialName] = TryParseFloat(contactOffsetNode.Attributes["value"]?.Value);
-                }
-                physicsMaterialList.Add(newMaterial);
-            }
-        }
 
-        // Physics Material の適用
-        if (robotNode != null)
-        {
-            XmlNodeList links = robotNode.SelectNodes("link");
-            foreach (XmlNode link in links)
-            {
-                XmlNode collisionNode = link.SelectSingleNode("collision");
-                if (collisionNode != null)
-                {
-                    XmlNode physicsMaterial = collisionNode.SelectSingleNode("collision_material");
-                    if (physicsMaterial == null)
-                    {
-                        physicsMaterial = collisionNode.SelectSingleNode("physics_material");
-                    }
-                    if (physicsMaterial != null)
-                    {
-                        string materialName = physicsMaterial.Attributes["name"]?.Value;
-                        string linkName = link.Attributes["name"]?.Value;
-                        GameObject targetObject = FindInChildrenByName(robotObject.transform, linkName);
-                        if (targetObject != null)
-                        {
-                            Transform collisionTransform = targetObject.transform.Find("Collisions");
-                            if (collisionTransform != null && collisionTransform.childCount > 0)
-                            {
-                                Transform unnamedCollision = collisionTransform.GetChild(0);
-                                if (unnamedCollision.childCount > 0)
-                                {
-                                    Transform targetCollision = unnamedCollision.GetChild(0);
-                                    if (targetCollision != null)
-                                    {
-                                        Collider meshCollider = targetCollision.gameObject.GetComponent<Collider>();
-                                        if (meshCollider != null)
-                                        {
-                                            foreach (PhysicsMaterial material in physicsMaterialList)
-                                            {
-                                                if (material.name == materialName)
-                                                {
-                                                    meshCollider.material = material;
-                                                    if (contactOffsetDict.TryGetValue(materialName, out float contactOffset))
-                                                    {
-                                                        meshCollider.contactOffset = contactOffset;
-                                                    }
-                                                    Debug.Log($"[CollisionMaterial] Applied '{materialName}' to '{linkName}' (static={material.staticFriction}, dynamic={material.dynamicFriction}, combine={material.frictionCombine}, contactOffset={meshCollider.contactOffset})");
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // <collision_material> の適用。URDF Importer はこの要素を知らないので
+        // インポート後にこちらで当てる (実装とテストは UrdfProperties アセンブリ)。
+        CollisionMaterialApplier.Apply(robotObject, robotNode);
 
         // サーボモデル (摩擦・バックラッシ) の設定: <servo_model joint="..."> 要素
         if (robotNode != null)
