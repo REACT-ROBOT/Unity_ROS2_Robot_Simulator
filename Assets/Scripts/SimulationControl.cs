@@ -240,43 +240,95 @@ public partial class SimulationControl : MonoBehaviour
             return response;
         }
 
-        // 進行中の step_simulation は、こちらが timeScale を決め直す前に降ろす。
-        CancelStepping();
-
-        // TODO: implement the logic to set SetSimulationStateResponse.STATE_TRANSITION_ERROR
-
-        if (request.state.state == SimulationStateMsg.STATE_STOPPED)
-        {
-            m_SimulationState = request.state.state;
-            Time.timeScale = 0f;
-            playStopImage.sprite = playIcon;
-
-            DespawnAllEntities();
-        }
-        else if (request.state.state == SimulationStateMsg.STATE_PLAYING)
-        {
-            m_SimulationState = request.state.state;
-            Time.timeScale = 1f;
-            playStopImage.sprite = stopIcon;
-        }
-        else if (request.state.state == SimulationStateMsg.STATE_PAUSED)
-        {
-            m_SimulationState = request.state.state;
-            Time.timeScale = 0f;
-            playStopImage.sprite = playIcon;
-        }
-        else if (request.state.state == SimulationStateMsg.STATE_QUITTING)
-        {
-            m_SimulationState = request.state.state;
-            Application.Quit();
-        }
-        else
+        if (request.state.state != SimulationStateMsg.STATE_STOPPED &&
+            request.state.state != SimulationStateMsg.STATE_PLAYING &&
+            request.state.state != SimulationStateMsg.STATE_PAUSED &&
+            request.state.state != SimulationStateMsg.STATE_QUITTING)
         {
             response.result.result = SetSimulationStateResponse.INCORRECT_TRANSITION;
             response.result.error_message = "Invalid simulation state requested";
             return response;
         }
+
+        // 進行中の step_simulation は、こちらが timeScale を決め直す前に降ろす。
+        CancelStepping();
+
+        byte previousState = m_SimulationState;
+        float previousTimeScale = Time.timeScale;
+        try
+        {
+            ApplySimulationState(request.state.state);
+        }
+        catch (Exception e)
+        {
+            // 遷移の途中で落ちた。例外をそのまま抜けさせるとサービスが応答を返さず、
+            // 呼び出し側は延々と待つことになる (原因も伝わらない)。状態を戻したうえで
+            // STATE_TRANSITION_ERROR として返す。
+            Debug.LogError($"Failed to enter state {request.state.state}: {e}");
+            m_SimulationState = previousState;
+            Time.timeScale = previousTimeScale;
+            response.result.result = SetSimulationStateResponse.STATE_TRANSITION_ERROR;
+            response.result.error_message =
+                $"Failed to enter state {request.state.state}: {e.Message}";
+            return response;
+        }
+
+        if (m_SimulationState != request.state.state)
+        {
+            // 例外は出なかったが要求した状態になっていない。
+            response.result.result = SetSimulationStateResponse.STATE_TRANSITION_ERROR;
+            response.result.error_message =
+                $"Requested state {request.state.state} but ended up in {m_SimulationState}";
+            return response;
+        }
         return response;
+    }
+
+    /// <summary>
+    /// 状態遷移の実体。呼び出し側で値の妥当性は確かめてある。
+    /// </summary>
+    private void ApplySimulationState(byte state)
+    {
+        if (state == SimulationStateMsg.STATE_STOPPED)
+        {
+            m_SimulationState = state;
+            Time.timeScale = 0f;
+            SetPlayStopIcon(playIcon);
+            DespawnAllEntities();
+        }
+        else if (state == SimulationStateMsg.STATE_PLAYING)
+        {
+            m_SimulationState = state;
+            Time.timeScale = 1f;
+            SetPlayStopIcon(stopIcon);
+        }
+        else if (state == SimulationStateMsg.STATE_PAUSED)
+        {
+            m_SimulationState = state;
+            Time.timeScale = 0f;
+            SetPlayStopIcon(playIcon);
+        }
+        else if (state == SimulationStateMsg.STATE_QUITTING)
+        {
+            m_SimulationState = state;
+            Application.Quit();
+        }
+    }
+
+    /// <summary>
+    /// 再生/停止ボタンの絵を差し替える。UI が繋がっていないシーンでも落ちないようにする。
+    /// </summary>
+    /// <remarks>
+    /// ここが素の代入だったころは、playStopImage 未設定のシーンで
+    /// NullReferenceException がサービスハンドラを突き抜け、応答が返らないまま
+    /// 呼び出し側が待ち続けていた。
+    /// </remarks>
+    private void SetPlayStopIcon(Sprite sprite)
+    {
+        if (playStopImage != null)
+        {
+            playStopImage.sprite = sprite;
+        }
     }
 
     public void StartStopSimulation()
@@ -289,14 +341,14 @@ public partial class SimulationControl : MonoBehaviour
         {
             m_SimulationState = SimulationStateMsg.STATE_PLAYING;
             Time.timeScale = 1f;
-            playStopImage.sprite = stopIcon;
+            SetPlayStopIcon(stopIcon);
         }
         else
         {
             m_SimulationState = SimulationStateMsg.STATE_PAUSED;
             Time.timeScale = 0f;
             ResetAllEntitiesState();
-            playStopImage.sprite = playIcon;
+            SetPlayStopIcon(playIcon);
         }
     }
     public void PauseSimulation()
@@ -307,7 +359,7 @@ public partial class SimulationControl : MonoBehaviour
         {
             m_SimulationState = SimulationStateMsg.STATE_PAUSED;
             Time.timeScale = 0f;
-            playStopImage.sprite = playIcon;
+            SetPlayStopIcon(playIcon);
         }
     }
 
@@ -334,10 +386,7 @@ public partial class SimulationControl : MonoBehaviour
         CancelStepping();
         m_SimulationState = SimulationStateMsg.STATE_STOPPED;
         Time.timeScale = 0f;
-        if (playStopImage != null)
-        {
-            playStopImage.sprite = playIcon;
-        }
+        SetPlayStopIcon(playIcon);
 
         if (request.scope == ResetSimulationRequest.SCOPE_DEFAULT)
         {
