@@ -95,6 +95,25 @@ cd ~/colcon_ws && ./scripts/service_conformance_test.sh
 落とし穴、速度を上げたときに滑る理由と実測値は
 [docs/URDF-Collision-Material-ja.md](docs/URDF-Collision-Material-ja.md) にまとめてあります。
 
+GNSS 受信機は他のセンサ (imu, lidar, camera, contact など) と同様に `<simulation>` 内で
+宣言します:
+
+```xml
+<simulation>
+  <sensor type="gnss" name="gnss_link">
+    <update_rate>10</update_rate>
+    <origin_latitude>35.681236</origin_latitude>   <!-- 省略可; 度 -->
+    <origin_longitude>139.767125</origin_longitude><!-- 省略可; 度 -->
+    <origin_altitude>0.0</origin_altitude>         <!-- 省略可; メートル -->
+  </sensor>
+</simulation>
+```
+
+`origin_*` 要素は Unity ワールド原点を地球上のどこに置くかを指定します。測地原点はシーン
+全体で 1 つを全ロボットで共有し、GNSS センサを宣言して最初にスポーンしたロボットの指定が
+優先されます (後から別の原点を指定すると警告を出して既存の原点を使います)。測位結果は
+`sensor_msgs/NavSatFix` として `/<ロボット名>/<リンク名>/fix` に配信されます。
+
 ## 既知の制約
 
 意図的に保留にしている項目と、設計として受け入れている制約は

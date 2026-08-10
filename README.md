@@ -95,6 +95,25 @@ Friction is set through the custom `<collision_material>` element. Syntax, the `
 pitfall, and why a robot slides at speed (with measurements) are in
 [docs/URDF-Collision-Material.md](docs/URDF-Collision-Material.md).
 
+A GNSS receiver is declared like the other sensors (imu, lidar, camera, contact, …) inside
+`<simulation>`:
+
+```xml
+<simulation>
+  <sensor type="gnss" name="gnss_link">
+    <update_rate>10</update_rate>
+    <origin_latitude>35.681236</origin_latitude>   <!-- optional; degrees -->
+    <origin_longitude>139.767125</origin_longitude><!-- optional; degrees -->
+    <origin_altitude>0.0</origin_altitude>         <!-- optional; meters -->
+  </sensor>
+</simulation>
+```
+
+The `origin_*` elements place the Unity world origin on the globe. They configure a single
+scene-wide geodetic origin shared by every robot: the first spawned robot that declares a GNSS
+sensor wins, and later robots that request a different origin get a warning and use the existing
+one. The fix is published as `sensor_msgs/NavSatFix` on `/<robot>/<link>/fix`.
+
 ## Known limitations
 
 Work that is deliberately deferred, and the limits accepted as part of the design, are

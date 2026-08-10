@@ -15,11 +15,17 @@ using Unity.Robotics.UrdfImporter.Control;
 using UnitySensors.Sensor.Camera;
 using UnitySensors.Sensor.LiDAR;
 using UnitySensors.Sensor.IMU;
+using UnitySensors.Sensor.Contact;
+using UnitySensors.Sensor.GNSS;
 using UnitySensors.DataType.LiDAR;
+using UnitySensors.DataType.Geometry;
 using UnitySensors.ROS.Publisher.Camera;
 using UnitySensors.ROS.Publisher.Sensor;
+using UnitySensors.ROS.Publisher.Std;
+using UnitySensors.ROS.Publisher.Geometry;
 using UnitySensors.ROS.Serializer.Sensor;
 using UnitySensors.ROS.Serializer.Std;
+using UnitySensors.ROS.Serializer.Geometry;
 using UnitySensors.ROS.Serializer.PointCloud;
 using UnitySensors.ROS.Serializer.Image;
 
@@ -1624,6 +1630,94 @@ public partial class SimulationControl : MonoBehaviour
                                 imuMsgPublisher.serializer = imuSerializer;
                                 imuMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/imu");
                                 break;
+                            case "gnss":
+                                Debug.Log("sensor type 'gnss' found");
+                                // Add GNSS sensor component
+                                GNSSSensor gnssSensor = targetObject.AddComponent<GNSSSensor>();
+
+                                // 測地原点 (Unity ワールド原点の緯度・経度・楕円体高)。
+                                // シーン全体で 1 つの GeoCoordinateSystem を共有する。
+                                XmlNode gnssOriginLatNode = sensor.SelectSingleNode("origin_latitude");
+                                XmlNode gnssOriginLonNode = sensor.SelectSingleNode("origin_longitude");
+                                XmlNode gnssOriginAltNode = sensor.SelectSingleNode("origin_altitude");
+                                bool gnssOriginSpecified = gnssOriginLatNode != null || gnssOriginLonNode != null || gnssOriginAltNode != null;
+                                GeoCoordinate gnssOrigin = new GeoCoordinate(
+                                    TryParseDouble(gnssOriginLatNode?.InnerText, 35.71020206575301),
+                                    TryParseDouble(gnssOriginLonNode?.InnerText, 139.81070039691542),
+                                    TryParseDouble(gnssOriginAltNode?.InnerText, 3.0));
+                                GeoCoordinateSystem gnssCoordinateSystem = GetOrCreateGeoCoordinateSystem(gnssOrigin, gnssOriginSpecified);
+                                gnssSensor.Configure(gnssCoordinateSystem);
+
+                                // Set update rate from URDF
+                                var gnssUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                if (gnssUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(gnssUpdateRateNode.InnerText);
+                                    SetSensorUpdateRate(gnssSensor, updateRate, "GNSS:" + sensorLinkName);
+                                }
+
+                                // Add NavSatFix message publisher
+                                NavSatFixMsgPublisher gnssMsgPublisher = targetObject.AddComponent<NavSatFixMsgPublisher>();
+
+                                // Set publisher update rate to match sensor
+                                if (gnssUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(gnssUpdateRateNode.InnerText);
+                                    SetPublisherUpdateRate(gnssMsgPublisher, updateRate, "GNSS:" + sensorLinkName);
+                                }
+
+                                // Use public API instead of Reflection
+                                var gnssHeader = new HeaderSerializer();
+                                gnssHeader.Configure(gnssSensor, sensorLinkName);
+                                var gnssSerializer = new NavSatFixMsgSerializer();
+                                gnssSerializer.Configure(gnssSensor, gnssHeader);
+                                gnssMsgPublisher.serializer = gnssSerializer;
+                                gnssMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/fix");
+                                break;
+                            case "contact":
+                                Debug.Log("sensor type 'contact' found");
+                                // 接触センサはリンクの ArticulationBody と同じ GameObject に
+                                // 置く (OnCollision* はボディ持ちの GameObject に届くため)。
+                                ContactSensor contactSensor = targetObject.AddComponent<ContactSensor>();
+                                // ランタイム URDF インポートでは衝突ジオメトリが独自の
+                                // ArticulationBody を持つ子 GameObject に載るため、センサ既定の
+                                // 走査 (別ボディで打ち切り) では拾えない。リンク配下のコライダー
+                                // (子リンクは除外) を明示的に登録する。
+                                RegisterLinkCollidersToContactSensor(targetObject.transform, contactSensor, true);
+
+                                var contactUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                if (contactUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(contactUpdateRateNode.InnerText);
+                                    SetSensorUpdateRate(contactSensor, updateRate, "Contact:" + sensorLinkName);
+                                }
+
+                                // バンパー的な接触有無 (std_msgs/Bool)
+                                BoolMsgPublisher contactBoolPublisher = targetObject.AddComponent<BoolMsgPublisher>();
+                                if (contactUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(contactUpdateRateNode.InnerText);
+                                    SetPublisherUpdateRate(contactBoolPublisher, updateRate, "Contact:" + sensorLinkName);
+                                }
+                                var contactBoolSerializer = new BoolMsgSerializer();
+                                contactBoolSerializer.Configure(contactSensor);
+                                contactBoolPublisher.serializer = contactBoolSerializer;
+                                contactBoolPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/contact");
+
+                                // 正味の接触レンチ (geometry_msgs/WrenchStamped, センサリンク系)
+                                WrenchStampedMsgPublisher contactWrenchPublisher = targetObject.AddComponent<WrenchStampedMsgPublisher>();
+                                if (contactUpdateRateNode != null)
+                                {
+                                    float updateRate = TryParseFloat(contactUpdateRateNode.InnerText);
+                                    SetPublisherUpdateRate(contactWrenchPublisher, updateRate, "Contact:" + sensorLinkName);
+                                }
+                                var contactHeader = new HeaderSerializer();
+                                contactHeader.Configure(contactSensor, sensorLinkName);
+                                var contactWrenchSerializer = new WrenchStampedMsgSerializer();
+                                contactWrenchSerializer.Configure(contactSensor, contactHeader);
+                                contactWrenchPublisher.serializer = contactWrenchSerializer;
+                                contactWrenchPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/contact/wrench");
+                                break;
                             case "thruster":
                                 Debug.Log("sensor type 'thruster' found");
                                 string thrusterId = sensor.Attributes?["id"]?.Value;
@@ -1778,6 +1872,58 @@ public partial class SimulationControl : MonoBehaviour
     /// <summary>
     /// UnitySensorの更新レートを設定する（リフレクションを使用）
     /// </summary>
+    // 指定リンク配下のコライダーを接触センサへ登録する。子リンク (UrdfLink) の
+    // 配下は別リンクの接触なので除外する。
+    private static void RegisterLinkCollidersToContactSensor(Transform node, ContactSensor sensor, bool isRoot)
+    {
+        if (!isRoot && node.GetComponent<UrdfLink>() != null)
+        {
+            return;
+        }
+        foreach (Collider collider in node.GetComponents<Collider>())
+        {
+            sensor.RegisterCollider(collider);
+        }
+        for (int i = 0; i < node.childCount; i++)
+        {
+            RegisterLinkCollidersToContactSensor(node.GetChild(i), sensor, false);
+        }
+    }
+
+    // 測地原点 (GeoCoordinateSystem) はシーン全体で 1 つを共有する。既にあれば
+    // それを返し (最初にスポーンしたロボットの原点が勝つ)、後から違う原点を
+    // 指定した URDF には警告だけ出して無視する。無ければ生成して origin を設定する。
+    private static GeoCoordinateSystem GetOrCreateGeoCoordinateSystem(GeoCoordinate origin, bool originSpecified)
+    {
+        GeoCoordinateSystem existing = FindFirstObjectByType<GeoCoordinateSystem>();
+        if (existing != null)
+        {
+            GeoCoordinate current = existing.coordinate;
+            if (originSpecified &&
+                (Math.Abs(current.latitude - origin.latitude) > 1e-9 ||
+                 Math.Abs(current.longitude - origin.longitude) > 1e-9 ||
+                 Math.Abs(current.altitude - origin.altitude) > 1e-6))
+            {
+                Debug.LogWarning(
+                    $"GNSS: GeoCoordinateSystem already exists with origin ({current.latitude}, {current.longitude}, {current.altitude}); " +
+                    $"ignoring requested origin ({origin.latitude}, {origin.longitude}, {origin.altitude}). First spawned robot wins.");
+            }
+            return existing;
+        }
+
+        GameObject geoObject = new GameObject("GeoCoordinateSystem");
+        GeoCoordinateSystem coordinateSystem = geoObject.AddComponent<GeoCoordinateSystem>();
+        coordinateSystem.Configure(origin);
+        Debug.Log($"GNSS: created GeoCoordinateSystem with origin ({origin.latitude}, {origin.longitude}, {origin.altitude})");
+        return coordinateSystem;
+    }
+
+    // 緯度・経度は float では精度が足りない (1e-5 deg ≒ 1 m) ので double で読む。
+    private static double TryParseDouble(string value, double defaultValue)
+    {
+        return double.TryParse(value, out double result) ? result : defaultValue;
+    }
+
     private static void SetSensorUpdateRate(UnitySensors.Sensor.UnitySensor sensor, float updateRate, string sensorName)
     {
         Debug.Log($"Setting {sensorName} update rate to: {updateRate} Hz");
