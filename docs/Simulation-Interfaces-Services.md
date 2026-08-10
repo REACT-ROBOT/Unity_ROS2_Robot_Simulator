@@ -36,10 +36,10 @@ action and every feature flag in `SimulatorFeatures`.
 ### Not supported
 
 Every service in the srv directory and every flag in `SimulatorFeatures` is implemented.
-- **`EntityState.acceleration`** — always reported as zero and ignored by
-  `set_entity_state`. Unity offers no direct way to impose an acceleration, and
-  `EntityState.msg` explicitly allows simulators to ignore the field. When it is requested,
-  the result stays `RESULT_OK` and `error_message` records that it was ignored.
+- **`acceleration` on `set_entity_state`** — ignored (reading it works). Unity offers no
+  direct way to impose an acceleration, and turning one into a force means deciding how to
+  treat mass. `EntityState.msg` explicitly allows simulators to ignore the field, so when it
+  is requested the result stays `RESULT_OK` and `error_message` records that it was ignored.
 
 ## What counts as an entity
 
@@ -59,6 +59,10 @@ Default categories are `CATEGORY_ROBOT` for anything built from a URDF and
 Poses, twists and bounds are all exchanged in ROS convention (right-handed, Z up, metres).
 The mapping to Unity's left-handed, Y-up convention is the same one used when publishing
 `/ground_truth`.
+
+`acceleration` is a first difference of the root body's velocity, taken every `FixedUpdate`
+because Unity exposes no acceleration to read. It is not smoothed, so contacts make it spike.
+While `timeScale` is 0 no `FixedUpdate` runs, so a paused simulation keeps the last value.
 
 For a URDF robot, `get_entity_state` reports the pose of the **base link**. The root
 GameObject does not follow the ArticulationBody solver, so reading it would make the robot
@@ -117,9 +121,11 @@ After `unload_world` the state is `STATE_NO_WORLD`. In that state:
 - `spawn_entity` / `spawn_entities` / `reset_simulation` / `step_simulation` return
   `RESULT_INCORRECT_STATE`
 
-`load_world` brings it back. Note that the **built-in scene cannot be exported as a file**,
-so the `world_resource.uri` reported by `get_current_world` is empty at startup, and once
-unloaded there is no way to load that exact world again.
+`load_world` brings it back. **The built-in scene can be restored too**, even though it
+cannot be exported as a file: its `uri` is empty, but `world_resource.resource_string` holds
+a scene JSON describing "no scenery loaded". Hand the `Resource` from `get_current_world`
+straight back to `load_world` and you are where you started. A world loaded from a string
+keeps its `resource_string` for the same reason.
 
 ### World name, description and tags
 

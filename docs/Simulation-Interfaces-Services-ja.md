@@ -34,10 +34,10 @@ srv で定義されている 22 サービスと `SimulateSteps` アクション�
 ### 対応していないもの
 
 srv で定義されているサービスと `SimulatorFeatures` の機能はすべて実装しています。
-- **`EntityState.acceleration`** — 常にゼロを返し、`set_entity_state` でも無視します。
-  Unity には加速度を直接与える入口が無く、`EntityState.msg` も「シミュレータによっては
-  無視される」と明記している項目です。要求された場合は結果を `RESULT_OK` にしたまま
-  `error_message` に無視した旨を残します。
+- **`set_entity_state` の `acceleration`** — 無視します (取得はできます)。加速度を直接
+  与える入口が Unity に無く、力へ読み替えるには質量の扱いを決める必要があるためです。
+  `EntityState.msg` が「シミュレータによっては無視される」と明記している項目なので、
+  要求された場合は結果を `RESULT_OK` にしたまま `error_message` に無視した旨を残します。
 
 ## 「エンティティ」の範囲
 
@@ -55,6 +55,10 @@ srv で定義されているサービスと `SimulatorFeatures` の機能はす�
 
 姿勢・速度・bounds はすべて ROS (右手系・Z 上・m) で受け渡しします。Unity 内部の
 左手系・Y 上との読み替えは `/ground_truth` の publish と同じ規則です。
+
+`acceleration` は `FixedUpdate` でルートボディの速度を控えて 1 階差分を取った値です
+(Unity に加速度を読む口が無いため)。平滑化はしていないので接触の瞬間などは大きく振れます。
+`timeScale = 0` の間は `FixedUpdate` が回らないため、停止中は最後に計算した値が残ります。
 
 `get_entity_state` が返す姿勢は、URDF ロボットの場合 **ベースリンク**のものです。
 ルートの GameObject は ArticulationBody のソルバに追随しないため、そちらを読むと
@@ -112,9 +116,13 @@ ros2 service call /unload_world simulation_interfaces/srv/UnloadWorld "{}"
 - `spawn_entity` / `spawn_entities` / `reset_simulation` / `step_simulation` は
   `RESULT_INCORRECT_STATE` を返す
 
-ようにしてあります。`load_world` を呼べば元に戻ります。ただし**組み込みシーンは
-ファイルとして取り出せない**ので、`get_current_world` が返す `world_resource.uri` は
-起動直後は空です。降ろしたあとに同じものへ戻すことはできません。
+ようにしてあります。`load_world` を呼べば元に戻ります。
+
+**組み込みシーンもファイルなしで戻せます。** ファイルとして取り出せないので `uri` は
+空ですが、かわりに「景観が何も載っていない状態」を表すシーン JSON が
+`world_resource.resource_string` に入っています。`get_current_world` で受け取った
+`Resource` をそのまま `load_world` へ渡せば元に戻ります。文字列から読み込んだワールドも
+同じように `resource_string` を持ち続けるので、読み直せます。
 
 ### ワールドの名前・説明・タグ
 

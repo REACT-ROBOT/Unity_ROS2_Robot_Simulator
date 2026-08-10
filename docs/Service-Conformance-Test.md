@@ -69,9 +69,9 @@ Outputs (default `/tmp/service_conformance/`):
 | C1–C6 | Spawn, baseline capture, `ground_truth`, **baseline proof that commands work**, pause/resume |
 | D1–D10 | **All `reset_simulation` scopes**: entity survival, joint and pose restoration, command acceptance after reset, service liveness, despawn, respawn, time reset, repeat stability |
 | E1–E2 | Despawn on `STATE_STOPPED`, and respawning afterwards |
-| F1–F2 | How far `step_simulation` actually advances (`n` versus `2n` steps must come out 2:1), resetting an empty scene |
+| F1–F3 | How far `step_simulation` actually advances (`n` versus `2n` steps must come out 2:1), resetting an empty scene, **state transitions reaching the sim clock** |
 | G1–G6 | **simulation_interfaces 2.x**: **advertised features cross-checked against the services on the graph**, spawning through `Resource`, `spawn_entities` (batch spawn and partial-failure reporting), topic separation via `entity_namespace`, **spawning from `resource_string`** |
-| H1–H9 | **Optional services**: `get_entities` / `get_entity_state` agreeing with `ground_truth`, `set_entity_state`, `entity_info`, `get_entity_bounds`, `EntityFilters`, `delete_entity`, `get_spawnables` / named poses, world lifecycle, **filtering worlds by tag** |
+| H1–H9 | **Optional services**: **acceleration tracking gravity**, `get_entities` / `get_entity_state` agreeing with `ground_truth`, `set_entity_state`, `entity_info`, `get_entity_bounds`, `EntityFilters`, `delete_entity`, `get_spawnables` / named poses, world lifecycle, **filtering worlds by tag** |
 
 | I1–I2 | **The `simulate_steps` action**: per-step feedback, cancellation mid-run |
 
@@ -103,8 +103,8 @@ After implementing the remaining 15 services plus `WORLD_TAGS` and the `Simulate
 action, and adding the H group (9 scenarios) and the I group (2 scenarios):
 
 ```
-PASS 43  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
-PASS 42  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
+PASS 45  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 43  FAIL 0  KNOWN_GAP 0  SKIP 2  ERROR 0   (servo_demo)
 ```
 
 Confirmed on both ROS 2 Jazzy (Ubuntu 24.04) and Humble (Ubuntu 22.04).
