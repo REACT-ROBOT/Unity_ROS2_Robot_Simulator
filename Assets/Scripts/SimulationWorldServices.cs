@@ -75,13 +75,27 @@ public partial class SimulationControl
         }
 
         string sceneName = SceneManager.GetActiveScene().name;
+
+        // 組み込みシーンはファイルとして取り出せないので uri は持てない。かわりに
+        // 「景観が何も載っていない状態」を表すシーン JSON を resource_string に入れて、
+        // UnloadWorld したあとでも LoadWorld で戻せるようにする。Resource.msg は
+        // uri が空なら resource_string で指す決まりなので、これで筋が通る。
+        var builtIn = new SavedSceneData
+        {
+            name = sceneName,
+            description = "Built-in scene shipped with the simulator",
+            tags = Array.Empty<string>()
+        };
+
         m_CurrentWorld = new WorldResourceMsg
         {
             name = sceneName,
-            // 組み込みシーンはファイルとして取り出せないので uri は空。
-            // LoadWorld で復元できるものではない、という意味でもある。
-            world_resource = new ResourceMsg { uri = "", resource_string = "" },
-            description = "Built-in scene shipped with the simulator",
+            world_resource = new ResourceMsg
+            {
+                uri = "",
+                resource_string = JsonUtility.ToJson(builtIn)
+            },
+            description = builtIn.description,
             tags = Array.Empty<string>()
         };
     }
@@ -180,7 +194,14 @@ public partial class SimulationControl
         // 一覧 (GetAvailableWorlds) と同じ内容が GetCurrentWorld からも見えるように
         // 組み立ては DescribeWorld に寄せてある。
         m_CurrentWorld = DescribeWorld(sceneData, worldName);
-        m_CurrentWorld.world_resource = new ResourceMsg { uri = resolvedUri, resource_string = "" };
+        // uri で来たものは uri で指し直せる。文字列で来たものは指す先が無いので、
+        // 受け取った定義をそのまま持っておく。こうしないと文字列から読んだワールドが
+        // 「今載っているのに二度と読み直せない」状態になる。
+        m_CurrentWorld.world_resource = new ResourceMsg
+        {
+            uri = resolvedUri,
+            resource_string = string.IsNullOrEmpty(resolvedUri) ? json : ""
+        };
         m_SimulationState = SimulationStateMsg.STATE_STOPPED;
         Time.timeScale = 0f;
         if (playStopImage != null)
