@@ -80,6 +80,13 @@ cd ~/colcon_ws && ./scripts/service_conformance_test.sh
 
 詳細は [docs/Service-Conformance-Test-ja.md](docs/Service-Conformance-Test-ja.md) を参照してください。
 
+## 既知の制約
+
+意図的に保留にしている項目と、設計として受け入れている制約は
+[docs/Known-Limitations-ja.md](docs/Known-Limitations-ja.md) にまとめてあります。
+「なぜそうなっているのか」と「着手するなら何を決める必要があるか」を書いてあるので、
+気になる挙動に当たったらまずここを見てください。
+
 ## ライセンス
 このプロジェクトは Apache 2.0 ライセンスの下で提供されています - 詳細はライセンスファイルをご覧ください。
 

@@ -80,6 +80,13 @@ cd ~/colcon_ws && ./scripts/service_conformance_test.sh
 
 See [docs/Service-Conformance-Test.md](docs/Service-Conformance-Test.md) for details.
 
+## Known limitations
+
+Work that is deliberately deferred, and the limits accepted as part of the design, are
+collected in [docs/Known-Limitations.md](docs/Known-Limitations.md). It records why each
+one stands and what you would need to decide before picking it up, so start there when a
+behaviour looks surprising.
+
 ## License
 This project is licensed under the Apache 2.0 License - see the LICENSE file for details.
 
