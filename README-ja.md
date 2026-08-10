@@ -80,6 +80,12 @@ cd ~/colcon_ws && ./scripts/service_conformance_test.sh
 
 詳細は [docs/Service-Conformance-Test-ja.md](docs/Service-Conformance-Test-ja.md) を参照してください。
 
+## URDF の拡張要素
+
+摩擦係数は URDF の独自要素 `<collision_material>` で設定します。書き方、`combine` の
+落とし穴、速度を上げたときに滑る理由と実測値は
+[docs/URDF-Collision-Material-ja.md](docs/URDF-Collision-Material-ja.md) にまとめてあります。
+
 ## 既知の制約
 
 意図的に保留にしている項目と、設計として受け入れている制約は

@@ -58,6 +58,8 @@ Accepted as-is; no work planned.
 | What counts as an entity | Only what `spawn_entity` / `spawn_entities` created; GUI-placed objects are scenery | ditto |
 | Checks a fixed-base robot cannot run | Its base link is `immovable`, so anything assuming the root moves (C5 / H2b) is skipped | [Service-Conformance-Test.md](Service-Conformance-Test.md) |
 | Pairing with upstream ROS-TCP-Endpoint | It lacks the unsubscribe and Unity-action system commands, so the two cannot be combined | ditto |
+| Wheel slip at speed | The contact point moves too far per physics step for the contact to follow; friction cannot fix it (74 % slip at 1.5 m/s at 50 Hz, 7 % at 200 Hz) | [URDF-Collision-Material.md](URDF-Collision-Material.md) |
+| Default friction `combine` | `average`, so the effective value is the mean with the floor's. Use `combine="maximum"` to make the written value hold | ditto |
 | `ArticulationBody.jointVelocity` | Does not reflect motion of a joint driven by xDrive; the model uses a finite difference of position instead | [Servo-Model-Guide.md](Servo-Model-Guide.md) |
 
 ## simulation_interfaces coverage

@@ -66,7 +66,7 @@ Outputs (default `/tmp/service_conformance/`):
 |----|------|
 | A1–A3 | Reachability of the seven core services, initial state, `Result` code convention |
 | B1–B3 | State transitions (start / same-state / rejection of invalid values) |
-| C1–C6 | Spawn, baseline capture, `ground_truth`, **baseline proof that commands work**, pause/resume |
+| C1–C6 | Spawn, baseline capture, `ground_truth`, **baseline proof that commands work**, **wheel slip (is the URDF friction taking effect)**, pause/resume |
 | D1–D10 | **All `reset_simulation` scopes**: entity survival, joint and pose restoration, command acceptance after reset, service liveness, despawn, respawn, time reset, repeat stability |
 | E1–E2 | Despawn on `STATE_STOPPED`, and respawning afterwards |
 | F1–F3 | How far `step_simulation` actually advances (`n` versus `2n` steps must come out 2:1), resetting an empty scene, **state transitions reaching the sim clock** |
@@ -103,8 +103,8 @@ After implementing the remaining 15 services plus `WORLD_TAGS` and the `Simulate
 action, and adding the H group (9 scenarios) and the I group (2 scenarios):
 
 ```
-PASS 45  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
-PASS 43  FAIL 0  KNOWN_GAP 0  SKIP 2  ERROR 0   (servo_demo)
+PASS 46  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 43  FAIL 0  KNOWN_GAP 0  SKIP 3  ERROR 0   (servo_demo)
 ```
 
 Confirmed on both ROS 2 Jazzy (Ubuntu 24.04) and Humble (Ubuntu 22.04).

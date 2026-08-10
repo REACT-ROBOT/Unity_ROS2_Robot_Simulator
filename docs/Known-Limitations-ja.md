@@ -56,6 +56,8 @@ G6 / F3 / H2b) は入っていません。
 | エンティティの範囲 | `spawn_entity` / `spawn_entities` で作ったものだけ。GUI で置いた物は景観扱い | 同上 |
 | 固定台ロボットで測れない検証 | ベースリンクが `immovable` なので、ルート姿勢が動く前提の項目 (C5 / H2b) は SKIP になる | [Service-Conformance-Test-ja.md](Service-Conformance-Test-ja.md) |
 | 本家 ROS-TCP-Endpoint との併用 | 購読解除と Unity 側アクションのシステムコマンドを本家が持たないため、組み合わせられない | 同上 |
+| 高速走行時の車輪の滑り | 物理刻みあたりの接触点の移動が大きくなり接触が保てない。摩擦係数では解消しない (50 Hz で 1.5 m/s なら滑り 74%、200 Hz なら 7%) | [URDF-Collision-Material-ja.md](URDF-Collision-Material-ja.md) |
+| 摩擦の `combine` 既定 | `average` なので、床との平均が実効値になる。指定値を効かせるには `combine="maximum"` | 同上 |
 | `ArticulationBody.jointVelocity` | xDrive 駆動中の関節の運動を反映しない。モデルは位置の有限差分を使う | [Servo-Model-Guide-ja.md](Servo-Model-Guide-ja.md) |
 
 ## simulation_interfaces の対応状況

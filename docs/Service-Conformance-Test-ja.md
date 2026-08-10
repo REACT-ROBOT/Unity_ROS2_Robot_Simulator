@@ -66,7 +66,7 @@ CI に組み込む場合は `--junit PATH` で JUnit XML を出力できます�
 |----|------|
 | A1–A3 | 中核 7 サービスの疎通、起動直後の状態、`Result` コードの規約適合 |
 | B1–B3 | 状態遷移 (start / 同一状態 / 不正値の拒否) |
-| C1–C6 | スポーン、基準状態の記録、`ground_truth`、**指令が効くことの基準取り**、pause/resume |
+| C1–C6 | スポーン、基準状態の記録、`ground_truth`、**指令が効くことの基準取り**、**車輪の空転 (URDF の摩擦が効いているか)**、pause/resume |
 | D1–D10 | **`reset_simulation` の全スコープ**。エンティティ生存、関節・姿勢の復元、リセット後の指令受付、サービス生存、デスポーン、再スポーン、時刻リセット、反復安定性 |
 | E1–E2 | `STATE_STOPPED` でのデスポーンと、その後の再スポーン |
 | F1–F3 | `step_simulation` の進み量 (`n` と `2n` の比が 2 になること)、空シーンへのリセット、**状態遷移が sim 時刻に届いていること** |
@@ -103,8 +103,8 @@ PASS 30  FAIL 0  KNOWN_GAP 0  SKIP 1  ERROR 0   (servo_demo)
 I 群 (2 シナリオ) を足した後は、次のようになります。
 
 ```
-PASS 45  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
-PASS 43  FAIL 0  KNOWN_GAP 0  SKIP 2  ERROR 0   (servo_demo)
+PASS 46  FAIL 0  KNOWN_GAP 0  SKIP 0  ERROR 0   (diffbot)
+PASS 43  FAIL 0  KNOWN_GAP 0  SKIP 3  ERROR 0   (servo_demo)
 ```
 
 ROS 2 Jazzy (Ubuntu 24.04) と Humble (Ubuntu 22.04) の両方で確認しています。

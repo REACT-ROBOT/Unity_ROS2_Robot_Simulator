@@ -80,6 +80,12 @@ cd ~/colcon_ws && ./scripts/service_conformance_test.sh
 
 See [docs/Service-Conformance-Test.md](docs/Service-Conformance-Test.md) for details.
 
+## URDF extensions
+
+Friction is set through the custom `<collision_material>` element. Syntax, the `combine`
+pitfall, and why a robot slides at speed (with measurements) are in
+[docs/URDF-Collision-Material.md](docs/URDF-Collision-Material.md).
+
 ## Known limitations
 
 Work that is deliberately deferred, and the limits accepted as part of the design, are
