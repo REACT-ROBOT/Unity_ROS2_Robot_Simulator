@@ -1337,6 +1337,7 @@ public partial class SimulationControl : MonoBehaviour
                                 int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out image_height);
                                 // Use public Configure API instead of Reflection
                                 cameraSensor.Configure(new Vector2Int(image_width, image_height), cameraFov);
+                                cameraSensor.Initialize(); // Awake は Configure 前に走るので再初期化して URDF の設定を反映
                                 // Set update rate from URDF
                                 var updateRateNode = sensor.SelectSingleNode("update_rate");
                                 if (updateRateNode != null)
@@ -1384,6 +1385,7 @@ public partial class SimulationControl : MonoBehaviour
                                 int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out fisheye_image_height);
                                 // Use public Configure API instead of Reflection
                                 fisheyeCameraSensor.Configure(new Vector2Int(fisheye_image_width, fisheye_image_height), fisheyeFov);
+                                fisheyeCameraSensor.Initialize();
                                 // Set update rate from URDF
                                 var fisheyeUpdateRateNode = sensor.SelectSingleNode("update_rate");
                                 if (fisheyeUpdateRateNode != null)
@@ -1431,6 +1433,7 @@ public partial class SimulationControl : MonoBehaviour
                                 int.TryParse(sensor.SelectSingleNode("image/height").InnerText, out panoramic_image_height);
                                 // Use public Configure API instead of Reflection
                                 panoramicCameraSensor.Configure(new Vector2Int(panoramic_image_width, panoramic_image_height), panoramicFov);
+                                panoramicCameraSensor.Initialize();
                                 // Set update rate from URDF
                                 var panoramicUpdateRateNode = sensor.SelectSingleNode("update_rate");
                                 if (panoramicUpdateRateNode != null)
@@ -1483,6 +1486,7 @@ public partial class SimulationControl : MonoBehaviour
                                 float depthMaxRange = depthMaxRangeNode != null ? TryParseFloat(depthMaxRangeNode.InnerText) : 100.0f;
                                 // Use public Configure API instead of Reflection
                                 depthCameraSensor.Configure(new Vector2Int(depth_image_width, depth_image_height), depthFov, depthMinRange, depthMaxRange);
+                                depthCameraSensor.Initialize();
 
                                 // Set update rate from URDF
                                 var depthUpdateRateNode = sensor.SelectSingleNode("update_rate");
@@ -1537,6 +1541,7 @@ public partial class SimulationControl : MonoBehaviour
                                 float rgbdMaxRange = rgbdMaxRangeNode != null ? TryParseFloat(rgbdMaxRangeNode.InnerText) : 100.0f;
                                 // Use public Configure API instead of Reflection
                                 rgbdCameraSensor.Configure(new Vector2Int(rgbd_image_width, rgbd_image_height), rgbdFov, rgbdMinRange, rgbdMaxRange);
+                                rgbdCameraSensor.Initialize();
 
                                 Debug.Log("RGBD camera component configured");
 
