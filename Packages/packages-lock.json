@@ -1,23 +1,23 @@
 {
   "dependencies": {
     "com.frj.unity-sensors": {
-      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#b86276b1585914d07dd4b43586e1750a182512ce",
+      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#eda1e28c36660469877a261e19eb950490a12701",
       "depth": 0,
       "source": "git",
       "dependencies": {
         "com.unity.burst": "1.6.6"
       },
-      "hash": "b86276b1585914d07dd4b43586e1750a182512ce"
+      "hash": "eda1e28c36660469877a261e19eb950490a12701"
     },
     "com.frj.unity-sensors-ros": {
-      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#b86276b1585914d07dd4b43586e1750a182512ce",
+      "version": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#eda1e28c36660469877a261e19eb950490a12701",
       "depth": 0,
       "source": "git",
       "dependencies": {
         "com.frj.unity-sensors": "3.0.0",
         "com.unity.robotics.ros-tcp-connector": "0.7.0-preview"
       },
-      "hash": "b86276b1585914d07dd4b43586e1750a182512ce"
+      "hash": "eda1e28c36660469877a261e19eb950490a12701"
     },
     "com.naughtyattributes.waterbuoyancy": {
       "version": "https://github.com/hijimasa/NaughtyWaterBuoyancy.git?path=/Assets/NaughtyWaterBuoyancy#fb0bd431aa33a18e7fa8ed702ccfc12aa2aadb2d",

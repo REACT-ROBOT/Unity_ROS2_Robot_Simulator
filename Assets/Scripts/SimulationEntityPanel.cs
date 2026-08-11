@@ -133,6 +133,92 @@ public partial class SimulationControl
         }
     }
 
+    /// <summary>パネルが扱うセンサ可視化の種別。</summary>
+    public enum GuiSensorVizKind
+    {
+        PointCloudXYZI,   // LiDAR (2D/3D)
+        PointCloudXYZ,    // 深度カメラの点群
+        PointCloudXYZRGB, // RGBD カメラの色付き点群
+        ImageTexture0,    // カメラ画像 (texture0)
+        ImageTexture1,    // RGBD のカラー画像 (texture1)
+    }
+
+    /// <summary>
+    /// 可視化できるセンサ出力 1 つ分のスナップショット。1 センサから複数出る
+    /// ことがある (RGBD は点群とカラー画像)。sensor は破棄され得るので、使う側は
+    /// 毎回 null を確かめること。
+    /// </summary>
+    public struct GuiSensorInfo
+    {
+        public string label; // リンク名 + 出力種別 (パネルの行ラベル)
+        public UnitySensors.Sensor.UnitySensor sensor;
+        public GuiSensorVizKind kind;
+    }
+
+    /// <summary>
+    /// エンティティ配下の可視化できるセンサ出力を列挙する。可視化があるのは
+    /// 点群 (LiDAR/深度/RGBD) と画像 (RGB/魚眼/パノラマ/RGBD カラー) だけで、
+    /// IMU・GNSS・接触などの数値系センサは対象外。深度カメラの深度画像
+    /// (32 bit float, m 単位) はそのまま表示しても白飛びするので点群のみ出す。
+    /// </summary>
+    public static void GetVisualizableSensors(GameObject entity, List<GuiSensorInfo> buffer)
+    {
+        buffer.Clear();
+        if (entity == null)
+        {
+            return;
+        }
+
+        foreach (UnitySensors.Sensor.UnitySensor sensor in
+            entity.GetComponentsInChildren<UnitySensors.Sensor.UnitySensor>())
+        {
+            string link = sensor.gameObject.name;
+            if (sensor is UnitySensors.Sensor.Camera.RGBDCameraSensor)
+            {
+                buffer.Add(new GuiSensorInfo
+                {
+                    label = link + " points",
+                    sensor = sensor,
+                    kind = GuiSensorVizKind.PointCloudXYZRGB,
+                });
+                buffer.Add(new GuiSensorInfo
+                {
+                    label = link + " color",
+                    sensor = sensor,
+                    kind = GuiSensorVizKind.ImageTexture1,
+                });
+            }
+            else if (sensor is UnitySensors.Sensor.Camera.DepthCameraSensor)
+            {
+                buffer.Add(new GuiSensorInfo
+                {
+                    label = link + " points",
+                    sensor = sensor,
+                    kind = GuiSensorVizKind.PointCloudXYZ,
+                });
+            }
+            else if (sensor is UnitySensors.Interface.Sensor.IPointCloudInterface<
+                UnitySensors.DataType.Sensor.PointCloud.PointXYZI>)
+            {
+                buffer.Add(new GuiSensorInfo
+                {
+                    label = link + " points",
+                    sensor = sensor,
+                    kind = GuiSensorVizKind.PointCloudXYZI,
+                });
+            }
+            else if (sensor is UnitySensors.Interface.Sensor.ITextureInterface)
+            {
+                buffer.Add(new GuiSensorInfo
+                {
+                    label = link + " image",
+                    sensor = sensor,
+                    kind = GuiSensorVizKind.ImageTexture0,
+                });
+            }
+        }
+    }
+
     /// <summary>
     /// 関節の現在位置を SI (rad / m) で返す。破棄済みなら false。
     /// </summary>

@@ -1348,6 +1348,7 @@ public partial class SimulationControl : MonoBehaviour
                                 if (cameraComponent != null)
                                 {
                                     cameraComponent.targetDisplay = next_display_number;
+                                    SensorVisualization.ExcludeFromCamera(cameraComponent);
                                     next_display_number++;
                                 }
                                 CameraInfoMsgPublisher cameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
@@ -1394,6 +1395,7 @@ public partial class SimulationControl : MonoBehaviour
                                 if (fisheyeCameraComponent != null)
                                 {
                                     fisheyeCameraComponent.targetDisplay = next_display_number;
+                                    SensorVisualization.ExcludeFromCamera(fisheyeCameraComponent);
                                     next_display_number++;
                                 }
                                 CameraInfoMsgPublisher fisheyeCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
@@ -1440,6 +1442,7 @@ public partial class SimulationControl : MonoBehaviour
                                 if (panoramicCameraComponent != null)
                                 {
                                     panoramicCameraComponent.targetDisplay = next_display_number;
+                                    SensorVisualization.ExcludeFromCamera(panoramicCameraComponent);
                                     next_display_number++;
                                 }
                                 CameraInfoMsgPublisher panoramicCameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
@@ -1492,6 +1495,7 @@ public partial class SimulationControl : MonoBehaviour
                                 if (depthCameraComponent != null)
                                 {
                                     depthCameraComponent.targetDisplay = next_display_number;
+                                    SensorVisualization.ExcludeFromCamera(depthCameraComponent);
                                     next_display_number++;
                                     Debug.Log("Depth camera component configured");
                                 }
@@ -1547,6 +1551,7 @@ public partial class SimulationControl : MonoBehaviour
                                 if (rgbdCameraComponent != null)
                                 {
                                     rgbdCameraComponent.targetDisplay = next_display_number;
+                                    SensorVisualization.ExcludeFromCamera(rgbdCameraComponent);
                                     next_display_number++;
                                 }
 

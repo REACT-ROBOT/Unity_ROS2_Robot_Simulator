@@ -86,6 +86,7 @@ Accepted as-is; no work planned.
 | Wheel slip at speed | The contact point moves too far per physics step for the contact to follow; friction cannot fix it (74 % slip at 1.5 m/s at 50 Hz, 7 % at 200 Hz) | [URDF-Collision-Material.md](URDF-Collision-Material.md) |
 | Default friction `combine` | `average`, so the effective value is the mean with the floor's. Use `combine="maximum"` to make the written value hold | ditto |
 | `ArticulationBody.jointVelocity` | Does not reflect motion of a joint driven by xDrive; the model uses a finite difference of position instead | [Servo-Model-Guide.md](Servo-Model-Guide.md) |
+| Point-cloud overlay culling | The UnitySensors point cloud visualizer draws with a fixed 100 m bounds centered on the world origin, so overlays disappear for robots roughly 50 m or more from the origin (the sensor topics are unaffected) | README.md, sensor visualization |
 
 ## simulation_interfaces coverage
 

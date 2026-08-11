@@ -88,6 +88,22 @@ servo model when the URDF defines one), so manual sliders and ROS commands write
 target — the last writer wins. While a slider is not being dragged it follows the actual joint
 position, so externally commanded motion stays visible.
 
+### Sensor visualization
+
+Below the joint sliders the panel lists the selected robot's visualizable sensor outputs, each
+with an On/Off button. Point-cloud outputs (LiDAR scans, depth and RGBD camera clouds) are
+overlaid on the 3D view using the visualizers bundled with UnitySensors; camera outputs
+(RGB/fisheye/panoramic images and the RGBD color stream) appear as a live preview inside the
+panel. Point-cloud overlays stay on when the panel is closed or another entity is selected
+(the button state is restored on reselect); image previews live in the panel, so they close
+with it. The overlays are drawn on a dedicated layer that sensor cameras do not render, so
+the images published to ROS are unaffected by what you visualize. The depth camera's raw
+depth image is not previewed (it is a float texture in meters and would only show white) —
+use its point cloud instead. For debugging, starting the simulator with
+`SIM_AUTO_SENSOR_VIZ=N` (N ≥ 1) selects the first spawned entity, turns every visualization
+on, and cycles them off and back on N times (ending enabled) — a headless way to exercise the
+attach/detach path.
+
 All 22 services defined in the srv directory are implemented, including entity queries and
 edits, `step_simulation`, and world loading. For what each one means here, why worlds map to
 scene JSON, and how to configure `get_spawnables` and named poses through

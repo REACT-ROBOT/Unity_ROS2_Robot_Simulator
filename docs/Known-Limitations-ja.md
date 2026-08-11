@@ -84,6 +84,7 @@ NaughtyWaterBuoyancy パッケージ側 (git ピン参照でローカルクロ�
 | 高速走行時の車輪の滑り | 物理刻みあたりの接触点の移動が大きくなり接触が保てない。摩擦係数では解消しない (50 Hz で 1.5 m/s なら滑り 74%、200 Hz なら 7%) | [URDF-Collision-Material-ja.md](URDF-Collision-Material-ja.md) |
 | 摩擦の `combine` 既定 | `average` なので、床との平均が実効値になる。指定値を効かせるには `combine="maximum"` | 同上 |
 | `ArticulationBody.jointVelocity` | xDrive 駆動中の関節の運動を反映しない。モデルは位置の有限差分を使う | [Servo-Model-Guide-ja.md](Servo-Model-Guide-ja.md) |
+| 点群重畳のカリング | UnitySensors の点群ビジュアライザはワールド原点中心の固定 100 m バウンズで描くため、原点からおよそ 50 m 以上離れたロボットでは重畳が消える (センサトピック自体は影響なし) | README-ja.md のセンサ可視化 |
 
 ## simulation_interfaces の対応状況
 

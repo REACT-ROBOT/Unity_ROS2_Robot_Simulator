@@ -89,6 +89,10 @@ public class EntityListPanel : MonoBehaviour
 
     GameObject m_SelectedEntity;
     readonly List<JointRow> m_JointRows = new List<JointRow>();
+    readonly List<SimulationControl.GuiSensorInfo> m_SensorBuffer =
+        new List<SimulationControl.GuiSensorInfo>();
+    readonly List<SensorRow> m_SensorRows = new List<SensorRow>();
+    readonly List<GameObject> m_SensorSectionRows = new List<GameObject>(); // 見出し・説明行
 
     float m_NextListPoll;
     float m_NextValueSync;
@@ -103,6 +107,20 @@ public class EntityListPanel : MonoBehaviour
         public float minDisplay;
         public float maxDisplay;
         public float lastLabelValue = float.NaN;
+    }
+
+    class SensorRow
+    {
+        public SimulationControl.GuiSensorInfo info;
+        public GameObject root;
+        public Image toggleImage;
+        public TMP_Text toggleLabel;
+        public Component visualizer; // 有効中の可視化コンポーネント (無効なら null)
+        public GameObject previewRow; // 画像系のみ: パネル内のプレビュー行
+
+        public bool IsImageKind =>
+            info.kind == SimulationControl.GuiSensorVizKind.ImageTexture0
+            || info.kind == SimulationControl.GuiSensorVizKind.ImageTexture1;
     }
 
     void Start()
@@ -128,6 +146,57 @@ public class EntityListPanel : MonoBehaviour
 
         Canvas canvas = FindTargetCanvas();
         BuildUi(canvas);
+
+        // デバッグ/ヘッドレステスト用: SIM_AUTO_SENSOR_VIZ=N (N>=1) で起動すると、
+        // 最初にスポーンされたエンティティを自動選択して全センサ可視化を ON にし、
+        // OFF→ON のトグルを N 回繰り返す (最後は ON のまま)。GUI クリック無しで
+        // 可視化経路 (シェーダ・Visualizer の実行時取り付け・解除) を通せるように
+        // するための入り口で、通常運用では未設定のまま何もしない。
+        string autoViz = System.Environment.GetEnvironmentVariable("SIM_AUTO_SENSOR_VIZ");
+        if (!string.IsNullOrEmpty(autoViz) && int.TryParse(autoViz, out int cycles) && cycles > 0)
+        {
+            StartCoroutine(AutoEnableSensorVisualization(cycles));
+        }
+    }
+
+    IEnumerator AutoEnableSensorVisualization(int cycles)
+    {
+        // パネルを開いてポーリングを動かし、エンティティが現れたら選択する。
+        if (!m_IsOpen)
+        {
+            TogglePanel();
+        }
+        while (m_EntityButtons.Count == 0)
+        {
+            yield return null;
+        }
+        m_EntityButtons[0].onClick.Invoke();
+        yield return null;
+        // ON→OFF→ON を繰り返し、有効化だけでなく解除経路 (可視化コンポーネントの
+        // 破棄とセンサ更新イベントの購読解除) も通す。最後は ON のままにする。
+        Debug.Log($"[EntityListPanel] auto viz: enabling {m_SensorRows.Count} sensor visualizations");
+        ToggleAllSensorRows(wantOn: true);
+        for (int i = 0; i < cycles; i++)
+        {
+            yield return new WaitForSecondsRealtime(5f);
+            Debug.Log($"[EntityListPanel] auto viz: cycle {i + 1}/{cycles} disabling all");
+            ToggleAllSensorRows(wantOn: false);
+            yield return new WaitForSecondsRealtime(3f);
+            Debug.Log($"[EntityListPanel] auto viz: cycle {i + 1}/{cycles} re-enabling all");
+            ToggleAllSensorRows(wantOn: true);
+        }
+        Debug.Log("[EntityListPanel] auto viz: done");
+    }
+
+    void ToggleAllSensorRows(bool wantOn)
+    {
+        foreach (SensorRow row in m_SensorRows)
+        {
+            if ((row.visualizer != null) != wantOn)
+            {
+                ToggleSensorRow(row);
+            }
+        }
     }
 
     Canvas FindTargetCanvas()
@@ -721,6 +790,7 @@ public class EntityListPanel : MonoBehaviour
             }
         }
         m_JointRows.Clear();
+        ClearSensorRows();
         if (m_JointHeader != null)
         {
             m_JointHeader.text = "Joints";
@@ -766,13 +836,230 @@ public class EntityListPanel : MonoBehaviour
             {
                 root = CreateHintRow(m_JointContent, "(no movable joints)"),
             });
+        }
+        else
+        {
+            foreach (SimulationControl.GuiJointInfo joint in m_JointBuffer)
+            {
+                m_JointRows.Add(CreateJointRow(joint));
+            }
+        }
+
+        BuildSensorRows(entity);
+    }
+
+    // ------------------------------------------------------------ センサ可視化
+
+    /// <summary>
+    /// 関節リストの続きに Sensors 節を出す。行ごとの On/Off で UnitySensors の
+    /// 可視化 (点群は 3D シーンへの重畳、カメラは行の下のプレビュー画像) を
+    /// 切り替える。点群の可視化は選択を外しても付けたままにして、パネルを
+    /// 閉じても見え続けるようにする (再選択でトグル状態を復元する)。
+    /// 画像プレビューはパネル内の行が表示先なので、行が消えるときに一緒に外す。
+    /// </summary>
+    void BuildSensorRows(GameObject entity)
+    {
+        ClearSensorRows();
+        SimulationControl.GetVisualizableSensors(entity, m_SensorBuffer);
+        if (m_SensorBuffer.Count == 0)
+        {
             return;
         }
 
-        foreach (SimulationControl.GuiJointInfo joint in m_JointBuffer)
+        m_SensorSectionRows.Add(CreateSectionHeaderRow("Sensors"));
+        m_SensorSectionRows.Add(CreateHintRow(m_JointContent,
+            "Toggle 3D/point-cloud & camera previews"));
+
+        foreach (SimulationControl.GuiSensorInfo info in m_SensorBuffer)
         {
-            m_JointRows.Add(CreateJointRow(joint));
+            m_SensorRows.Add(CreateSensorRow(info));
         }
+    }
+
+    void ClearSensorRows()
+    {
+        foreach (SensorRow row in m_SensorRows)
+        {
+            // 画像系はプレビュー行 (表示先) ごと可視化を外す。点群系は残す。
+            if (row.IsImageKind && row.visualizer != null)
+            {
+                Destroy(row.visualizer);
+            }
+            if (row.previewRow != null)
+            {
+                Destroy(row.previewRow);
+            }
+            if (row.root != null)
+            {
+                Destroy(row.root);
+            }
+        }
+        m_SensorRows.Clear();
+        foreach (GameObject sectionRow in m_SensorSectionRows)
+        {
+            if (sectionRow != null)
+            {
+                Destroy(sectionRow);
+            }
+        }
+        m_SensorSectionRows.Clear();
+    }
+
+    /// <summary>リスト内のインライン見出し行 (パネル見出しと同じ黒・左寄せ)。</summary>
+    GameObject CreateSectionHeaderRow(string text)
+    {
+        GameObject go = CreateUiObject("SectionHeader", m_JointContent);
+        go.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 30f);
+        TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
+        tmp.text = text;
+        tmp.fontSize = 20f;
+        tmp.color = HeaderColor;
+        tmp.alignment = TextAlignmentOptions.MidlineLeft;
+        return go;
+    }
+
+    SensorRow CreateSensorRow(SimulationControl.GuiSensorInfo info)
+    {
+        GameObject rowGo = CreateUiObject(info.label, m_JointContent);
+        rowGo.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 32f);
+
+        GameObject labelGo = CreateUiObject("Label", rowGo.transform);
+        RectTransform labelRt = labelGo.GetComponent<RectTransform>();
+        labelRt.anchorMin = new Vector2(0f, 0f);
+        labelRt.anchorMax = new Vector2(0.68f, 1f);
+        labelRt.offsetMin = new Vector2(4f, 0f);
+        labelRt.offsetMax = new Vector2(-2f, 0f);
+        TextMeshProUGUI label = labelGo.AddComponent<TextMeshProUGUI>();
+        label.text = info.label;
+        label.fontSize = 14f;
+        label.color = TextColor;
+        label.alignment = TextAlignmentOptions.MidlineLeft;
+        label.textWrappingMode = TextWrappingModes.NoWrap;
+        label.overflowMode = TextOverflowModes.Ellipsis;
+
+        // 行ボタンと同じ部材 (UISprite + Button + TMP 子) の小さな On/Off ボタン。
+        GameObject buttonGo = CreateUiObject("Toggle", rowGo.transform);
+        RectTransform buttonRt = buttonGo.GetComponent<RectTransform>();
+        buttonRt.anchorMin = new Vector2(0.7f, 0.08f);
+        buttonRt.anchorMax = new Vector2(1f, 0.92f);
+        buttonRt.offsetMin = Vector2.zero;
+        buttonRt.offsetMax = new Vector2(-4f, 0f);
+        Image buttonImage = buttonGo.AddComponent<Image>();
+        buttonImage.sprite = m_UiSprite;
+        buttonImage.type = Image.Type.Sliced;
+        buttonImage.color = Color.white;
+        Button button = buttonGo.AddComponent<Button>();
+        button.targetGraphic = buttonImage;
+        GameObject buttonTextGo = CreateUiObject("Text (TMP)", buttonGo.transform);
+        RectTransform buttonTextRt = buttonTextGo.GetComponent<RectTransform>();
+        buttonTextRt.anchorMin = Vector2.zero;
+        buttonTextRt.anchorMax = Vector2.one;
+        buttonTextRt.offsetMin = Vector2.zero;
+        buttonTextRt.offsetMax = Vector2.zero;
+        TextMeshProUGUI buttonText = buttonTextGo.AddComponent<TextMeshProUGUI>();
+        buttonText.fontSize = 14f;
+        buttonText.color = TextColor;
+        buttonText.alignment = TextAlignmentOptions.Center;
+
+        var row = new SensorRow
+        {
+            info = info,
+            root = rowGo,
+            toggleImage = buttonImage,
+            toggleLabel = buttonText,
+        };
+
+        // 点群系は前回有効にした可視化が生きていればトグル状態を復元する。
+        if (!row.IsImageKind)
+        {
+            row.visualizer = SensorVisualization.FindAttachedPointCloud(info);
+        }
+        UpdateSensorRowVisual(row);
+
+        button.onClick.AddListener(() => ToggleSensorRow(row));
+        return row;
+    }
+
+    void ToggleSensorRow(SensorRow row)
+    {
+        if (row.info.sensor == null)
+        {
+            return; // エンティティ破棄済み。次の Update の選択チェックで畳まれる
+        }
+
+        if (row.visualizer != null)
+        {
+            if (row.IsImageKind)
+            {
+                Destroy(row.visualizer);
+                if (row.previewRow != null)
+                {
+                    Destroy(row.previewRow);
+                    row.previewRow = null;
+                }
+            }
+            else
+            {
+                SensorVisualization.DetachPointCloud(row.info, row.visualizer);
+            }
+            row.visualizer = null;
+        }
+        else if (row.IsImageKind)
+        {
+            row.visualizer = AttachImagePreview(row);
+        }
+        else
+        {
+            row.visualizer = SensorVisualization.AttachPointCloud(row.info);
+        }
+        UpdateSensorRowVisual(row);
+    }
+
+    void UpdateSensorRowVisual(SensorRow row)
+    {
+        bool on = row.visualizer != null;
+        row.toggleLabel.text = on ? "On" : "Off";
+        row.toggleImage.color = on ? SelectedColor : Color.white;
+    }
+
+    /// <summary>
+    /// センサ行の直後にプレビュー行 (RawImage) を差し込み、UnitySensors の
+    /// TextureVisualizer をセンサへ取り付けて表示先にする。行の高さはカメラの
+    /// アスペクト比から先に決めておく (TextureVisualizer も Start で同じ計算を
+    /// するが、レイアウト前に走ると幅 0 になるため)。
+    /// </summary>
+    Component AttachImagePreview(SensorRow row)
+    {
+        var textureSource = row.info.sensor as UnitySensors.Interface.Sensor.ITextureInterface;
+        if (textureSource == null)
+        {
+            return null;
+        }
+        bool useTexture1 = row.info.kind == SimulationControl.GuiSensorVizKind.ImageTexture1;
+        Texture texture = useTexture1 ? textureSource.texture1 : textureSource.texture0;
+        if (texture == null)
+        {
+            return null;
+        }
+
+        float width = m_JointContent.rect.width - 12f; // レイアウトの左右 padding ぶん
+        if (width <= 0f)
+        {
+            width = 264f;
+        }
+
+        GameObject previewGo = CreateUiObject(row.info.label + " preview", m_JointContent);
+        RectTransform previewRt = previewGo.GetComponent<RectTransform>();
+        previewRt.sizeDelta = new Vector2(width, width * texture.height / texture.width);
+        previewRt.SetSiblingIndex(row.root.transform.GetSiblingIndex() + 1);
+        RawImage image = previewGo.AddComponent<RawImage>();
+        image.texture = texture;
+
+        row.previewRow = previewGo;
+        var visualizer = row.info.sensor.gameObject
+            .AddComponent<UnitySensors.Visualization.Sensor.TextureVisualizer>();
+        visualizer.Configure(row.info.sensor, image, useTexture1);
+        return visualizer;
     }
 
     JointRow CreateJointRow(SimulationControl.GuiJointInfo joint)
