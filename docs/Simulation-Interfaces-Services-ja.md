@@ -368,3 +368,34 @@ ros2 service call /set_entity_info simulation_interfaces/srv/SetEntityInfo \
 # 1 体だけ消す
 ros2 service call /delete_entity simulation_interfaces/srv/DeleteEntity "{ entity: 'diffbot' }"
 ```
+
+## 実行時設定 (simulation_resources.json の `settings`)
+
+`simulation_resources.json` には任意の `settings` 要素を置ける。起動時に 1 度だけ反映される。
+
+```json
+{
+  "settings": {
+    "physics_hz": 200,
+    "target_fps": 30
+  }
+}
+```
+
+- `physics_hz` — 物理演算レート。`Time.fixedDeltaTime = 1 / physics_hz` を設定する。
+  10〜1000 Hz にクランプ。キーが無ければプロジェクト既定の 50 Hz のまま。
+- `target_fps` — 描画フレームレート (`Application.targetFrameRate`)。1〜1000 にクランプ。
+  キーが無ければ起動時既定の 10 FPS のまま。
+
+要素・フィールドはすべて任意で、無い構成は従来どおりに動く。指定した場合は起動時の
+既定値 (フレームレート入力欄がハードコードしている 10 FPS を含む) より優先され、
+サイドバーの入力欄の表示も実際に効いている値へ更新される。
+
+どちらのレートもサイドバー (`Frame Rate[Hz]` / `Physics Rate[Hz]`) から実行中に変更
+できる。物理レートを上げると高速走行時のホイールスリップが大きく減る
+([URDF-Collision-Material.md](URDF-Collision-Material.md): 1.5 m/s で 50 Hz → 74% スリップ、
+200 Hz → 7%)。ただし実行中の変更は決定性を壊し、サーボモデルの安定余裕 (伝達剛性の
+上限) も物理ステップに紐づいて変わる ([Known-Limitations.md](Known-Limitations.md) 参照)。
+再現性が要る場合は実行中に触らず `settings` で起動時に決めておくこと。FPS 表示の隣の
+HUD には実時間係数 (`RTF`: 壁時計 1 秒あたりのシミュレーション秒。停止・一時停止中は
+`0.00`) が出るので、物理レートを上げたコストはすぐ確認できる。

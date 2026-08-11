@@ -373,3 +373,37 @@ ros2 service call /set_entity_info simulation_interfaces/srv/SetEntityInfo \
 # Remove just this one
 ros2 service call /delete_entity simulation_interfaces/srv/DeleteEntity "{ entity: 'diffbot' }"
 ```
+
+## Runtime settings (`settings` in simulation_resources.json)
+
+`simulation_resources.json` may also carry an optional `settings` section, applied once at
+startup:
+
+```json
+{
+  "settings": {
+    "physics_hz": 200,
+    "target_fps": 30
+  }
+}
+```
+
+- `physics_hz` — physics rate: sets `Time.fixedDeltaTime = 1 / physics_hz`. Clamped to
+  10–1000 Hz. Without the key the project default stays (50 Hz).
+- `target_fps` — rendering frame rate (`Application.targetFrameRate`). Clamped to 1–1000.
+  Without the key the startup default stays (10 FPS).
+
+The whole section and every field in it are optional; existing configs keep behaving
+exactly as before. When present, the values win over the built-in startup defaults
+(including the hardcoded 10 FPS the frame-rate input applies), and the sidebar input
+fields are refreshed to show the effective values.
+
+Both rates can also be changed at runtime from the sidebar (`Frame Rate[Hz]` and
+`Physics Rate[Hz]`). A higher physics rate markedly reduces wheel slip at speed
+([URDF-Collision-Material.md](URDF-Collision-Material.md): 74 % slip at 1.5 m/s at 50 Hz
+vs 7 % at 200 Hz), but changing it mid-run affects determinism, and the servo model's
+stability margins (the transmission-stiffness ceiling) are tied to the physics step —
+see [Known-Limitations.md](Known-Limitations.md). When repeatability matters, set the
+rate once in `settings` instead of editing it live. The HUD next to the FPS counter shows
+the real-time factor (`RTF`) — simulated seconds per wall-clock second, `0.00` while
+stopped or paused — so the cost of a higher physics rate is visible immediately.

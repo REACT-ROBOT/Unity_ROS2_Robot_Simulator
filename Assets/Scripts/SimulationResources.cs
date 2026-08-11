@@ -48,6 +48,7 @@ public class SimulationResourceConfig
     public string[] spawnable_paths;   // GetSpawnables が走査するディレクトリ
     public string[] world_paths;       // GetAvailableWorlds が走査するディレクトリ
     public SimulationNamedPoseConfig[] named_poses;
+    public SimulationSettingsConfig settings;  // 任意。反映は SimulationSettings.cs 側
 }
 
 /// <summary>
@@ -97,6 +98,15 @@ public static class SimulationResources
     public static string[] WorldPaths
     {
         get { EnsureLoaded(); return s_Config.world_paths ?? Array.Empty<string>(); }
+    }
+
+    /// <summary>
+    /// settings 要素。JsonUtility は未指定のフィールドを既定値 (0) のまま残すので、
+    /// 呼び出し側は「0 = 未指定」として扱う。要素ごと無い場合は null になりうる。
+    /// </summary>
+    public static SimulationSettingsConfig Settings
+    {
+        get { EnsureLoaded(); return s_Config.settings; }
     }
 
     /// <summary>
