@@ -59,6 +59,12 @@ public partial class SimulationControl : MonoBehaviour
     [SerializeField]
     string m_ResetSimulationServiceName = "reset_simulation";
     [SerializeField]
+    /// <summary>
+    /// 再生・ステップ実行時に使う時間倍率 (settings.time_scale で設定)。
+    /// 1 = 実時間。ステップ数や物理の刻みは変わらず、壁時計に対する速度だけが変わる。
+    /// </summary>
+    public static float ConfiguredTimeScale = 1f;
+
     string m_StepSimulationServiceName = "step_simulation";
     [SerializeField]
     string m_SpawnEntityServiceName = "spawn_entity";
@@ -316,7 +322,7 @@ public partial class SimulationControl : MonoBehaviour
         else if (state == SimulationStateMsg.STATE_PLAYING)
         {
             m_SimulationState = state;
-            Time.timeScale = 1f;
+            Time.timeScale = ConfiguredTimeScale;
             SetPlayStopIcon(stopIcon);
         }
         else if (state == SimulationStateMsg.STATE_PAUSED)
@@ -357,7 +363,7 @@ public partial class SimulationControl : MonoBehaviour
         if (m_SimulationState == SimulationStateMsg.STATE_PAUSED || m_SimulationState == SimulationStateMsg.STATE_STOPPED)
         {
             m_SimulationState = SimulationStateMsg.STATE_PLAYING;
-            Time.timeScale = 1f;
+            Time.timeScale = ConfiguredTimeScale;
             SetPlayStopIcon(stopIcon);
         }
         else
@@ -1330,7 +1336,14 @@ public partial class SimulationControl : MonoBehaviour
                                 break;
                             case "camera":
                                 Debug.Log("sensor type 'camera' found");
-                                RGBCameraSensor cameraSensor = targetObject.AddComponent<RGBCameraSensor>();
+                                if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+                                {
+                                    // -nographics ではレンダリングできないので、描画依存のセンサは作らない
+                                    // (深度カメラと LiDAR はレイキャスト実装なのでヘッドレスでも動く)
+                                    Debug.LogWarning("sensor 'camera' on " + sensorLinkName + " requires rendering; skipped under -nographics (headless). Use depth_camera or lidar instead.");
+                                    break;
+                                }
+                                                                RGBCameraSensor cameraSensor = targetObject.AddComponent<RGBCameraSensor>();
                                 float cameraFov = TryParseFloat(sensor.SelectSingleNode("horizontal_fov").InnerText) * 180.0f / 3.14f;
                                 int image_width, image_height;
                                 int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out image_width);
@@ -1378,7 +1391,14 @@ public partial class SimulationControl : MonoBehaviour
                                 break;
                             case "wideanglecamera":
                                 Debug.Log("sensor type 'wideanglecamera' found");
-                                FisheyeCameraSensor fisheyeCameraSensor = targetObject.AddComponent<FisheyeCameraSensor>();
+                                if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+                                {
+                                    // -nographics ではレンダリングできないので、描画依存のセンサは作らない
+                                    // (深度カメラと LiDAR はレイキャスト実装なのでヘッドレスでも動く)
+                                    Debug.LogWarning("sensor 'wideanglecamera' on " + sensorLinkName + " requires rendering; skipped under -nographics (headless). Use depth_camera or lidar instead.");
+                                    break;
+                                }
+                                                                FisheyeCameraSensor fisheyeCameraSensor = targetObject.AddComponent<FisheyeCameraSensor>();
                                 float fisheyeFov = TryParseFloat(sensor.SelectSingleNode("horizontal_fov").InnerText) * 180.0f / 3.14f;
                                 int fisheye_image_width, fisheye_image_height;
                                 int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out fisheye_image_width);
@@ -1426,7 +1446,14 @@ public partial class SimulationControl : MonoBehaviour
                                 break;
                             case "panoramiccamera":
                                 Debug.Log("sensor type 'panoramiccamera' found");
-                                PanoramicCameraSensor panoramicCameraSensor = targetObject.AddComponent<PanoramicCameraSensor>();
+                                if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+                                {
+                                    // -nographics ではレンダリングできないので、描画依存のセンサは作らない
+                                    // (深度カメラと LiDAR はレイキャスト実装なのでヘッドレスでも動く)
+                                    Debug.LogWarning("sensor 'panoramiccamera' on " + sensorLinkName + " requires rendering; skipped under -nographics (headless). Use depth_camera or lidar instead.");
+                                    break;
+                                }
+                                                                PanoramicCameraSensor panoramicCameraSensor = targetObject.AddComponent<PanoramicCameraSensor>();
                                 float panoramicFov = TryParseFloat(sensor.SelectSingleNode("horizontal_fov").InnerText) * 180.0f / 3.14f;
                                 int panoramic_image_width, panoramic_image_height;
                                 int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out panoramic_image_width);
@@ -1529,7 +1556,14 @@ public partial class SimulationControl : MonoBehaviour
                                 break;
                             case "rgbd_camera":
                                 Debug.Log("sensor type 'rgbd_camera' found");
-                                RGBDCameraSensor rgbdCameraSensor = targetObject.AddComponent<RGBDCameraSensor>();
+                                if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+                                {
+                                    // -nographics ではレンダリングできないので、描画依存のセンサは作らない
+                                    // (深度カメラと LiDAR はレイキャスト実装なのでヘッドレスでも動く)
+                                    Debug.LogWarning("sensor 'rgbd_camera' on " + sensorLinkName + " requires rendering; skipped under -nographics (headless). Use depth_camera or lidar instead.");
+                                    break;
+                                }
+                                                                RGBDCameraSensor rgbdCameraSensor = targetObject.AddComponent<RGBDCameraSensor>();
                                 float rgbdFov = TryParseFloat(sensor.SelectSingleNode("horizontal_fov").InnerText) * 180.0f / 3.14f;
                                 int rgbd_image_width, rgbd_image_height;
                                 int.TryParse(sensor.SelectSingleNode("image/width").InnerText, out rgbd_image_width);

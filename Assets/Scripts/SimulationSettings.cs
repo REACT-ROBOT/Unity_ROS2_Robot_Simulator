@@ -11,6 +11,7 @@ public class SimulationSettingsConfig
 {
     public float physics_hz;  // 物理演算レート [Hz]。0 = 未指定
     public int target_fps;    // Application.targetFrameRate。0 = 未指定
+    public float time_scale;  // 再生/ステップの時間倍率。0 = 未指定 (=1: 実時間)
 }
 
 /// <summary>
@@ -29,6 +30,8 @@ public class SimulationSettingsApplier : MonoBehaviour
 {
     public const int MinTargetFps = 1;
     public const int MaxTargetFps = 1000;
+    public const float MinTimeScale = 0.1f;
+    public const float MaxTimeScale = 100f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Bootstrap()
@@ -78,6 +81,17 @@ public class SimulationSettingsApplier : MonoBehaviour
             int fps = Mathf.Clamp(settings.target_fps, MinTargetFps, MaxTargetFps);
             Application.targetFrameRate = fps;
             Debug.Log($"[SimulationSettings] target_fps = {fps}");
+        }
+
+        if (settings.time_scale > 0f)
+        {
+            float scale = Mathf.Clamp(settings.time_scale, MinTimeScale, MaxTimeScale);
+            SimulationControl.ConfiguredTimeScale = scale;
+            // 高倍率では 1 フレームに進められる物理時間が maximumDeltaTime で
+            // 頭打ちになるので、倍率ぶんだけ引き上げる (RL 用途はレイテンシより
+            // スループット優先)。
+            Time.maximumDeltaTime = Mathf.Max(Time.maximumDeltaTime, scale / 3f);
+            Debug.Log($"[SimulationSettings] time_scale = {scale}");
         }
     }
 

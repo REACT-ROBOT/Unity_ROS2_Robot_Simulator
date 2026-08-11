@@ -515,7 +515,7 @@ public partial class SimulationControl
 
     private IEnumerator StepRoutine(ulong steps, ActionGoalHandle handle, TaskCompletionSource<bool> completion)
     {
-        Time.timeScale = 1f;
+        Time.timeScale = ConfiguredTimeScale;
         for (ulong i = 0; i < steps; i++)
         {
             // WaitForFixedUpdate はその回の物理ステップが終わってから再開するので、

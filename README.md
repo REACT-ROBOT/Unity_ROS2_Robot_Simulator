@@ -119,6 +119,41 @@ going while the simulation is stopped or paused — the value simply freezes, as
 `reset_simulation` with `SCOPE_TIME` puts it back to zero. All message stamps published here
 (`/joint_states`, `/ground_truth`, `/tf`) come from this same clock.
 
+## Headless mode (CI / reinforcement learning)
+
+The built player runs without a display:
+
+```bash
+./Unity_ROS2_Robot_Simulator.x86_64 -batchmode -nographics
+```
+
+Everything service- and physics-side works headless: all simulation_interfaces services and
+the `simulate_steps` action, `/clock`, joint states/commands, ground truth and TF, and the
+raycast-based sensors — lidar, the depth camera (its image is produced on the CPU, so no GPU
+is needed), contact, GNSS and IMU. Rendering-dependent sensors (`camera`, `wideanglecamera`,
+`panoramiccamera`, `rgbd_camera`) cannot work without a graphics device; they are skipped at
+spawn with a warning, so their topics simply do not appear. The GUI point-cloud overlays are
+likewise unavailable. On a machine that does have a GPU and a display server (or virtual
+display such as Xvfb), run with `-batchmode` alone — no window is shown but rendering still
+works, so the camera sensors stay available.
+
+Pacing comes from `simulation_resources.json` (`SIMULATION_RESOURCES_CONFIG`):
+
+```json
+{ "settings": { "physics_hz": 100, "target_fps": 500, "time_scale": 10 } }
+```
+
+- `target_fps` lifts the 10 FPS default so sensors can publish at their URDF `update_rate`
+  (a sensor never updates faster than the application frame rate).
+- `time_scale` (0.1–100) multiplies simulated time against the wall clock for both `PLAYING`
+  and stepping. Physics still advances in exact `1/physics_hz` increments — only the
+  wall-clock speed changes, so `step_simulation` semantics are untouched. For RL, pause the
+  simulation and drive it with `step_simulation` / `simulate_steps`; with the settings above,
+  stepping runs an order of magnitude faster than real time (CPU permitting).
+
+The conformance suite (below) accepts `--headless` to launch the simulator with
+`-batchmode -nographics`, which is how to run it on a machine with no display at all.
+
 ## Verifying the services
 
 A conformance suite connects to a running simulator and checks that these services behave as

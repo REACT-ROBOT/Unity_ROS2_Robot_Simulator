@@ -65,6 +65,13 @@ public static class SensorVisualization
     /// </summary>
     public static Component AttachPointCloud(SimulationControl.GuiSensorInfo info)
     {
+        if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+        {
+            // -nographics では描画できない (SIM_AUTO_SENSOR_VIZ をヘッドレスで
+            // 使ったときにコンピュートバッファ生成で落ちるのを防ぐ)
+            Debug.LogWarning("[SensorVisualization] point cloud visualization is unavailable under -nographics");
+            return null;
+        }
         GameObject target = info.sensor.gameObject;
         switch (info.kind)
         {

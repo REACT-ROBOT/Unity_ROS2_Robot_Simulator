@@ -117,6 +117,41 @@ srv で定義されている 22 サービスすべてに対応しています (�
 `SCOPE_TIME` で呼ぶと時刻はゼロに戻ります。ここから配信されるメッセージのスタンプ
 (`/joint_states`、`/ground_truth`、`/tf`) もすべて同じ時計から取っています。
 
+## ヘッドレスモード (CI・強化学習)
+
+ビルドしたプレイヤーはディスプレイ無しで実行できます:
+
+```bash
+./Unity_ROS2_Robot_Simulator.x86_64 -batchmode -nographics
+```
+
+サービスと物理まわりはすべてヘッドレスで動作します: simulation_interfaces の全サービスと
+`simulate_steps` アクション、`/clock`、関節の状態/指令、ground truth と TF、そして
+レイキャスト系のセンサ — LiDAR、深度カメラ (深度画像は CPU で生成されるため GPU 不要)、
+接触、GNSS、IMU。レンダリングに依存するセンサ (`camera`, `wideanglecamera`,
+`panoramiccamera`, `rgbd_camera`) はグラフィックスデバイス無しでは動かせないため、
+スポーン時に警告を出してスキップされます (トピック自体が現れません)。GUI の点群重畳も
+使えません。GPU とディスプレイサーバ (Xvfb などの仮想ディスプレイでも可) があるマシンでは
+`-batchmode` だけを付けて起動すると、ウィンドウは出ませんがレンダリングは動くので、
+カメラセンサもそのまま使えます。
+
+ペーシングは `simulation_resources.json` (`SIMULATION_RESOURCES_CONFIG`) で指定します:
+
+```json
+{ "settings": { "physics_hz": 100, "target_fps": 500, "time_scale": 10 } }
+```
+
+- `target_fps` は既定の 10 FPS を引き上げ、センサが URDF の `update_rate` どおりに
+  配信できるようにします (センサはアプリのフレームレートより速くは更新されません)。
+- `time_scale` (0.1〜100) は `PLAYING` とステップ実行の両方で、壁時計に対する
+  シミュレーション時間の倍率を変えます。物理は変わらず `1/physics_hz` 刻みで進むため、
+  `step_simulation` の意味は変わりません — 壁時計上の速度だけが変わります。強化学習では
+  一時停止して `step_simulation` / `simulate_steps` で回すのが基本で、上の設定なら
+  実時間の 10 倍程度でステップできます (CPU 性能次第)。
+
+適合性テスト (下記) は `--headless` を付けると `-batchmode -nographics` で
+シミュレータを起動するので、ディスプレイの無いマシンでもそのまま実行できます。
+
 ## サービスの動作確認
 
 上記のサービス群が仕様どおりに動くかを、実際に動いているシミュレータへ接続して自動検証する
