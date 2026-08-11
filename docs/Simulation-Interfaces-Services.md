@@ -91,12 +91,16 @@ simulation_interfaces reference implementation's use of `std::regex_match`. Use 
 for a substring match. The spec calls for POSIX extended regular expressions; evaluation
 happens through .NET's engine, which accepts ordinary expressions unchanged.
 
-## Worlds are scene JSON
+## Worlds are scene JSON (or an SDF subset)
 
 A "world" here is the scene JSON that the GUI's Save Scene writes (the `SavedSceneData`
 format). Switching Unity scenes was the alternative, but that would require rebuilding the
 player for every new world. JSON stays entirely at runtime, so scenery assembled in the GUI
 can be handed straight to `load_world`.
+
+`load_world` also accepts Gazebo SDF world files (`.sdf` / `.world`) and converts a
+**static subset** of them into the same scenery representation — see
+[SDF worlds](#sdf-worlds) below.
 
 The **built-in stage — ground plane, default lighting — is always present**; a world is
 scenery layered on top of it. At startup the built-in scene counts as the loaded world, so
@@ -174,15 +178,46 @@ never leaves you with the scenery deleted and nothing in its place.
 
 | Situation | Result code |
 |---|---|
-| `uri` is not a file URI, or does not end in `.json` | `UNSUPPORTED_FORMAT` (101) |
+| `uri` is not a file URI, or does not end in `.json` / `.sdf` / `.world` | `UNSUPPORTED_FORMAT` (101) |
 | Both `uri` and `resource_string` are empty | `NO_RESOURCE` (102) |
-| Not readable as JSON | `RESOURCE_PARSE_ERROR` (103) |
-| File missing, or a mesh could not be loaded | `MISSING_ASSETS` (104) |
-| An element has an unknown `type` | `UNSUPPORTED_ELEMENTS` (106) |
+| Not readable as JSON (or as SDF XML with a `<world>`) | `RESOURCE_PARSE_ERROR` (103) |
+| File missing, or a mesh / `<include>` model could not be resolved | `MISSING_ASSETS` (104) |
+| An element has an unknown `type` / an unsupported SDF element was dropped | `UNSUPPORTED_ELEMENTS` (106) |
 
 `ignore_missing_or_unsupported_assets` and `fail_on_unsupported_element` suppress
 `MISSING_ASSETS` and `UNSUPPORTED_ELEMENTS` respectively. Skipped elements are listed in
 `error_message` either way.
+
+## SDF worlds
+
+`load_world` (and the GUI's Load button) accept Gazebo SDF world files. A `resource_string`
+that starts with `<` is treated as SDF too. The file is converted at load time into the
+same scenery objects a scene JSON produces; the simulator does not keep a Gazebo scene
+graph. What is supported:
+
+- `<model>` (including SDF 1.8 nested models) with `<link>` / `<visual>` poses composed
+  `model → link → visual` and converted from ROS (Z-up, right-handed) to Unity axes.
+  Links without visuals fall back to their `<collision>` shapes.
+- Geometry: `box`, `cylinder`, `sphere`, `plane`, `mesh`. Meshes keep the ROS/Gazebo Z-up
+  convention: STL is loaded with the URDF importer's loader (vertices converted per-vertex),
+  Collada honours its `up_axis`. `heightmap`, `polyline` etc. are reported as unsupported.
+- `<material>` `diffuse`/`ambient` colours (Gazebo `<script>` materials are ignored).
+- `<include>` with `model://` URIs. Search order: the world file's directory, a `models/`
+  directory next to it, `world_paths` and `spawnable_paths` from
+  `simulation_resources.json`, then `GZ_SIM_RESOURCE_PATH` and `GAZEBO_MODEL_PATH`.
+  `<pose>`, `<name>` and `<static>` overrides in the include element are honoured.
+- `<light>` directional / point / spot (position, `<direction>`, diffuse colour).
+
+Everything is placed as **static scenery** — a non-static model is still placed (with a
+note in `error_message`); it does not fall or push things. Dynamic objects are the job of
+robot entities spawned from URDF. `<physics>`, `<scene>`, `<gui>`, `<plugin>` and similar
+settings elements are ignored silently; `<actor>`, `<population>`, `<joint>` motion and
+pose `relative_to` frames are unsupported and reported. Model-only SDF files (no
+`<world>`) are rejected — they are not worlds.
+
+The world's `name` comes from `<world name="...">`, and `get_available_worlds` lists
+`.sdf` / `.world` files from `world_paths` alongside scene JSON (SDF worlds carry no
+tags, so tag filters exclude them unless the filter is empty).
 
 ## Simulated time and /clock
 
@@ -336,8 +371,9 @@ The search order is below; if none exist, the services return empty lists with `
 - `bounds` is optional (it becomes `TYPE_EMPTY`). `type` may only be `box` or `sphere`.
 - `spawnable_paths` is walked recursively, collecting `.urdf`, `.obj`, `.stl`, `.dae`,
   `.fbx` and `.ply`.
-- From `world_paths`, only `.json` files that **parse as a scene** become candidates, since
-  unrelated JSON such as config files will be sitting in the same directories.
+- From `world_paths`, only `.json` files that **parse as a scene** — plus `.sdf` / `.world`
+  files that parse as an SDF world — become candidates, since unrelated JSON such as config
+  files will be sitting in the same directories.
 - Scanning stops after 2000 files in total. When it does, the truncation is reported in
   `error_message` rather than silently dropped.
 

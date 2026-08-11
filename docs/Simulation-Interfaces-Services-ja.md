@@ -87,12 +87,16 @@ srv で定義されているサービスと `SimulatorFeatures` の機能はす�
 書いてください。仕様上は POSIX 拡張正規表現ですが、.NET の正規表現エンジンで評価するため、
 素直な表現はそのまま通ります。
 
-## ワールドはシーン JSON
+## ワールドはシーン JSON (または SDF のサブセット)
 
 このシミュレータの「ワールド」は、GUI の Save Scene が書き出すシーン JSON
 (`SavedSceneData` 形式) です。Unity のシーンを切り替える方式にしなかったのは、
 それだとワールドを増やすたびにプレイヤーのビルドが必要になるためです。JSON なら
 ランタイムで完結し、GUI で組んだ景観をそのまま `load_world` で配れます。
+
+`load_world` は Gazebo の SDF ワールドファイル (`.sdf` / `.world`) も受け付け、
+その**静的なサブセット**を同じ景観表現へ変換します — 下の
+[SDF ワールド](#sdf-ワールド) を参照。
 
 地面や既定のライトといった**組み込みシーンの土台は常に在り**、ワールドはその上に載る
 景観として扱います。起動直後は組み込みシーンを「ロード済みのワールド」と見なすので、
@@ -171,15 +175,46 @@ ros2 service call /get_available_worlds simulation_interfaces/srv/GetAvailableWo
 
 | 状況 | 結果コード |
 |---|---|
-| `uri` が file 以外 / 拡張子が `.json` でない | `UNSUPPORTED_FORMAT` (101) |
+| `uri` が file 以外 / 拡張子が `.json` `.sdf` `.world` のどれでもない | `UNSUPPORTED_FORMAT` (101) |
 | `uri` も `resource_string` も空 | `NO_RESOURCE` (102) |
-| JSON として読めない | `RESOURCE_PARSE_ERROR` (103) |
-| ファイルが無い / メッシュを読み込めない | `MISSING_ASSETS` (104) |
-| 知らない `type` の要素がある | `UNSUPPORTED_ELEMENTS` (106) |
+| JSON として読めない (SDF なら XML に `<world>` が無い) | `RESOURCE_PARSE_ERROR` (103) |
+| ファイルが無い / メッシュや `<include>` のモデルを解決できない | `MISSING_ASSETS` (104) |
+| 知らない `type` の要素がある / 未対応の SDF 要素を落とした | `UNSUPPORTED_ELEMENTS` (106) |
 
 `ignore_missing_or_unsupported_assets` / `fail_on_unsupported_element` で、それぞれ
 `MISSING_ASSETS` / `UNSUPPORTED_ELEMENTS` を無視させられます。読み飛ばした要素は
 どちらの場合も `error_message` に残ります。
+
+## SDF ワールド
+
+`load_world` (と GUI のロードボタン) は Gazebo の SDF ワールドファイルを受け付けます。
+`<` で始まる `resource_string` も SDF として解釈します。読み込み時に既存のシーン JSON と
+同じ景観オブジェクトへ変換され、Gazebo のシーングラフを保持するわけではありません。
+対応しているもの:
+
+- `<model>` (SDF 1.8 の入れ子モデル含む)。pose は `model → link → visual` の順で合成し、
+  ROS (Z-up, 右手系) から Unity 座標系へ変換。`<visual>` の無いリンクは `<collision>` の
+  形状で代用。
+- geometry: `box` / `cylinder` / `sphere` / `plane` / `mesh`。メッシュは ROS/Gazebo 慣習
+  (Z-up) のまま扱う: STL は URDF インポータと同じローダ (頂点単位で座標変換)、Collada は
+  `up_axis` を尊重。`heightmap` や `polyline` などは未対応として報告。
+- `<material>` の `diffuse` / `ambient` 色 (Gazebo の `<script>` マテリアルは無視)。
+- `model://` URI の `<include>`。検索順: ワールドファイルのディレクトリ → その隣の
+  `models/` → `simulation_resources.json` の `world_paths` と `spawnable_paths` →
+  環境変数 `GZ_SIM_RESOURCE_PATH` / `GAZEBO_MODEL_PATH`。include 側の `<pose>` /
+  `<name>` / `<static>` 上書きに対応。
+- `<light>` の directional / point / spot (位置、`<direction>`、diffuse 色)。
+
+すべて**静的な景観**として配置します。static でないモデルもそのまま置かれます
+(`error_message` に記録)。落ちたり押されたりはしません — 動く物体は URDF からスポーン
+するエンティティの領分です。`<physics>` `<scene>` `<gui>` `<plugin>` などの設定要素は
+黙って無視し、`<actor>` `<population>`、`<joint>` による可動、pose の `relative_to`
+フレームは未対応として報告します。`<world>` の無いモデル単体の SDF はワールドでは
+ないので拒否します。
+
+ワールド名は `<world name="...">` から取り、`get_available_worlds` は `world_paths` の
+`.sdf` / `.world` もシーン JSON と並べて列挙します (SDF ワールドにタグは無いので、
+タグで絞ると除外されます)。
 
 ## シミュレーション時刻と /clock
 
@@ -331,8 +366,9 @@ ros2 action send_goal -f /simulate_steps simulation_interfaces/action/SimulateSt
   どちらかで書きます。両方あれば `orientation` を優先します。
 - `bounds` は省略可 (`TYPE_EMPTY` になります)。`type` は `box` か `sphere` のみです。
 - `spawnable_paths` は再帰的に走査し、`.urdf` `.obj` `.stl` `.dae` `.fbx` `.ply` を拾います。
-- `world_paths` からは `.json` のうち**シーンとして読めるもの**だけを候補にします
-  (設定ファイルなど無関係な JSON が混ざるためです)。
+- `world_paths` からは `.json` のうち**シーンとして読めるもの**と、`.sdf` / `.world` の
+  うち **SDF ワールドとして読めるもの**だけを候補にします
+  (設定ファイルなど無関係な JSON やモデル単体の SDF が混ざるためです)。
 - 走査は合計 2000 ファイルで打ち切ります。打ち切ったときは黙って減らさず
   `error_message` に出します。
 

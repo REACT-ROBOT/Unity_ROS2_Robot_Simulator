@@ -85,6 +85,7 @@ NaughtyWaterBuoyancy パッケージ側 (git ピン参照でローカルクロ�
 | 摩擦の `combine` 既定 | `average` なので、床との平均が実効値になる。指定値を効かせるには `combine="maximum"` | 同上 |
 | `ArticulationBody.jointVelocity` | xDrive 駆動中の関節の運動を反映しない。モデルは位置の有限差分を使う | [Servo-Model-Guide-ja.md](Servo-Model-Guide-ja.md) |
 | 点群重畳のカリング | UnitySensors の点群ビジュアライザはワールド原点中心の固定 100 m バウンズで描くため、原点からおよそ 50 m 以上離れたロボットでは重畳が消える (センサトピック自体は影響なし) | README-ja.md のセンサ可視化 |
+| SDF ワールドの静的サブセット外 | SDF `.world` は静的な景観としてのみ読む: static でないモデルも落ちたり押されたりせず、`<joint>` は動かず、`<actor>` `<population>` `<physics>` `<plugin>` は捨てる (`error_message` に報告)。動的な振る舞いは URDF からスポーンするエンティティの領分で、ワールドがロボットを連れてくる形は別途保留中の「ワールドにエンティティを含める」案 | [Simulation-Interfaces-Services-ja.md](Simulation-Interfaces-Services-ja.md) の SDF ワールド |
 
 ## simulation_interfaces の対応状況
 

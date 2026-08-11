@@ -87,6 +87,7 @@ Accepted as-is; no work planned.
 | Default friction `combine` | `average`, so the effective value is the mean with the floor's. Use `combine="maximum"` to make the written value hold | ditto |
 | `ArticulationBody.jointVelocity` | Does not reflect motion of a joint driven by xDrive; the model uses a finite difference of position instead | [Servo-Model-Guide.md](Servo-Model-Guide.md) |
 | Point-cloud overlay culling | The UnitySensors point cloud visualizer draws with a fixed 100 m bounds centered on the world origin, so overlays disappear for robots roughly 50 m or more from the origin (the sensor topics are unaffected) | README.md, sensor visualization |
+| SDF worlds beyond the static subset | SDF `.world` files load as static scenery only: non-static models do not fall or push, `<joint>`s do not move, and `<actor>`/`<population>`/`<physics>`/`<plugin>` are dropped (reported in `error_message`). Dynamic behaviour belongs to entities spawned from URDF; letting a world bring robots with it is the separate deferred "world includes entities" idea | [Simulation-Interfaces-Services.md](Simulation-Interfaces-Services.md), SDF worlds |
 
 ## simulation_interfaces coverage
 

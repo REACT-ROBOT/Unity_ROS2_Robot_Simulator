@@ -116,6 +116,8 @@ public partial class SimulationControl
         string json;
         string worldName;
         string resolvedUri = "";
+        bool isSdf = false;
+        string sdfBaseDir = null;
         if (!string.IsNullOrEmpty(uri))
         {
             if (!Uri.TryCreate(uri, UriKind.Absolute, out Uri parsed) || !parsed.IsFile)
@@ -125,11 +127,12 @@ public partial class SimulationControl
                 return response;
             }
             string path = parsed.LocalPath;
-            if (!string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase))
+            isSdf = SdfWorldLoading.IsSdfWorldPath(path);
+            if (!isSdf && !string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase))
             {
                 response.result.result = LoadWorldResponse.UNSUPPORTED_FORMAT;
                 response.result.error_message =
-                    "World files are ObjectSpawner scene JSON; expected a .json path";
+                    "Expected a .json (scene JSON) or .sdf/.world (SDF) path";
                 return response;
             }
             if (!File.Exists(path))
@@ -150,13 +153,16 @@ public partial class SimulationControl
             }
             worldName = Path.GetFileNameWithoutExtension(path);
             resolvedUri = new Uri(Path.GetFullPath(path)).AbsoluteUri;
+            sdfBaseDir = Path.GetDirectoryName(path);
         }
         else if (!string.IsNullOrEmpty(resourceString))
         {
             // シーン JSON は中のメッシュを絶対パスで指すので、文字列で渡されても
             // そのまま成立する。spawn 側の resource_string と違って対応できる。
+            // XML で始まる文字列は SDF として解釈する (相対パスの基準は無い)。
             json = resourceString;
             worldName = "inline";
+            isSdf = resourceString.TrimStart().StartsWith("<", StringComparison.Ordinal);
         }
         else
         {
@@ -167,7 +173,19 @@ public partial class SimulationControl
 
         // 現在のシーンを消す前に構文を確かめる。読めないものを渡されたときに
         // 景観だけ消えて何も残らない、という壊れ方を避ける。
-        if (!ObjectSpawner.TryParseSceneJson(json, out SavedSceneData sceneData, out string parseError))
+        SavedSceneData sceneData;
+        SceneLoadReport preReport = null;
+        if (isSdf)
+        {
+            if (!SdfWorldLoading.TryParseSdfWorld(json, sdfBaseDir,
+                    out sceneData, out preReport, out string sdfError))
+            {
+                response.result.result = LoadWorldResponse.RESOURCE_PARSE_ERROR;
+                response.result.error_message = sdfError;
+                return response;
+            }
+        }
+        else if (!ObjectSpawner.TryParseSceneJson(json, out sceneData, out string parseError))
         {
             response.result.result = LoadWorldResponse.RESOURCE_PARSE_ERROR;
             response.result.error_message = parseError;
@@ -189,6 +207,14 @@ public partial class SimulationControl
         Clock.ResetTime();
 
         SceneLoadReport report = m_ObjectSpawner.LoadSceneData(sceneData);
+        if (preReport != null)
+        {
+            // SDF の解釈段階の問題 (未対応要素・見つからない include/メッシュ) を
+            // 生成段階の問題と合算して返す。
+            report.missingAssets |= preReport.missingAssets;
+            report.unsupportedElements |= preReport.unsupportedElements;
+            report.messages.InsertRange(0, preReport.messages);
+        }
 
         // 名前・説明・タグはワールドファイルに書かれていればそれを使う。
         // 一覧 (GetAvailableWorlds) と同じ内容が GetCurrentWorld からも見えるように
@@ -311,7 +337,9 @@ public partial class SimulationControl
         {
             foreach (string file in EnumerateFiles(root, problems, budget))
             {
-                if (!string.Equals(Path.GetExtension(file), ".json", StringComparison.OrdinalIgnoreCase))
+                bool isJson = string.Equals(Path.GetExtension(file), ".json", StringComparison.OrdinalIgnoreCase);
+                bool isSdf = SdfWorldLoading.IsSdfWorldPath(file);
+                if (!isJson && !isSdf)
                 {
                     continue;
                 }
@@ -320,14 +348,27 @@ public partial class SimulationControl
                     continue;
                 }
 
-                // 設定ファイルなど無関係な JSON が混ざるので、シーンとして
-                // 読めるものだけを候補にする。
+                // 設定ファイルなど無関係な JSON / モデル単体の SDF が混ざるので、
+                // ワールドとして読めるものだけを候補にする。
                 SavedSceneData sceneData;
                 try
                 {
-                    if (!ObjectSpawner.TryParseSceneJson(File.ReadAllText(file), out sceneData, out _))
+                    string text = File.ReadAllText(file);
+                    if (isJson)
                     {
-                        continue;
+                        if (!ObjectSpawner.TryParseSceneJson(text, out sceneData, out _))
+                        {
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        if (!SdfWorld.SdfWorldImporter.LooksLikeSdfWorld(text)
+                            || !SdfWorldLoading.TryParseSdfWorld(text, Path.GetDirectoryName(file),
+                                    out sceneData, out _, out _))
+                        {
+                            continue;
+                        }
                     }
                 }
                 catch (Exception e)

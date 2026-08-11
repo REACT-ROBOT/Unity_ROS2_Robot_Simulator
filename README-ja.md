@@ -108,6 +108,20 @@ srv で定義されている 22 サービスすべてに対応しています (�
 については [docs/Simulation-Interfaces-Services-ja.md](docs/Simulation-Interfaces-Services-ja.md)
 を参照してください。
 
+### SDF ワールド
+
+`load_world` と GUI のロードボタンは Gazebo の SDF ワールドファイル (`.sdf` / `.world`)
+も受け付けます。**静的なサブセット**がシーン JSON と同じ景観へ変換されます:
+モデル (box/cylinder/sphere/plane/mesh の geometry、Z-up からの pose 合成・変換、
+diffuse 色)、`model://` URI の `<include>` (ワールドファイルのディレクトリ → 隣の
+`models/` → `simulation_resources.json` の検索パス → `GZ_SIM_RESOURCE_PATH` /
+`GAZEBO_MODEL_PATH` の順で解決)、ライトに対応します。STL メッシュは ROS/Gazebo 慣習の
+Z-up のまま扱います。すべて静的な景観として配置され、動的モデル・ジョイント・actor・
+physics 設定・plugin は読み飛ばして応答に報告します。`get_available_worlds` は
+`world_paths` の `.sdf` / `.world` もシーン JSON と並べて列挙します。詳細は
+[docs/Simulation-Interfaces-Services-ja.md](docs/Simulation-Interfaces-Services-ja.md)
+を参照してください。
+
 ## シミュレーション時刻
 
 シミュレーション時刻は `/clock` (`rosgraph_msgs/msg/Clock`、最大 100 Hz。実際の周期は

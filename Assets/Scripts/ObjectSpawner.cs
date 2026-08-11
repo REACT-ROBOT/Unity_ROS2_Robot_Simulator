@@ -17,6 +17,7 @@ public class SavedObjectData
     public float[] rotationEuler; // {x,y,z}
     public float[] scale;         // {x,y,z}
     public string meshPath;       // メッシュファイルのパス
+    public float[] color;         // {r,g,b,a} 省略可。プリミティブとライトに効く
     public bool isActive;
 }
 
@@ -176,6 +177,7 @@ public class ObjectSpawner : MonoBehaviour
                 rotationEuler = new float[] { obj.gameObject.transform.rotation.eulerAngles.x, obj.gameObject.transform.rotation.eulerAngles.y, obj.gameObject.transform.rotation.eulerAngles.z },
                 scale = new float[] { obj.gameObject.transform.localScale.x, obj.gameObject.transform.localScale.y, obj.gameObject.transform.localScale.z },
                 meshPath = obj.meshPath,
+                color = ReadObjectColor(obj.gameObject),
                 isActive = obj.gameObject.activeSelf
             };
             savedSceneData.objects.Add(savedObjectData);
@@ -193,7 +195,12 @@ public class ObjectSpawner : MonoBehaviour
 
     public void LoadSpawnedObjects()
     {
-        string[] selection = StandaloneFileBrowser.OpenFilePanel("Load Scene", "", "json", false);
+        var extensions = new SFB.ExtensionFilter[]
+        {
+            new SFB.ExtensionFilter("Scene / SDF World", new string[] { "json", "sdf", "world" }),
+            new SFB.ExtensionFilter("All Files", "*")
+        };
+        string[] selection = StandaloneFileBrowser.OpenFilePanel("Load Scene", "", extensions, false);
         // キャンセルすると空配列が返る。添字で取ると例外になるので先に見る。
         if (selection == null || selection.Length == 0 || string.IsNullOrEmpty(selection[0]))
         {
@@ -209,20 +216,40 @@ public class ObjectSpawner : MonoBehaviour
     }
 
     /// <summary>
-    /// 保存済みシーン JSON を読み込む。ROS の LoadWorld から呼ぶのでダイアログを挟まない。
+    /// 保存済みシーン JSON か SDF ワールドを読み込む。ROS の LoadWorld から
+    /// 呼ぶのでダイアログを挟まない。GUI からは追記ロード (既存の景観は残る)。
     /// </summary>
     public SceneLoadReport LoadSceneFile(string path)
     {
+        string text;
         try
         {
-            return LoadSceneFromJson(File.ReadAllText(path));
+            text = File.ReadAllText(path);
         }
         catch (Exception e)
         {
-            var report = new SceneLoadReport { parseError = true };
-            report.messages.Add($"{path} を読めなかった: {e.Message}");
+            var failed = new SceneLoadReport { parseError = true };
+            failed.messages.Add($"{path} を読めなかった: {e.Message}");
+            return failed;
+        }
+
+        if (SdfWorldLoading.IsSdfWorldPath(path))
+        {
+            if (!SdfWorldLoading.TryParseSdfWorld(text, Path.GetDirectoryName(path),
+                    out SavedSceneData sdfScene, out SceneLoadReport preReport, out string error))
+            {
+                var failed = new SceneLoadReport { parseError = true };
+                failed.messages.Add(error);
+                return failed;
+            }
+            SceneLoadReport report = LoadSceneData(sdfScene);
+            report.missingAssets |= preReport.missingAssets;
+            report.unsupportedElements |= preReport.unsupportedElements;
+            report.messages.InsertRange(0, preReport.messages);
             return report;
         }
+
+        return LoadSceneFromJson(text);
     }
 
     /// <summary>
@@ -333,6 +360,35 @@ public class ObjectSpawner : MonoBehaviour
             AddListItem(ob, objData.meshPath);
             return;
         }
+        if (objData.type == "RosMesh")
+        {
+            // SDF ワールド由来の ROS/Gazebo 慣習 (Z-up) メッシュ。STL は URDF と
+            // 同じローダで読む (頂点が ROS→Unity 変換されるので向きが合う)。
+            GameObject ob = null;
+            try
+            {
+                ob = LoadRosConventionMesh(objData.meshPath);
+            }
+            catch (Exception e)
+            {
+                report.messages.Add($"メッシュ '{objData.meshPath}' の読み込みで例外: {e.Message}");
+            }
+            if (ob == null)
+            {
+                report.missingAssets = true;
+                report.messages.Add($"メッシュ '{objData.meshPath}' を読み込めなかった");
+                return;
+            }
+            ob.name = $"RosMesh_{spawnedObjects.Count}";
+            ApplyTransform(ob, objData, applyScale: true);
+            SetStaticRecursively(ob);
+            SetupLODForLargeMesh(ob);
+            SetupMeshColliders(ob);
+            ApplyObjectColor(ob, objData.color);
+            ob.SetActive(objData.isActive);
+            AddListItem(ob, objData.meshPath);
+            return;
+        }
         if (objData.type == "Directional Light")
         {
             var ob = new GameObject($"DirectionalLight_{spawnedObjects.Count}");
@@ -340,6 +396,7 @@ public class ObjectSpawner : MonoBehaviour
             light.type = LightType.Directional;
             light.shadows = LightShadows.Soft;
             ApplyTransform(ob, objData, applyScale: false);
+            ApplyLightColor(light, objData.color);
             ob.SetActive(objData.isActive);
             AddListItem(ob);
             return;
@@ -353,6 +410,7 @@ public class ObjectSpawner : MonoBehaviour
             light.range = 10f;
             light.intensity = 20f;
             ApplyTransform(ob, objData, applyScale: false);
+            ApplyLightColor(light, objData.color);
             ob.SetActive(objData.isActive);
             AddListItem(ob);
             return;
@@ -367,6 +425,7 @@ public class ObjectSpawner : MonoBehaviour
             light.intensity = 1f;
             light.spotAngle = 30f;
             ApplyTransform(ob, objData, applyScale: false);
+            ApplyLightColor(light, objData.color);
             ob.SetActive(objData.isActive);
             AddListItem(ob);
             return;
@@ -384,6 +443,78 @@ public class ObjectSpawner : MonoBehaviour
         ApplyTransform(go, objData, applyScale: true);
         go.SetActive(objData.isActive);
         RegisterSpawn(go);
+        ApplyObjectColor(go, objData.color); // RegisterSpawn がマテリアルを張り替えるので後から
+    }
+
+    /// <summary>
+    /// SDF ワールド慣習 (ROS, Z-up) のメッシュを読み込む。STL は URDF-Importer の
+    /// ローダ (頂点を ROS→Unity 変換する)、DAE は up_axis を見て向きを直す。
+    /// それ以外は素の Assimp ロード。
+    /// </summary>
+    private static GameObject LoadRosConventionMesh(string meshPath)
+    {
+        if (string.IsNullOrEmpty(meshPath))
+        {
+            return null;
+        }
+        if (meshPath.EndsWith(".stl", StringComparison.OrdinalIgnoreCase))
+        {
+            return StlAssetPostProcessor.CreateStlGameObjectRuntime(meshPath);
+        }
+        if (meshPath.EndsWith(".dae", StringComparison.OrdinalIgnoreCase))
+        {
+            float globalScale = ColladaAssetPostProcessor.ReadGlobalScale(meshPath);
+            GameObject ob = MeshImporter.Load(meshPath, globalScale, globalScale, globalScale);
+            if (ob != null)
+            {
+                ColladaAssetPostProcessor.ApplyColladaOrientation(ob, meshPath);
+            }
+            return ob;
+        }
+        return MeshImporter.Load(meshPath);
+    }
+
+    /// <summary>ルート直下のレンダラとライトから保存用の色を拾う。</summary>
+    private static float[] ReadObjectColor(GameObject go)
+    {
+        var light = go.GetComponent<Light>();
+        if (light != null)
+        {
+            Color c = light.color;
+            return new float[] { c.r, c.g, c.b, c.a };
+        }
+        var rend = go.GetComponent<Renderer>();
+        if (rend != null && rend.sharedMaterial != null)
+        {
+            Color c = rend.sharedMaterial.color;
+            return new float[] { c.r, c.g, c.b, c.a };
+        }
+        return null;
+    }
+
+    private static void ApplyLightColor(Light light, float[] color)
+    {
+        if (color != null && color.Length >= 3)
+        {
+            light.color = new Color(color[0], color[1], color[2], 1f);
+        }
+    }
+
+    /// <summary>レンダラのメインカラーを差し替える (URP Lit の _BaseColor に効く)。</summary>
+    private static void ApplyObjectColor(GameObject go, float[] color)
+    {
+        if (color == null || color.Length < 3)
+        {
+            return;
+        }
+        var c = new Color(color[0], color[1], color[2], color.Length >= 4 ? color[3] : 1f);
+        foreach (var rend in go.GetComponentsInChildren<Renderer>())
+        {
+            if (rend.material != null)
+            {
+                rend.material.color = c;
+            }
+        }
     }
 
     private static void ApplyTransform(GameObject go, SavedObjectData objData, bool applyScale)

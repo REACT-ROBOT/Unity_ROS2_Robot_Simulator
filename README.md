@@ -110,6 +110,20 @@ scene JSON, and how to configure `get_spawnables` and named poses through
 `simulation_resources.json`, see
 [docs/Simulation-Interfaces-Services.md](docs/Simulation-Interfaces-Services.md).
 
+### SDF worlds
+
+`load_world` and the GUI's Load button also accept Gazebo SDF world files (`.sdf` /
+`.world`). A **static subset** is converted into the same scenery the scene JSON produces:
+models (box/cylinder/sphere/plane/mesh geometry, poses composed and converted from Z-up,
+diffuse colours), `<include>` with `model://` URIs (resolved from the world file's
+directory, a `models/` directory next to it, the `simulation_resources.json` search paths,
+and `GZ_SIM_RESOURCE_PATH` / `GAZEBO_MODEL_PATH`), and lights. STL meshes keep the
+ROS/Gazebo Z-up convention. Everything is placed as static scenery — dynamic models,
+joints, actors, physics settings and plugins are skipped and reported in the response.
+`get_available_worlds` lists `.sdf` / `.world` files found in `world_paths` alongside
+scene JSON. Details in
+[docs/Simulation-Interfaces-Services.md](docs/Simulation-Interfaces-Services.md).
+
 ## Simulated time
 
 The simulator publishes its simulation clock on `/clock` (`rosgraph_msgs/msg/Clock`, up to

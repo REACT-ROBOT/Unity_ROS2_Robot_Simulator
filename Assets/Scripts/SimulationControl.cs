@@ -486,8 +486,8 @@ public partial class SimulationControl : MonoBehaviour
         response.features.spawn_formats = new string[] { "urdf" };
         response.features.custom_info =
             "Unity_ROS2_Robot_Simulator. Mesh files (obj/stl/dae) can also be spawned by uri. " +
-            "Worlds are ObjectSpawner scene JSON files; spawnable, world and named-pose sources " +
-            "come from simulation_resources.json.";
+            "Worlds are ObjectSpawner scene JSON files or a static subset of SDF (.sdf/.world); " +
+            "spawnable, world and named-pose sources come from simulation_resources.json.";
         return response;
     }
 
