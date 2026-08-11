@@ -4,7 +4,7 @@ Things that are **left alone on purpose** rather than left broken, plus the thin
 rules out. The details live in the other documents, so this page only records **what is
 deferred and why**, and what you would have to decide before picking it up.
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
 
 ## Deferred (fixable, but not being fixed now)
 
@@ -46,31 +46,6 @@ features, so they do not fail against a simulator that has the newer ones.
 branches should carry the same checks, or whether `humble` should stay frozen where it is.
 See the "Branches" section of the
 [Unity_ROS2_sample README](https://github.com/hijimasa/Unity_ROS2_sample).
-
-### 3. Robots with water features still gain ~1 kg per collision geometry
-
-When a URDF declares `<buoyancy_material>` or `<hydrodynamics>`, the spawner attaches
-`ArticulationFloatingObject` / `HydrodynamicFloatingObject` to each link's collision-geometry
-GameObject. Both components carry `[RequireComponent(typeof(ArticulationBody))]`, so Unity
-implicitly creates an extra `ArticulationBody` (default mass 1 kg, fixed-jointed to the link)
-on every collision geometry. Robots **without** water elements in the URDF no longer receive
-these components, so they carry no extra bodies; robots **with** them still do — each collision
-geometry adds about 1 kg to the robot's total mass, shifts the link's centre of mass toward the
-collider origin, and inflates ground-contact forces and wheel normal loads accordingly.
-
-**Why deferred**: the buoyancy force is computed as `water.Density * (body.mass / density) * g`
-from that implicit body's own mass, so zeroing or shrinking the mass would silently change the
-floating equilibrium of every existing water robot. The clean fix belongs in the
-NaughtyWaterBuoyancy package (referenced by git pin, no local clone): drop the
-`RequireComponent(ArticulationBody)`, resolve the body via
-`GetComponentInParent<ArticulationBody>()` so forces apply to the link body, and compute
-displaced volume from the collider geometry instead of the mass/density ratio.
-`HydrodynamicFloatingObject` (in this repo) would need the same change, and its slamming force
-also reads `body.mass` directly.
-
-**To pick it up**: patch or fork the package as above, migrate `HydrodynamicFloatingObject` in
-step, and re-tune the `density` values of existing water URDFs — today the mass/density ratio
-effectively encodes displaced volume relative to the phantom 1 kg body.
 
 ## Ruled out by design
 

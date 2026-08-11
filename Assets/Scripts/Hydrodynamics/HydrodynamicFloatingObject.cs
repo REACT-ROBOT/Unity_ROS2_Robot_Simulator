@@ -13,15 +13,29 @@ namespace Hydrodynamics
     /// <summary>
     /// Extended floating object that adds MARUS hydrodynamic forces to ArticulationBody robots.
     /// Implements: Buoyancy, Viscous Water Resistance, Pressure Drag, Slamming Force, Air Resistance
+    /// リンク本体 (ArticulationBody を持つ GameObject) に取り付けること。複合コライダの
+    /// トリガーコールバックはボディ側 GameObject に届くため。コライダは子から解決し、
+    /// 余計な剛体 (ファントム質量) は作らない。
     /// </summary>
-    [RequireComponent(typeof(Collider))]
-    [RequireComponent(typeof(ArticulationBody))]
     public class HydrodynamicFloatingObject : MonoBehaviour
     {
         [Header("Basic Properties")]
         [SerializeField]
-        [Tooltip("Object density in kg/m^3")]
+        [Tooltip("Relative density (specific gravity) used in FromDensity volume mode")]
         private float density = 1.0f;
+
+        [SerializeField]
+        [Tooltip("How the displaced volume for buoyancy is determined")]
+        private BuoyancyVolumeMode volumeMode = BuoyancyVolumeMode.FromDensity;
+
+        [SerializeField]
+        [Tooltip("Displaced volume in m^3, used when volumeMode is Explicit")]
+        private float explicitVolume = 0f;
+
+        [SerializeField]
+        [Range(0f, 1f)]
+        [Tooltip("Fraction of the link mass attributed to this collider (FromDensity mode with several buoyant colliders on one link)")]
+        private float massShare = 1f;
 
         [SerializeField]
         [Range(0f, 1f)]
@@ -79,6 +93,47 @@ namespace Hydrodynamics
             set { this.density = value; }
         }
 
+        public BuoyancyVolumeMode VolumeMode
+        {
+            get { return this.volumeMode; }
+            set { this.volumeMode = value; }
+        }
+
+        public float ExplicitVolume
+        {
+            get { return this.explicitVolume; }
+            set { this.explicitVolume = value; }
+        }
+
+        public float MassShare
+        {
+            get { return this.massShare; }
+            set { this.massShare = value; }
+        }
+
+        /// <summary>力の適用先 (自身または親のリンク本体)。</summary>
+        public ArticulationBody Body => this.articulationBody;
+
+        /// <summary>全没時の排水体積 [m^3]。</summary>
+        public float DisplacedVolume
+        {
+            get
+            {
+                switch (this.volumeMode)
+                {
+                    case BuoyancyVolumeMode.Explicit:
+                        return this.explicitVolume;
+                    case BuoyancyVolumeMode.FromGeometry:
+                        return this.objectVolume;
+                    default:
+                        return this.articulationBody != null && this.density > 0f
+                            ? (this.articulationBody.mass * this.massShare)
+                                / (ArticulationFloatingObject.WaterDensityScale * this.density)
+                            : 0f;
+                }
+            }
+        }
+
         public HydrodynamicParameters Parameters
         {
             get
@@ -96,24 +151,21 @@ namespace Hydrodynamics
 
         protected virtual void Awake()
         {
-            this.objectCollider = this.GetComponent<Collider>();
-            this.articulationBody = this.GetComponent<ArticulationBody>();
+            // コライダは子から、ボディは親から解決する (どちらも自身を含む)。
+            this.objectCollider = this.GetComponentInChildren<Collider>();
+            this.articulationBody = this.GetComponentInParent<ArticulationBody>();
+            if (this.articulationBody == null || this.objectCollider == null)
+            {
+                Debug.LogWarning($"[{nameof(HydrodynamicFloatingObject)}] '{this.name}' needs an ArticulationBody (self or parent) and a Collider (self or child); disabling.", this);
+                this.enabled = false;
+                return;
+            }
 
             this.initialLinearDamping = this.articulationBody.linearDamping;
             this.initialAngularDamping = this.articulationBody.angularDamping;
 
-            // Calculate volume from mesh if available
-            MeshFilter meshFilter = this.GetComponent<MeshFilter>();
-            if (meshFilter != null && meshFilter.sharedMesh != null)
-            {
-                this.objectVolume = MathfUtils.CalculateVolume_Mesh(meshFilter.sharedMesh, this.transform);
-            }
-            else
-            {
-                // Estimate volume from collider bounds
-                Bounds bounds = this.objectCollider.bounds;
-                this.objectVolume = bounds.size.x * bounds.size.y * bounds.size.z;
-            }
+            // コライダ形状からの体積 (プリミティブは厳密、メッシュは符号付き四面体和)
+            this.objectVolume = ColliderUtils.CalculateVolume(this.objectCollider);
         }
 
         protected virtual void FixedUpdate()
@@ -247,9 +299,12 @@ namespace Hydrodynamics
 
         private Vector3 CalculateMaxBuoyancyForce()
         {
-            float volume = this.articulationBody.mass / this.density;
-            float waterDensity = this.water != null ? this.water.Density : Parameters.waterDensity;
-            return waterDensity * volume * -Physics.gravity;
+            // WaterVolume.Density は相対密度 (1 = 真水) なので kg/m^3 へスケールする。
+            // Parameters.waterDensity は元から絶対値 (既定 1027)。
+            float waterDensity = this.water != null
+                ? this.water.Density * ArticulationFloatingObject.WaterDensityScale
+                : Parameters.waterDensity;
+            return waterDensity * this.DisplacedVolume * -Physics.gravity;
         }
 
         /// <summary>
@@ -337,8 +392,9 @@ namespace Hydrodynamics
             float accMagnitude = acceleration.magnitude;
 
             // F = clamp(acc/acc_max)^p * cos(theta) * F_stop * multiplier
-            // F_stop approximation based on momentum
-            float F_stop_magnitude = articulationBody.mass * velocity.magnitude * (2f * area / (objectVolume > 0 ? objectVolume : 1f));
+            // F_stop approximation based on momentum。リンクに複数の浮力コライダが
+            // ある場合に質量を数え直さないよう massShare で按分する。
+            float F_stop_magnitude = articulationBody.mass * massShare * velocity.magnitude * (2f * area / (objectVolume > 0 ? objectVolume : 1f));
             Vector3 F_stop = velocity.normalized * F_stop_magnitude;
 
             float slammingMagnitude = Mathf.Pow(Mathf.Clamp01(accMagnitude / p.maxAcceleration), p.slammingPower)

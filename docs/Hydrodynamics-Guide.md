@@ -27,6 +27,26 @@ The `buoyancy_material` tag defines **relative density (specific gravity)**, whi
 - `density = 1.0` → Neutral buoyancy (same as water)
 - `density > 1.0` → Object sinks (heavier than water)
 
+The buoyancy force is the weight of the displaced water (Archimedes):
+`F = ρ_water × V_displaced × g`, scaled by how much of the collider is submerged.
+The displaced volume at full submersion is determined, in order of precedence:
+
+1. **Explicit volume** — `<volume value="0.12"/>` inside `buoyancy_material` (or inside
+   the reference in `collision`) gives the displaced volume in m³ directly. Use this for
+   hollow hulls whose displacement is much larger than their material volume.
+2. **`<volume value="auto"/>`** — the volume is computed from the collision geometry
+   (exact for box/sphere/capsule colliders, mesh volume for closed mesh colliders).
+   Whether the link floats then depends on its actual `<inertial>` mass vs. the
+   displaced water mass, exactly like the real world.
+3. **Default (density only)** — `V = m_link / (1000 × density)`, i.e. the link is
+   treated as a homogeneous body of the given specific gravity. The float/sink rules
+   above hold regardless of the link's mass, and a body with `density 0.5` floats
+   half-submerged. This uses the **link's real mass** from `<inertial>`.
+
+Forces are applied to the link's own ArticulationBody — declaring water features no
+longer adds hidden 1 kg bodies to collision geometries (they previously inflated the
+robot's mass by ~1 kg per collision and distorted ground-contact forces).
+
 ### URDF Syntax
 
 Define materials at the robot level, then reference them in collision elements:

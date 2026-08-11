@@ -40,6 +40,20 @@ public class WaterController : MonoBehaviour
             }
             heightInputField.onEndEdit.AddListener(OnHeightInputChanged);
         }
+
+        // SIM_ENABLE_WATER=<height> で起動時に水面を有効化する (ヘッドレスの
+        // 浮力テスト用。GUI の無い -batchmode でもトグルなしで水を張れる)。
+        string envWater = System.Environment.GetEnvironmentVariable("SIM_ENABLE_WATER");
+        if (!string.IsNullOrEmpty(envWater))
+        {
+            SetWaterEnabled(true);
+            if (float.TryParse(envWater, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out float envHeight))
+            {
+                SetWaterHeight(envHeight);
+            }
+            Debug.Log($"[Water] enabled via SIM_ENABLE_WATER at height {GetWaterHeight():F2}");
+        }
     }
 
     private void OnEnableToggleChanged(bool isOn)

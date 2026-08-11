@@ -975,7 +975,7 @@ public partial class SimulationControl : MonoBehaviour
         }
 
         // Buoyancy Material の収集と ArticulationFloatingObject/HydrodynamicFloatingObject の付与
-        Dictionary<string, float> buoyancyMaterialDict = new Dictionary<string, float>();
+        Dictionary<string, BuoyancySpec> buoyancyMaterialDict = new Dictionary<string, BuoyancySpec>();
         bool useHydrodynamics = false; // URDFでuse_hydrodynamics="true"が指定されているか
         HydrodynamicParameters hydrodynamicParams = null;
 
@@ -985,15 +985,19 @@ public partial class SimulationControl : MonoBehaviour
             foreach (XmlNode buoyancyMaterial in buoyancyMaterials)
             {
                 string materialName = buoyancyMaterial.Attributes["name"]?.Value;
-                float density = 1.0f; // デフォルト密度
+                var spec = new BuoyancySpec { density = 1.0f };
                 XmlNode densityNode = buoyancyMaterial.SelectSingleNode("density");
                 if (densityNode != null)
                 {
-                    density = TryParseFloat(densityNode.Attributes["value"]?.Value, 1.0f);
+                    spec.density = TryParseFloat(densityNode.Attributes["value"]?.Value, 1.0f);
                 }
+                // <volume value="0.12"/> で排水体積 [m^3] を明示、value="auto" で
+                // コライダ形状から計算。無指定なら従来どおり density (比重) から
+                // V = m / (1000 * density)。
+                ParseBuoyancyVolume(buoyancyMaterial.SelectSingleNode("volume"), ref spec);
                 if (!string.IsNullOrEmpty(materialName))
                 {
-                    buoyancyMaterialDict[materialName] = density;
+                    buoyancyMaterialDict[materialName] = spec;
                 }
             }
 
@@ -1052,10 +1056,10 @@ public partial class SimulationControl : MonoBehaviour
 
                         if (targetArtBody != null)
                         {
-                            // デフォルト密度は1.0
-                            float density = 1.0f;
+                            // デフォルトは比重 1.0 (= 中性浮力)
+                            var spec = new BuoyancySpec { density = 1.0f };
 
-                            // buoyancy_materialが指定されていれば、その密度を使用
+                            // buoyancy_materialが指定されていれば、その密度/体積を使用
                             XmlNode collisionNode = link.SelectSingleNode("collision");
                             if (collisionNode != null)
                             {
@@ -1065,10 +1069,13 @@ public partial class SimulationControl : MonoBehaviour
                                     string materialName = buoyancyMaterialNode.Attributes["name"]?.Value;
                                     if (!string.IsNullOrEmpty(materialName) && buoyancyMaterialDict.ContainsKey(materialName))
                                     {
-                                        density = buoyancyMaterialDict[materialName];
+                                        spec = buoyancyMaterialDict[materialName];
                                     }
+                                    // 参照側の <volume> はマテリアル定義を上書きする
+                                    ParseBuoyancyVolume(buoyancyMaterialNode.SelectSingleNode("volume"), ref spec);
                                 }
                             }
+                            float density = spec.density;
 
                             // リンク固有のhydrodynamicsパラメータをチェック
                             XmlNode linkHydrodynamicsNode = collisionNode?.SelectSingleNode("hydrodynamics");
@@ -1076,13 +1083,25 @@ public partial class SimulationControl : MonoBehaviour
 
                             if (useHydrodynamics || linkHasHydrodynamics)
                             {
-                                // HydrodynamicFloatingObjectを追加 (MARUS水力学モデル)
-                                HydrodynamicFloatingObject hydroObj = colliderObject.GetComponent<HydrodynamicFloatingObject>();
+                                // HydrodynamicFloatingObjectを追加 (MARUS水力学モデル)。
+                                // 複合コライダのトリガーコールバックはボディ側の
+                                // GameObject に届くので、リンク本体へ付ける。
+                                GameObject bodyObject = targetArtBody.gameObject;
+                                HydrodynamicFloatingObject hydroObj = bodyObject.GetComponent<HydrodynamicFloatingObject>();
                                 if (hydroObj == null)
                                 {
-                                    hydroObj = colliderObject.AddComponent<HydrodynamicFloatingObject>();
+                                    hydroObj = bodyObject.AddComponent<HydrodynamicFloatingObject>();
                                 }
                                 hydroObj.Density = density;
+                                if (spec.fromGeometry)
+                                {
+                                    hydroObj.VolumeMode = NaughtyWaterBuoyancy.BuoyancyVolumeMode.FromGeometry;
+                                }
+                                else if (spec.hasVolume)
+                                {
+                                    hydroObj.VolumeMode = NaughtyWaterBuoyancy.BuoyancyVolumeMode.Explicit;
+                                    hydroObj.ExplicitVolume = spec.volume;
+                                }
 
                                 // リンク固有のパラメータがあれば、デフォルトを上書きしてマージ
                                 if (linkHasHydrodynamics)
@@ -1103,13 +1122,24 @@ public partial class SimulationControl : MonoBehaviour
                             }
                             else
                             {
-                                // ArticulationFloatingObjectを追加 (従来の浮力のみ)
-                                ArticulationFloatingObject floatingObj = colliderObject.GetComponent<ArticulationFloatingObject>();
+                                // ArticulationFloatingObjectを追加 (従来の浮力のみ)。
+                                // 取り付け先はリンク本体 (上記と同じ理由)。
+                                GameObject bodyObject = targetArtBody.gameObject;
+                                ArticulationFloatingObject floatingObj = bodyObject.GetComponent<ArticulationFloatingObject>();
                                 if (floatingObj == null)
                                 {
-                                    floatingObj = colliderObject.AddComponent<ArticulationFloatingObject>();
+                                    floatingObj = bodyObject.AddComponent<ArticulationFloatingObject>();
                                 }
                                 floatingObj.Density = density;
+                                if (spec.fromGeometry)
+                                {
+                                    floatingObj.VolumeMode = NaughtyWaterBuoyancy.BuoyancyVolumeMode.FromGeometry;
+                                }
+                                else if (spec.hasVolume)
+                                {
+                                    floatingObj.VolumeMode = NaughtyWaterBuoyancy.BuoyancyVolumeMode.Explicit;
+                                    floatingObj.ExplicitVolume = spec.volume;
+                                }
                                 Debug.Log($"Added ArticulationFloatingObject to {linkName} with density {density}");
                             }
                         }
@@ -2524,6 +2554,45 @@ public partial class SimulationControl : MonoBehaviour
                 bool invert = invertStr == "true" || invertStr == "1" || invertStr == "yes";
                 invertSpanField.SetValue(surface, invert);
             }
+        }
+    }
+
+    /// <summary>
+    /// buoyancy_material の解釈結果。density は比重 (V = m / (1000·density))、
+    /// volume 指定があればそちらが優先、fromGeometry ならコライダ形状から計算。
+    /// </summary>
+    private struct BuoyancySpec
+    {
+        public float density;
+        public float volume;
+        public bool hasVolume;
+        public bool fromGeometry;
+    }
+
+    /// <summary><volume value="0.12"/> または <volume value="auto"/> を解釈する。</summary>
+    private static void ParseBuoyancyVolume(XmlNode volumeNode, ref BuoyancySpec spec)
+    {
+        string value = volumeNode?.Attributes?["value"]?.Value;
+        if (string.IsNullOrEmpty(value))
+        {
+            return;
+        }
+        if (string.Equals(value.Trim(), "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            spec.fromGeometry = true;
+            spec.hasVolume = false;
+            return;
+        }
+        float parsed = TryParseFloat(value, -1f);
+        if (parsed > 0f)
+        {
+            spec.volume = parsed;
+            spec.hasVolume = true;
+            spec.fromGeometry = false;
+        }
+        else
+        {
+            Debug.LogWarning($"[Buoyancy] invalid <volume value=\"{value}\"/>; expected a positive number or \"auto\"");
         }
     }
 
