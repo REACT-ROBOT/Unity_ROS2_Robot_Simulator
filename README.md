@@ -76,6 +76,18 @@ needs a loaded world. `package://` mesh references that do not resolve next to t
 looked up through the search paths in `simulation_resources.json`; failure reasons are written
 to the log.
 
+### Entity list and joint sliders
+
+The robot-icon button in the bottom-right button row (next to the add/save/load buttons)
+slides open a right-edge panel listing every spawned entity
+(same contents as `get_entities`; the list refreshes about once a second). Selecting an entity
+shows one slider per movable joint (revolute/prismatic with their URDF limits, continuous
+shown as -180…180 deg), labelled with the joint name and current position. Dragging a slider
+commands the joint through the same path as a `/joint_states` command (drive target, or the
+servo model when the URDF defines one), so manual sliders and ROS commands write the same
+target — the last writer wins. While a slider is not being dragged it follows the actual joint
+position, so externally commanded motion stays visible.
+
 All 22 services defined in the srv directory are implemented, including entity queries and
 edits, `step_simulation`, and world loading. For what each one means here, why worlds map to
 scene JSON, and how to configure `get_spawnables` and named poses through
