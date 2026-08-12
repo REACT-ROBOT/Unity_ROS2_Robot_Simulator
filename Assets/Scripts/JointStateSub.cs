@@ -32,6 +32,17 @@ public class JointStateSub : MonoBehaviour
     public float damping = 10000000F;
     public float forceLimit = float.MaxValue;
 
+    // 通信途絶ウォッチドッグ [s]。実機のモータドライバ (BLV-R 等) はバスが
+    // 沈黙すると自動停止するが、シミュレータは最後の指令を保持し続けるため
+    // 「バス断 = 盲走」になっていた。正の値を設定すると、joint_command が
+    // その時間途絶したとき速度目標と effort 指令をゼロへ落とす (位置目標は
+    // 実機同様保持)。0 以下で無効 (既定 = 従来挙動)。URDF の
+    // <ros2_control><hardware><param name="command_timeout"> で設定する。
+    public float commandTimeout = 0f;
+    private float lastCommandTime;
+    private bool commandSeen;
+    private bool commandTimedOut;
+
     void Start()
     {
         ros = ROSConnection.GetOrCreateInstance();
@@ -82,6 +93,9 @@ public class JointStateSub : MonoBehaviour
     /// <summary>保持中の effort 指令をゼロへ戻す。リセット時に呼ぶ。</summary>
     public void ResetCommands()
     {
+        // リセット直後に古い受信時刻でウォッチドッグが発火しないよう解除する。
+        commandSeen = false;
+        commandTimedOut = false;
         if (commandedEfforts != null)
         {
             for (int i = 0; i < commandedEfforts.Length; i++)
@@ -102,6 +116,37 @@ public class JointStateSub : MonoBehaviour
 
     void FixedUpdate()
     {
+        // 通信途絶ウォッチドッグ: 指令が commandTimeout 秒来なければ停止させる。
+        // 発火は一度だけ (次の指令受信で復帰)。
+        if (commandTimeout > 0f && commandSeen && !commandTimedOut
+            && Time.time - lastCommandTime > commandTimeout)
+        {
+            if (articulationBodies != null)
+            {
+                for (int i = 0; i < articulationBodies.Length; i++)
+                {
+                    ArticulationBody body = articulationBodies[i];
+                    if (body == null)
+                        continue;
+                    ArticulationDrive aDrive = body.xDrive;
+                    aDrive.targetVelocity = 0f; // 位置目標は実機同様保持する
+                    body.xDrive = aDrive;
+                    ServoJointModel servo = (servoModels != null && i < servoModels.Length)
+                        ? servoModels[i] : null;
+                    if (servo != null)
+                    {
+                        servo.SetCommand(servo.targetPosition, 0f);
+                    }
+                }
+            }
+            // effort 指令もゼロへ。ResetCommands は commandSeen を落とすので、
+            // 次の指令を受信するまでウォッチドッグは再発火しない。
+            ResetCommands();
+            commandTimedOut = true;
+            Debug.LogWarning($"JointStateSub({topicName}): no command for "
+                + $"{commandTimeout:F2}s - drives stopped (comm timeout)");
+        }
+
         // effort モードの関節へ、保持中のトルクを毎ステップ適用する。
         // jointForce は縮約座標系の一般化力 [N·m / N] で、xDrive の度単位とは
         // 無関係。リセット (ResetArticulationState) が jointForce をゼロに
@@ -129,6 +174,11 @@ public class JointStateSub : MonoBehaviour
         // 注記を参照) ため、この Callback は絶対に例外を出さないようにする。
         if (unsubscribed || articulationBodies == null || jointNameList == null)
             return;
+
+        // ウォッチドッグ更新。タイムアウト後に指令が再開したら通常運転へ戻る。
+        lastCommandTime = Time.time;
+        commandSeen = true;
+        commandTimedOut = false;
 
         int index;
         for (int i = 0; i < msg.name.Length; i++)

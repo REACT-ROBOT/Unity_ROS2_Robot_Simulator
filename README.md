@@ -299,6 +299,12 @@ The URDF `<limit velocity>` is now applied to every joint as the PhysX joint-vel
 cap; without it, PhysX's default (~12.6 rad/s) silently limits fast wheels and
 torque-driven joints.
 
+`<ros2_control><hardware><param name="command_timeout">0.5</param>` enables a
+communication watchdog like the one in real motor drivers: if no `/joint_command`
+arrives for that many seconds, velocity targets and held torques are zeroed (position
+targets stay, matching servo behaviour) until commands resume. Off by default — without
+the parameter the simulator keeps the last command forever, as before.
+
 ## Known limitations
 
 Work that is deliberately deferred, and the limits accepted as part of the design, are

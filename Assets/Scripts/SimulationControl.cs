@@ -902,6 +902,12 @@ public partial class SimulationControl : MonoBehaviour
         }
         jointStateSub.topicName = ApplyNamespace(entityNamespace, jointStateSub.topicName);
 
+        // 通信途絶ウォッチドッグ (実機モータドライバのバス断自動停止の再現)。
+        // 既定は無効 = 従来どおり最終指令を保持。
+        XmlNode commandTimeoutParam = xmlDoc.SelectSingleNode(
+            "//robot/ros2_control/hardware/param[@name='command_timeout']");
+        jointStateSub.commandTimeout = TryParseFloat(commandTimeoutParam?.InnerText, 0f);
+
         // ros2_control の <joint><command_interface> を関節ごとに読む。
         // "effort" を宣言した関節はトルク指令モード: xDrive を無効化し、
         // JointStateMsg.effort の値を jointForce として毎ステップ適用する。
