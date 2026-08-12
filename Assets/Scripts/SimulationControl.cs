@@ -2902,6 +2902,14 @@ public partial class SimulationControl : MonoBehaviour
             sub.ResetCommands();
         }
 
+        // 速度フィードバックは位置差分から作っているので、関節位置を書き換える
+        // 前に基準を無効化し、リセット直後の偽速度スパイクを防ぐ。
+        JointStatePub pub = root.GetComponent<JointStatePub>();
+        if (pub != null)
+        {
+            pub.ResetFeedback();
+        }
+
         // 外乱 (apply_link_wrench) の残りも同じ理由で破棄する。
         ClearActiveWrenches(root);
 

@@ -26,6 +26,14 @@ public class JointStatePub : MonoBehaviour
     // Pre-allocated message to avoid GC allocations
     private JointStateMsg _jointMsg;
 
+    // 速度フィードバックは jointVelocity ではなく位置の差分から作る。
+    // PhysX の jointVelocity はドライブ+接触摩擦の平衡で静止中も定常残差
+    // (~0.01 rad/s) を返し、実位置の変化 (~1e-4 rad/s) と桁違いに食い違う。
+    // これをホイールオドメトリが積分すると停止中でも heading がドリフトする。
+    // 位置差分なら実機エンコーダと同じ算出で、姿勢差分由来の IMU とも整合する。
+    private double[] _lastPosition;
+    private bool _feedbackBaselineValid;
+
     void Start()
     {
         ros = ROSConnection.GetOrCreateInstance();
@@ -42,6 +50,7 @@ public class JointStatePub : MonoBehaviour
         position = new double[jointName.Length];
         velocity = new double[jointName.Length];
         effort = new double[jointName.Length];
+        _lastPosition = new double[jointName.Length];
 
         // Pre-allocate message once to avoid GC allocations every frame
         _jointMsg = new JointStateMsg
@@ -58,23 +67,36 @@ public class JointStatePub : MonoBehaviour
         };
     }
 
+    /// <summary>
+    /// 速度差分の基準位置を無効化する。リセットやテレポートで関節位置が
+    /// 不連続に飛んだ直後に、偽の速度スパイクを publish しないために呼ぶ。
+    /// </summary>
+    public void ResetFeedback()
+    {
+        _feedbackBaselineValid = false;
+    }
+
     void FixedUpdate()
     {
         time += Time.deltaTime;
         if (time<0.05f) return;
+        float dt = time;
         time = 0.0f;
         var timestamp = new TimeStamp(Clock.Now);
 
         for (int i = 0; i < articulationBodies.Length; i++)
         {
-            position[i] = articulationBodies[i].jointPosition[0];
-            velocity[i] = articulationBodies[i].jointVelocity[0];
+            double pos = articulationBodies[i].jointPosition[0];
+            position[i] = pos;
+            velocity[i] = _feedbackBaselineValid ? (pos - _lastPosition[i]) / dt : 0.0;
+            _lastPosition[i] = pos;
             // driveForce は xDrive が出した力、jointForce は effort 指令で
             // 直接与えた一般化力。各関節でどちらか一方しか使われないので、
             // 和を取ればモードを知らずに済む。
             effort[i] = articulationBodies[i].driveForce[0]
                 + articulationBodies[i].jointForce[0];
         }
+        _feedbackBaselineValid = true;
 
         // Update pre-allocated message (no new allocations)
         _jointMsg.header.stamp.sec = timestamp.Seconds;
