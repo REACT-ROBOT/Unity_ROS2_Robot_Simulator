@@ -11,7 +11,7 @@
     "com.unity.inputsystem": "1.20.0",
     "com.unity.multiplayer.center": "1.0.1",
     "com.unity.render-pipelines.universal": "17.3.0",
-    "com.unity.robotics.ros-tcp-connector": "https://github.com/hijimasa/ROS-TCP-Connector.git?path=/com.unity.robotics.ros-tcp-connector#00bcd28948850df3360614e8f3020906bd6465e7",
+    "com.unity.robotics.ros-tcp-connector": "https://github.com/hijimasa/ROS-TCP-Connector.git?path=/com.unity.robotics.ros-tcp-connector#ae5f1f3eeb3fe1d49b145812195e2eca5f5b6732",
     "com.unity.robotics.urdf-importer": "https://github.com/hijimasa/URDF-Importer.git?path=/com.unity.robotics.urdf-importer#dev-hijimasa",
     "com.unity.test-framework": "1.6.0",
     "com.unity.timeline": "1.8.12",
