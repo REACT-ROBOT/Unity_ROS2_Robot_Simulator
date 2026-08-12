@@ -556,6 +556,15 @@ public partial class SimulationControl
 
     private IEnumerator StepRoutine(ulong steps, ActionGoalHandle handle, TaskCompletionSource<bool> completion)
     {
+        // ステップ中は 1 フレームに 1 物理ステップ分しか時間が積まれないように
+        // 絞る。フレームが複数ステップ分を先に積むと、最後のステップの直後に
+        // timeScale を 0 にしても積まれた残りが同じフレーム内で実行され、要求より
+        // 1〜数ステップ多く進む (超過量はフレーム時間依存 = 壁時計依存の
+        // 非決定性)。time_scale 倍率は clamp 後に掛かるので、倍率ぶんも割っておく。
+        // 代償はステップ速度の上限がフレームレートになること — RL 用途は
+        // target_fps を上げれば従来どおりの速度が出る。
+        m_MaxDeltaBeforeStepping = Time.maximumDeltaTime;
+        Time.maximumDeltaTime = Time.fixedDeltaTime / Mathf.Max(ConfiguredTimeScale, 1f);
         Time.timeScale = ConfiguredTimeScale;
         for (ulong i = 0; i < steps; i++)
         {
@@ -577,10 +586,24 @@ public partial class SimulationControl
             }
         }
         Time.timeScale = 0f;
+        RestoreMaxDeltaAfterStepping();
         m_Stepping = false;
         m_StepCompletion = null;
         m_StepCoroutine = null;
         completion.TrySetResult(true);
+    }
+
+    // StepRoutine が絞った maximumDeltaTime の復元用。コルーチンは中断され得る
+    // (CancelStepping) ので、正常終了と中断の両方から呼ぶ。
+    private float m_MaxDeltaBeforeStepping = -1f;
+
+    private void RestoreMaxDeltaAfterStepping()
+    {
+        if (m_MaxDeltaBeforeStepping > 0f)
+        {
+            Time.maximumDeltaTime = m_MaxDeltaBeforeStepping;
+            m_MaxDeltaBeforeStepping = -1f;
+        }
     }
 
     /// <summary>
@@ -604,6 +627,7 @@ public partial class SimulationControl
             StopCoroutine(m_StepCoroutine);
             m_StepCoroutine = null;
         }
+        RestoreMaxDeltaAfterStepping();
         TaskCompletionSource<bool> completion = m_StepCompletion;
         m_StepCompletion = null;
         completion?.TrySetResult(false);

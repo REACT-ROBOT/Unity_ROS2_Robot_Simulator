@@ -253,6 +253,12 @@ ros2 service call /step_simulation simulation_interfaces/srv/StepSimulation "{ s
 - Does not respond until stepping finishes. A single call may advance at most 100000 steps;
   beyond that it returns `RESULT_OPERATION_FAILED`. The cap keeps a mistyped request from
   taking the simulator away for hours.
+- Advances **exactly** the requested number of physics steps: while stepping, at most one
+  physics step is banked per rendered frame, so the run cannot overshoot when a frame
+  happens to carry several steps' worth of time. Same initial state + same step counts
+  therefore reproduce the same trajectory. The flip side is that stepping speed is capped
+  by the frame rate — raise `target_fps` (up to 1000) for fast reinforcement-learning
+  stepping.
 - A `set_simulation_state`, a `reset_simulation` or the on-screen button arriving mid-run
   aborts the stepping and returns `RESULT_OPERATION_FAILED`.
 

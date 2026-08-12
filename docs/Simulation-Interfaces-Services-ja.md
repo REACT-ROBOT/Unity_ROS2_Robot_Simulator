@@ -252,6 +252,11 @@ ros2 service call /step_simulation simulation_interfaces/srv/StepSimulation "{ s
   戻ってこなくなるのを防ぐための上限です。
 - 進めている途中に `set_simulation_state` / `reset_simulation` / 画面のボタンが入ると
   打ち切り、`RESULT_OPERATION_FAILED` を返します。
+- 要求した物理ステップ数を**ちょうど**進めます: ステップ中は 1 描画フレームに
+  1 物理ステップ分しか時間を積まないので、フレームが複数ステップ分の時間を
+  抱えていても超過しません。同じ初期状態 + 同じステップ数なら同じ軌道が
+  再現されます。代償としてステップ速度の上限はフレームレートになるので、
+  強化学習で速く回したいときは `target_fps` (最大 1000) を上げてください。
 
 `Physics.Simulate()` ではなく `Time.timeScale` を戻して回しているのは、前者だと
 `FixedUpdate` が呼ばれず、`ServoJointModel` や `JointStateSub` といった制御側が
