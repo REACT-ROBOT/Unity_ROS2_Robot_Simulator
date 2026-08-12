@@ -10,6 +10,24 @@ using UnityMeshImporter;
 using SFB; // StandaloneFileBrowser
 
 [Serializable]
+public class SavedMotionWaypoint
+{
+    public float[] position; // {x,y,z} Unity 座標
+    public float yawDeg;     // Unity Y 軸まわり [deg]
+    public float time;       // 経路開始からの秒 (useTimes のとき)
+}
+
+/// <summary>動く障害物の経路。waypoints が 2 点未満なら静止。</summary>
+[Serializable]
+public class SavedObjectMotion
+{
+    public float speed = 1f;   // useTimes=false のときの移動速度 [m/s]
+    public bool useTimes;      // true なら各 waypoint の time で進行
+    public string loop = "loop"; // "loop" (周回) | "pingpong" (往復)
+    public List<SavedMotionWaypoint> waypoints = new List<SavedMotionWaypoint>();
+}
+
+[Serializable]
 public class SavedObjectData
 {
     public string type;
@@ -18,6 +36,7 @@ public class SavedObjectData
     public float[] scale;         // {x,y,z}
     public string meshPath;       // メッシュファイルのパス
     public float[] color;         // {r,g,b,a} 省略可。プリミティブとライトに効く
+    public SavedObjectMotion motion; // 省略可。動く障害物の経路
     public bool isActive;
 }
 
@@ -178,6 +197,7 @@ public class ObjectSpawner : MonoBehaviour
                 scale = new float[] { obj.gameObject.transform.localScale.x, obj.gameObject.transform.localScale.y, obj.gameObject.transform.localScale.z },
                 meshPath = obj.meshPath,
                 color = ReadObjectColor(obj.gameObject),
+                motion = ReadObjectMotion(obj.gameObject),
                 isActive = obj.gameObject.activeSelf
             };
             savedSceneData.objects.Add(savedObjectData);
@@ -356,6 +376,7 @@ public class ObjectSpawner : MonoBehaviour
             SetupMeshColliders(ob);
             // 両面レンダリング用の白いマテリアルを作成して適用
             ApplyDoubleSidedMaterial(ob);
+            AttachMotion(ob, objData, report);
             ob.SetActive(objData.isActive);
             AddListItem(ob, objData.meshPath);
             return;
@@ -381,10 +402,15 @@ public class ObjectSpawner : MonoBehaviour
             }
             ob.name = $"RosMesh_{spawnedObjects.Count}";
             ApplyTransform(ob, objData, applyScale: true);
-            SetStaticRecursively(ob);
+            if (!HasMotion(objData))
+            {
+                // 動くオブジェクトを static にすると描画が初期位置で固まる
+                SetStaticRecursively(ob);
+            }
             SetupLODForLargeMesh(ob);
             SetupMeshColliders(ob);
             ApplyObjectColor(ob, objData.color);
+            AttachMotion(ob, objData, report);
             ob.SetActive(objData.isActive);
             AddListItem(ob, objData.meshPath);
             return;
@@ -444,6 +470,46 @@ public class ObjectSpawner : MonoBehaviour
         go.SetActive(objData.isActive);
         RegisterSpawn(go);
         ApplyObjectColor(go, objData.color); // RegisterSpawn がマテリアルを張り替えるので後から
+        AttachMotion(go, objData, report);
+    }
+
+    private static bool HasMotion(SavedObjectData objData)
+    {
+        return objData.motion != null
+            && objData.motion.waypoints != null
+            && objData.motion.waypoints.Count >= 2;
+    }
+
+    /// <summary>motion 要素があれば WaypointMover (動く障害物) を取り付ける。</summary>
+    private static void AttachMotion(GameObject go, SavedObjectData objData, SceneLoadReport report)
+    {
+        if (!HasMotion(objData))
+        {
+            return;
+        }
+        var waypoints = new List<WaypointMover.Waypoint>();
+        foreach (SavedMotionWaypoint w in objData.motion.waypoints)
+        {
+            if (w.position == null || w.position.Length < 3)
+            {
+                continue;
+            }
+            waypoints.Add(new WaypointMover.Waypoint
+            {
+                position = new Vector3(w.position[0], w.position[1], w.position[2]),
+                yawDeg = w.yawDeg,
+                time = w.time,
+            });
+        }
+        if (waypoints.Count < 2)
+        {
+            report.unsupportedElements = true;
+            report.messages.Add($"'{go.name}' の motion に有効な waypoint が 2 点無い");
+            return;
+        }
+        WaypointMover mover = go.AddComponent<WaypointMover>();
+        mover.Configure(waypoints, objData.motion.speed,
+            objData.motion.loop == "pingpong", objData.motion.useTimes);
     }
 
     /// <summary>
@@ -472,6 +538,32 @@ public class ObjectSpawner : MonoBehaviour
             return ob;
         }
         return MeshImporter.Load(meshPath);
+    }
+
+    /// <summary>WaypointMover が付いていれば保存用の motion に書き戻す。</summary>
+    private static SavedObjectMotion ReadObjectMotion(GameObject go)
+    {
+        var mover = go.GetComponent<WaypointMover>();
+        if (mover == null || mover.Waypoints.Count < 2)
+        {
+            return null;
+        }
+        var motion = new SavedObjectMotion
+        {
+            speed = mover.Speed,
+            useTimes = mover.UsesTimes,
+            loop = mover.PingPong ? "pingpong" : "loop",
+        };
+        foreach (WaypointMover.Waypoint w in mover.Waypoints)
+        {
+            motion.waypoints.Add(new SavedMotionWaypoint
+            {
+                position = new[] { w.position.x, w.position.y, w.position.z },
+                yawDeg = w.yawDeg,
+                time = w.time,
+            });
+        }
+        return motion;
     }
 
     /// <summary>ルート直下のレンダラとライトから保存用の色を拾う。</summary>

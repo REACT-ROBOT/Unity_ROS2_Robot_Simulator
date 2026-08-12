@@ -204,8 +204,10 @@ public partial class SimulationControl : MonoBehaviour
             m_SimulateStepsActionName,
             SimulateSteps);
 
-        // simulation_extra_interfaces の外乱注入 (SimulationDisturbances.cs)
+        // simulation_extra_interfaces の外乱注入 (SimulationDisturbances.cs) と
+        // 衝突記録 (SimulationContacts.cs)
         ImplementDisturbanceServices();
+        ImplementContactServices();
 
         // /clock の publisher。ロボット単位ではなくシミュレータ全体で 1 本の
         // グローバルトピックなので、スポーン時ではなくここで 1 度だけ取り付ける。
@@ -840,6 +842,9 @@ public partial class SimulationControl : MonoBehaviour
         // URDFファイルの解析
         XmlDocument xmlDoc = new XmlDocument();
         xmlDoc.Load(filePath);
+
+        // 衝突記録: 全リンクへ ContactReporter を取り付ける (SimulationContacts.cs)
+        AttachContactReporters(robotObject);
 
         // JointState 用の Publisher/Subscriber の設定
         JointStatePub jointStatePub = robotObject.AddComponent<JointStatePub>();
@@ -2945,6 +2950,14 @@ public partial class SimulationControl : MonoBehaviour
 
     private void ResetAllEntitiesState()
     {
+        // 衝突記録は「状態」の一部としてここで消す。動く障害物 (WaypointMover)
+        // も開始位置へ戻す — 戻さないとリセット後の再テストで軌道の位相がずれる。
+        ClearContactRecords();
+        foreach (WaypointMover mover in FindObjectsByType<WaypointMover>(FindObjectsSortMode.None))
+        {
+            mover.ResetMotion();
+        }
+
         foreach (GameObject entity in m_EntityList)
         {
             if (entity == null)

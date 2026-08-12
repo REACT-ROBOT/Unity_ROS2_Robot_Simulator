@@ -82,6 +82,25 @@ public static class SdfWorldLoading
         };
         foreach (SdfSceneObject obj in data.objects)
         {
+            SavedObjectMotion motion = null;
+            if (obj.motionWaypoints != null && obj.motionWaypoints.Count >= 2)
+            {
+                motion = new SavedObjectMotion
+                {
+                    useTimes = true,
+                    loop = obj.motionPingPong ? "pingpong" : "loop",
+                };
+                foreach (SdfMotionWaypoint w in obj.motionWaypoints)
+                {
+                    motion.waypoints.Add(new SavedMotionWaypoint
+                    {
+                        position = new[] { w.position.x, w.position.y, w.position.z },
+                        yawDeg = w.yawDeg,
+                        time = w.time,
+                    });
+                }
+            }
+
             sceneData.objects.Add(new SavedObjectData
             {
                 type = obj.type,
@@ -92,6 +111,7 @@ public static class SdfWorldLoading
                 color = obj.hasColor
                     ? new[] { obj.color.r, obj.color.g, obj.color.b, obj.color.a }
                     : null,
+                motion = motion,
                 isActive = true
             });
         }

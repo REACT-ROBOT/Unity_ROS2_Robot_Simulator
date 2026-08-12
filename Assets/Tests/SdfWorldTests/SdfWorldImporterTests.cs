@@ -331,6 +331,61 @@ public class SdfWorldImporterTests
         Assert.IsFalse(data.messages.Exists(m => m.Contains("static でない")));
     }
 
+    // ====================================================================
+    // actor (動く障害物)
+    // ====================================================================
+
+    [Test]
+    public void Actor_TrajectoryBecomesMotionWaypoints()
+    {
+        var data = Parse(Wrap(@"
+            <actor name='patrol'>
+              <link name='body'><visual name='v'>
+                <geometry><box><size>1 1 1</size></box></geometry>
+              </visual></link>
+              <script>
+                <loop>true</loop>
+                <trajectory id='0' type='walk'>
+                  <waypoint><time>0</time><pose>0 2 0.5 0 0 0</pose></waypoint>
+                  <waypoint><time>2</time><pose>2 2 0.5 0 0 1.5707963</pose></waypoint>
+                  <waypoint><time>4</time><pose>0 2 0.5 0 0 0</pose></waypoint>
+                </trajectory>
+              </script>
+            </actor>"));
+        Assert.AreEqual(1, data.objects.Count, string.Join("; ", data.messages));
+        var obj = data.objects[0];
+        Assert.IsNotNull(obj.motionWaypoints);
+        Assert.AreEqual(3, obj.motionWaypoints.Count);
+        // ROS (0,2,0.5) → Unity (-2, 0.5, 0)
+        AssertVector(new Vector3(-2, 0.5f, 0), obj.motionWaypoints[0].position, "waypoint 0");
+        AssertVector(new Vector3(-2, 0.5f, 2), obj.motionWaypoints[1].position, "waypoint 1");
+        Assert.AreEqual(-90f, obj.motionWaypoints[1].yawDeg, 0.1f, "yaw conversion");
+        Assert.AreEqual(2f, obj.motionWaypoints[1].time, 1e-3f, "waypoint time");
+    }
+
+    [Test]
+    public void Actor_WithoutTrajectory_IsStatic()
+    {
+        var data = Parse(Wrap(@"
+            <actor name='statue'>
+              <pose>1 0 0 0 0 0</pose>
+              <link name='body'><visual name='v'>
+                <geometry><sphere><radius>0.3</radius></sphere></geometry>
+              </visual></link>
+            </actor>"));
+        Assert.AreEqual(1, data.objects.Count);
+        Assert.IsNull(data.objects[0].motionWaypoints);
+        AssertVector(new Vector3(0, 0, 1), data.objects[0].position, "static actor pose");
+    }
+
+    [Test]
+    public void Actor_WithoutLink_IsUnsupported()
+    {
+        var data = Parse(Wrap("<actor name='ghost'><skin><filename>x.dae</filename></skin></actor>"));
+        Assert.AreEqual(0, data.objects.Count);
+        Assert.IsTrue(data.hasUnsupportedElements);
+    }
+
     private static string MakeTempDir()
     {
         string dir = Path.Combine(Application.temporaryCachePath,

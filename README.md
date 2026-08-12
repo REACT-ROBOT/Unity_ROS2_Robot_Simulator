@@ -193,6 +193,7 @@ def test_avoidance(sim):                       # the `sim` fixture connects & cl
     sim.step(50)                               # deterministic: PAUSED + step_simulation
     assert sim.position("box")[2] < 1.0
     sim.apply_wrench("box", force=(0, 0, 30), duration=0.5)   # disturbance injection
+    assert not sim.collided("box")             # collision records (floor filtered out)
 ```
 
 Build `simulation_extra_interfaces` and `sim_test_utils`
@@ -219,6 +220,37 @@ Repeated calls stack; `reset_simulation` clears active wrenches. The service
 lives outside `simulation_interfaces`, so it is not listed in
 `get_simulator_features` — this is also the practical route to "apply an
 acceleration", which `set_entity_state` deliberately does not support.
+
+## Collision monitoring
+
+Every link of every spawned entity is monitored, and the custom service
+`/get_contact_events` (`simulation_extra_interfaces/srv/GetContactEvents`)
+returns records aggregated per (entity, link, other object): contact count,
+first/last simulation time and the largest impulse. The "other" name is the
+other entity's name, or the scenery object's name (the built-in floor is
+`Plane`) — expected contacts like wheels on the ground are filtered by name on
+the caller side (`sim.collided("robot")` in `sim_test_utils` ignores the floor
+by default). Records are cleared by `reset_simulation` (SCOPE_STATE) or the
+service's `clear` flag.
+
+## Moving obstacles
+
+Scenery objects can patrol a waypoint path as kinematic bodies — they push
+robots and generate contacts, and pause/`step_simulation`/`time_scale` all
+apply, so avoidance scenarios stay deterministic. Two ways to declare them:
+
+- Scene JSON: an optional `motion` element on any object —
+  `{"speed": 1.0, "loop": "loop"|"pingpong", "useTimes": false, "waypoints":
+  [{"position": [x,y,z], "yawDeg": 0, "time": 0}, ...]}` (Unity coordinates,
+  like the rest of the scene JSON; with `useTimes` the per-waypoint `time` is
+  used instead of `speed`).
+- SDF worlds: `<actor>` with a `<link>` shape and a
+  `<script><trajectory>` — waypoint times and poses are interpolated and
+  `<loop>` is honoured (skeletal skin/animation is not supported; the first
+  visual shape follows the trajectory).
+
+`reset_simulation` (SCOPE_STATE) puts moving obstacles back to their starting
+waypoint so repeated test runs see the same phase.
 
 ## URDF extensions
 

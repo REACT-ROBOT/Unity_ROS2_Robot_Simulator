@@ -191,6 +191,7 @@ def test_avoidance(sim):                       # sim フィクスチャが接続
     sim.step(50)                               # PAUSED + step_simulation で決定論的
     assert sim.position("box")[2] < 1.0
     sim.apply_wrench("box", force=(0, 0, 30), duration=0.5)   # 外乱注入
+    assert not sim.collided("box")             # 衝突記録 (床は既定で除外)
 ```
 
 `colcon build --packages-select simulation_extra_interfaces sim_test_utils` で
@@ -214,6 +215,34 @@ def test_avoidance(sim):                       # sim フィクスチャが接続
 `simulation_interfaces` の外のサービスなので `get_simulator_features` には
 載りません。`set_entity_state` が意図的に対応しない「加速度を与える」操作の
 実用的な代替でもあります。
+
+## 衝突の監視
+
+スポーンした全エンティティの全リンクが監視され、カスタムサービス
+`/get_contact_events` (`simulation_extra_interfaces/srv/GetContactEvents`) が
+(エンティティ, リンク, 相手) ごとの集計 — 接触回数・初回/最終シミュ時刻・最大力積 —
+を返します。相手名は他のエンティティ名、または景観オブジェクト名 (組み込みの床は
+`Plane`) です。車輪の接地など期待どおりの接触は呼び出し側が名前で除外します
+(`sim_test_utils` の `sim.collided("robot")` は既定で床を無視)。記録は
+`reset_simulation` (SCOPE_STATE) かサービスの `clear` フラグで消えます。
+
+## 動く障害物
+
+景観オブジェクトをウェイポイント経路でキネマティックに巡回させられます。
+ロボットを押し、接触イベントも発生し、pause / `step_simulation` / `time_scale`
+がそのまま効くので、回避シナリオを決定論的に書けます。宣言方法は 2 つ:
+
+- シーン JSON: 任意のオブジェクトに `motion` 要素 —
+  `{"speed": 1.0, "loop": "loop"|"pingpong", "useTimes": false, "waypoints":
+  [{"position": [x,y,z], "yawDeg": 0, "time": 0}, ...]}` (シーン JSON の他の
+  要素と同じ Unity 座標。`useTimes` なら speed の代わりに各 waypoint の
+  `time` で進行)。
+- SDF ワールド: `<link>` の形状と `<script><trajectory>` を持つ `<actor>` —
+  ウェイポイントの時刻と姿勢を補間し、`<loop>` を尊重します (スケルタル
+  アニメーション (skin) は未対応。最初の visual 形状が軌道へ追従)。
+
+`reset_simulation` (SCOPE_STATE) で動く障害物は開始ウェイポイントへ戻るので、
+テストを繰り返しても位相がずれません。
 
 ## URDF の拡張要素
 

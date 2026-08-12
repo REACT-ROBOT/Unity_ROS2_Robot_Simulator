@@ -13,6 +13,14 @@ namespace SdfWorld
     /// type は ObjectSpawner のシーン JSON (SavedObjectData.type) と同じ語彙で、
     /// メッシュだけ "RosMesh" (ROS/Gazebo 慣習の Z-up メッシュ) を使う。
     /// </summary>
+    /// <summary>動く障害物 (actor) のウェイポイント。座標は Unity 系。</summary>
+    public struct SdfMotionWaypoint
+    {
+        public Vector3 position;
+        public float yawDeg;
+        public float time; // 経路開始からの秒
+    }
+
     public class SdfSceneObject
     {
         public string type;
@@ -23,6 +31,9 @@ namespace SdfWorld
         public bool hasColor;
         public Color color;
         public string sourceName; // 由来の model/light 名 (メッセージ用)
+        // actor の trajectory。2 点以上あれば動く障害物として生成される
+        public List<SdfMotionWaypoint> motionWaypoints;
+        public bool motionPingPong; // SDF に往復は無いので通常 false
     }
 
     /// <summary>SDF ワールドの解釈結果。</summary>
@@ -169,6 +180,9 @@ namespace SdfWorld
                         break;
                     case "light":
                         ParseLight(el, ctx);
+                        break;
+                    case "actor":
+                        ParseActor(el, baseDir, ctx);
                         break;
                     // 景観の見た目・当たりに寄与しない設定類は、読み飛ばしても
                     // 「ワールドの内容が欠けた」ことにはならないので報告だけにする。
@@ -594,6 +608,95 @@ namespace SdfWorld
                 }
             }
             return false;
+        }
+
+        // ====================================================================
+        // actor (動く障害物)
+        // ====================================================================
+
+        /// <summary>
+        /// <actor> のサブセット: <link> の形状 + <script><trajectory> のウェイポイント
+        /// 補間で動く障害物にする。スケルタルアニメーション (skin/animation) は扱わない。
+        /// </summary>
+        private static void ParseActor(XmlElement actor, string baseDir, Context ctx)
+        {
+            string name = actor.GetAttribute("name");
+
+            XmlElement link = SelectChild(actor, "link");
+            if (link == null)
+            {
+                ctx.data.hasUnsupportedElements = true;
+                ctx.data.messages.Add($"actor '{name}' に <link> が無い (skin のみの actor は未対応)");
+                return;
+            }
+
+            // ウェイポイントを先に読む (無ければ静止した景観として置くだけ)
+            var waypoints = new List<SdfMotionWaypoint>();
+            bool loop = true;
+            XmlElement script = SelectChild(actor, "script");
+            if (script != null)
+            {
+                XmlElement loopEl = SelectChild(script, "loop");
+                if (loopEl != null)
+                {
+                    loop = ParseBool(loopEl, true);
+                }
+                XmlElement trajectory = SelectChild(script, "trajectory");
+                if (trajectory != null)
+                {
+                    foreach (XmlElement wp in SelectChildren(trajectory, "waypoint"))
+                    {
+                        float time = ParseFloat(SelectChild(wp, "time")?.InnerText, -1f);
+                        float[] p = ParseFloats(SelectChild(wp, "pose")?.InnerText);
+                        if (time < 0f || p.Length < 3)
+                        {
+                            continue;
+                        }
+                        float yawRos = p.Length >= 6 ? p[5] : 0f;
+                        waypoints.Add(new SdfMotionWaypoint
+                        {
+                            position = Ros2Unity(new Vector3(p[0], p[1], p[2])),
+                            // ROS の +yaw (Z 上向き, 反時計) は Unity では Y まわり -deg
+                            yawDeg = -yawRos * Mathf.Rad2Deg,
+                            time = time,
+                        });
+                    }
+                }
+            }
+            if (!loop)
+            {
+                // 一度きりの再生は未対応。周回として扱う (テスト用途では実害が薄い)
+                ctx.data.messages.Add($"actor '{name}' の loop=false は未対応 (周回として扱う)");
+            }
+
+            int before = ctx.data.objects.Count;
+            Pose startPose = waypoints.Count > 0
+                ? new Pose
+                {
+                    position = Vector3.zero,
+                    rotation = Quaternion.identity
+                }
+                : ParsePose(SelectChild(actor, "pose"), name, ctx);
+            ParseLink(link, startPose, baseDir, ctx, name);
+
+            if (waypoints.Count >= 2)
+            {
+                // 動きは最初の形状オブジェクトに載せる。複数 visual の actor は
+                // 個別に絶対座標へ動かせないので、2 個目以降は静止のまま残す。
+                if (ctx.data.objects.Count > before)
+                {
+                    ctx.data.objects[before].motionWaypoints = waypoints;
+                    if (ctx.data.objects.Count > before + 1)
+                    {
+                        ctx.data.messages.Add(
+                            $"actor '{name}' の 2 個目以降の visual は動かない (最初の形状のみ trajectory に追従)");
+                    }
+                }
+            }
+            else if (script != null)
+            {
+                ctx.data.messages.Add($"actor '{name}' に有効な trajectory が無いので静止させた");
+            }
         }
 
         // ====================================================================

@@ -204,11 +204,14 @@ ros2 service call /get_available_worlds simulation_interfaces/srv/GetAvailableWo
   環境変数 `GZ_SIM_RESOURCE_PATH` / `GAZEBO_MODEL_PATH`。include 側の `<pose>` /
   `<name>` / `<static>` 上書きに対応。
 - `<light>` の directional / point / spot (位置、`<direction>`、diffuse 色)。
+- `<link>` の形状と `<script><trajectory>` を持つ `<actor>`: 最初の visual 形状が
+  ウェイポイント補間で巡回する**動く障害物**になります (`<loop>` を尊重。
+  スケルタルアニメーション (skin) は未対応)。
 
-すべて**静的な景観**として配置します。static でないモデルもそのまま置かれます
-(`error_message` に記録)。落ちたり押されたりはしません — 動く物体は URDF からスポーン
-するエンティティの領分です。`<physics>` `<scene>` `<gui>` `<plugin>` などの設定要素は
-黙って無視し、`<actor>` `<population>`、`<joint>` による可動、pose の `relative_to`
+それ以外は**静的な景観**として配置します。static でないモデルもそのまま置かれます
+(`error_message` に記録)。落ちたり押されたりはしません — 動くロボットは URDF から
+スポーンするエンティティの領分です。`<physics>` `<scene>` `<gui>` `<plugin>` などの
+設定要素は黙って無視し、`<population>`、`<joint>` による可動、pose の `relative_to`
 フレームは未対応として報告します。`<world>` の無いモデル単体の SDF はワールドでは
 ないので拒否します。
 

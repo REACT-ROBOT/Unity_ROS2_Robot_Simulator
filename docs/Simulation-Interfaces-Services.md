@@ -207,13 +207,16 @@ graph. What is supported:
   `simulation_resources.json`, then `GZ_SIM_RESOURCE_PATH` and `GAZEBO_MODEL_PATH`.
   `<pose>`, `<name>` and `<static>` overrides in the include element are honoured.
 - `<light>` directional / point / spot (position, `<direction>`, diffuse colour).
+- `<actor>` with a `<link>` shape and a `<script><trajectory>`: the first visual shape
+  becomes a kinematic **moving obstacle** following the interpolated waypoints
+  (`<loop>` honoured; skeletal skin/animation is not supported).
 
-Everything is placed as **static scenery** — a non-static model is still placed (with a
-note in `error_message`); it does not fall or push things. Dynamic objects are the job of
-robot entities spawned from URDF. `<physics>`, `<scene>`, `<gui>`, `<plugin>` and similar
-settings elements are ignored silently; `<actor>`, `<population>`, `<joint>` motion and
-pose `relative_to` frames are unsupported and reported. Model-only SDF files (no
-`<world>`) are rejected — they are not worlds.
+Everything else is placed as **static scenery** — a non-static model is still placed
+(with a note in `error_message`); it does not fall or push things. Dynamic robots are the
+job of entities spawned from URDF. `<physics>`, `<scene>`, `<gui>`, `<plugin>` and similar
+settings elements are ignored silently; `<population>`, `<joint>` motion and pose
+`relative_to` frames are unsupported and reported. Model-only SDF files (no `<world>`)
+are rejected — they are not worlds.
 
 The world's `name` comes from `<world name="...">`, and `get_available_worlds` lists
 `.sdf` / `.world` files from `world_paths` alongside scene JSON (SDF worlds carry no
