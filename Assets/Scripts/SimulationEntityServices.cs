@@ -59,6 +59,9 @@ public partial class SimulationControl
             return;
         }
 
+        // 外乱注入 (apply_link_wrench) の保持レンチを適用する
+        ApplyActiveWrenches();
+
         foreach (GameObject entity in m_EntityList)
         {
             if (entity == null)

@@ -181,6 +181,45 @@ cd ~/colcon_ws && ./scripts/service_conformance_test.sh
 
 See [docs/Service-Conformance-Test.md](docs/Service-Conformance-Test.md) for details.
 
+## Writing test scenarios (pytest)
+
+The companion repository ships `sim_test_utils`, a pytest plugin that wraps the
+simulator services for scenario tests against a running simulator + endpoint:
+
+```python
+def test_avoidance(sim):                       # the `sim` fixture connects & cleans up
+    sim.spawn("box", urdf=BOX_URDF, pose=(0, 0, 1))
+    sim.play(); sim.pause()
+    sim.step(50)                               # deterministic: PAUSED + step_simulation
+    assert sim.position("box")[2] < 1.0
+    sim.apply_wrench("box", force=(0, 0, 30), duration=0.5)   # disturbance injection
+```
+
+Build `simulation_extra_interfaces` and `sim_test_utils`
+(`colcon build --packages-select simulation_extra_interfaces sim_test_utils`),
+restart the endpoint (services register when Unity connects), then run
+`python3 -m pytest src/sim_test_utils/examples -v`. The fixture deletes spawned
+entities, stops the simulation and resets time after every test. For
+reproducible physics, spawn while paused and advance with `sim.step()` only.
+
+## Disturbance injection
+
+The custom service `/apply_link_wrench`
+(`simulation_extra_interfaces/srv/ApplyLinkWrench`) applies a constant wrench
+to a link's center of mass — wind gusts, pushes, impacts — for robustness
+testing:
+
+- `entity` / `link` (empty `link` targets the base link)
+- `wrench`: force [N] and torque [N·m] in the **world frame, ROS axes**
+- `duration`: simulated seconds; `0` means exactly one physics step. Time is
+  counted in physics steps, so behaviour is identical under `time_scale` and
+  `step_simulation`.
+
+Repeated calls stack; `reset_simulation` clears active wrenches. The service
+lives outside `simulation_interfaces`, so it is not listed in
+`get_simulator_features` — this is also the practical route to "apply an
+acceleration", which `set_entity_state` deliberately does not support.
+
 ## URDF extensions
 
 Friction is set through the custom `<collision_material>` element. Syntax, the `combine`

@@ -179,6 +179,42 @@ cd ~/colcon_ws && ./scripts/service_conformance_test.sh
 
 詳細は [docs/Service-Conformance-Test-ja.md](docs/Service-Conformance-Test-ja.md) を参照してください。
 
+## テストシナリオの書き方 (pytest)
+
+サンプルリポジトリに、シミュレータのサービス群を pytest から使う
+`sim_test_utils` プラグインがあります (シミュレータ+エンドポイントの起動が前提):
+
+```python
+def test_avoidance(sim):                       # sim フィクスチャが接続と後始末を担う
+    sim.spawn("box", urdf=BOX_URDF, pose=(0, 0, 1))
+    sim.play(); sim.pause()
+    sim.step(50)                               # PAUSED + step_simulation で決定論的
+    assert sim.position("box")[2] < 1.0
+    sim.apply_wrench("box", force=(0, 0, 30), duration=0.5)   # 外乱注入
+```
+
+`colcon build --packages-select simulation_extra_interfaces sim_test_utils` で
+ビルドし、エンドポイントを再起動 (サービスは Unity 接続時に登録される) してから
+`python3 -m pytest src/sim_test_utils/examples -v` を実行します。フィクスチャは
+テストごとにスポーンしたエンティティの削除・停止・時刻リセットを行います。
+再現性が要るテストは一時停止中にスポーンし、`sim.step()` だけで進めてください。
+
+## 外乱注入
+
+カスタムサービス `/apply_link_wrench`
+(`simulation_extra_interfaces/srv/ApplyLinkWrench`) は、リンクの重心へ一定の
+レンチを印加します。突風・衝撃・押されに対するロバスト性テスト用です:
+
+- `entity` / `link` (`link` が空ならベースリンク)
+- `wrench`: **ワールド座標系 (ROS 軸)** の力 [N] とトルク [N·m]
+- `duration`: シミュレーション秒。`0` はちょうど 1 物理ステップ。物理ステップ数で
+  数えるので、`time_scale` や `step_simulation` の下でも同じ振る舞いになります。
+
+複数回呼ぶと重なって効きます。`reset_simulation` で有効中のレンチは消えます。
+`simulation_interfaces` の外のサービスなので `get_simulator_features` には
+載りません。`set_entity_state` が意図的に対応しない「加速度を与える」操作の
+実用的な代替でもあります。
+
 ## URDF の拡張要素
 
 摩擦係数は URDF の独自要素 `<collision_material>` で設定します。書き方、`combine` の

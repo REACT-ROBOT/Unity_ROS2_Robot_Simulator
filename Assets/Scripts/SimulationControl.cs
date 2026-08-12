@@ -204,6 +204,9 @@ public partial class SimulationControl : MonoBehaviour
             m_SimulateStepsActionName,
             SimulateSteps);
 
+        // simulation_extra_interfaces の外乱注入 (SimulationDisturbances.cs)
+        ImplementDisturbanceServices();
+
         // /clock の publisher。ロボット単位ではなくシミュレータ全体で 1 本の
         // グローバルトピックなので、スポーン時ではなくここで 1 度だけ取り付ける。
         // TrackPublishedTopic には通さない (名前空間を付けず、デスポーンや
@@ -2893,6 +2896,9 @@ public partial class SimulationControl : MonoBehaviour
         {
             sub.ResetCommands();
         }
+
+        // 外乱 (apply_link_wrench) の残りも同じ理由で破棄する。
+        ClearActiveWrenches(root);
 
         foreach (GameObject abObject in FindArticulationBodyObjectsInChildren(root))
         {
