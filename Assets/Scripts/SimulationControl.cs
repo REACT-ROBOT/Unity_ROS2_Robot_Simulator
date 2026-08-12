@@ -855,6 +855,17 @@ public partial class SimulationControl : MonoBehaviour
                 articulationBodyList.Add(body);
                 jointNameList.Add(urdfJoint.jointName);
                 // Note: xDrive stiffness/damping is now set by URDF-Importer via <drive> element
+
+                // URDF の <limit velocity> を関節速度の上限へ反映する。放っておくと
+                // PhysX 既定の maxJointVelocity (約 4π rad/s) が全関節に効いていて、
+                // 高速な車輪や effort 指令での加速がそこで頭打ちになる。
+                XmlNode limitNode = xmlDoc.SelectSingleNode(
+                    $"//robot/joint[@name='{urdfJoint.jointName}']/limit");
+                float velocityLimit = TryParseFloat(limitNode?.Attributes?["velocity"]?.Value, 0f);
+                if (velocityLimit > 0f)
+                {
+                    body.maxJointVelocity = velocityLimit; // rad/s または m/s
+                }
             }
         }
 
@@ -882,6 +893,92 @@ public partial class SimulationControl : MonoBehaviour
             jointStateSub.topicName = jointCommandParam.InnerText;
         }
         jointStateSub.topicName = ApplyNamespace(entityNamespace, jointStateSub.topicName);
+
+        // ros2_control の <joint><command_interface> を関節ごとに読む。
+        // "effort" を宣言した関節はトルク指令モード: xDrive を無効化し、
+        // JointStateMsg.effort の値を jointForce として毎ステップ適用する。
+        // position/velocity と effort が併記されている場合は従来経路を保つ
+        // (実機の ros2_control は排他が普通なので、混在は警告して安全側に倒す)。
+        bool[] effortModes = new bool[articulationBodyList.Count];
+        bool anyEffortJoint = false;
+        XmlNodeList rcJointNodes = xmlDoc.SelectNodes("//robot/ros2_control/joint");
+        if (rcJointNodes != null)
+        {
+            float[] effortLimits = new float[articulationBodyList.Count];
+            foreach (XmlNode rcJoint in rcJointNodes)
+            {
+                string rcJointName = rcJoint.Attributes["name"]?.Value;
+                int jointIndex = jointNameList.IndexOf(rcJointName);
+                if (jointIndex < 0)
+                {
+                    continue;
+                }
+
+                bool hasEffort = false;
+                bool hasPositionOrVelocity = false;
+                float interfaceLimit = float.PositiveInfinity;
+                foreach (XmlNode ci in rcJoint.SelectNodes("command_interface"))
+                {
+                    string ciName = ci.Attributes["name"]?.Value;
+                    if (ciName == "effort")
+                    {
+                        hasEffort = true;
+                        // <param name="max"> があればクランプに使う (対称とみなす)
+                        foreach (XmlNode param in ci.SelectNodes("param"))
+                        {
+                            if (param.Attributes["name"]?.Value == "max")
+                            {
+                                float max = Mathf.Abs(TryParseFloat(param.InnerText, 0f));
+                                if (max > 0f)
+                                {
+                                    interfaceLimit = Mathf.Min(interfaceLimit, max);
+                                }
+                            }
+                        }
+                    }
+                    else if (ciName == "position" || ciName == "velocity")
+                    {
+                        hasPositionOrVelocity = true;
+                    }
+                }
+
+                if (!hasEffort)
+                {
+                    continue;
+                }
+                if (hasPositionOrVelocity)
+                {
+                    Debug.LogWarning($"[EffortMode] joint '{rcJointName}' declares effort together with position/velocity command interfaces; keeping the position/velocity path");
+                    continue;
+                }
+
+                ArticulationBody jointBody = articulationBodyList[jointIndex];
+                ArticulationDrive drive = jointBody.xDrive;
+                // URDF の <limit effort> (importer が forceLimit に入れる) も上限に取り込む
+                if (drive.forceLimit > 0f && drive.forceLimit < float.MaxValue)
+                {
+                    interfaceLimit = Mathf.Min(interfaceLimit, drive.forceLimit);
+                }
+                // ドライブを無効化してトルク指令と喧嘩しないようにする。
+                // 関節リミット (lowerLimit/upperLimit) はソルバ側で効き続ける。
+                drive.stiffness = 0f;
+                drive.damping = 0f;
+                drive.target = 0f;
+                drive.targetVelocity = 0f;
+                jointBody.xDrive = drive;
+
+                effortModes[jointIndex] = true;
+                effortLimits[jointIndex] = interfaceLimit;
+                anyEffortJoint = true;
+                Debug.Log($"[EffortMode] joint '{rcJointName}': torque command via jointForce"
+                    + (float.IsInfinity(interfaceLimit) ? " (no limit)" : $" (|tau| <= {interfaceLimit})"));
+            }
+            if (anyEffortJoint)
+            {
+                jointStateSub.effortModes = effortModes;
+                jointStateSub.effortLimits = effortLimits;
+            }
+        }
 
         groundTruthPub.targetObject = childObjectsWithUrdfLink[0];
         XmlNode groundTruthParam = xmlDoc.SelectSingleNode("//robot/ros2_control/hardware/param[@name='ground_truth_topic']");
@@ -921,6 +1018,13 @@ public partial class SimulationControl : MonoBehaviour
                 if (jointIndex < 0)
                 {
                     Debug.LogWarning($"[ServoModel] joint '{servoJointName}' not found, skipping");
+                    continue;
+                }
+                if (anyEffortJoint && effortModes[jointIndex])
+                {
+                    // サーボモデルは位置制御のモデルなので effort 指令とは両立しない。
+                    // ros2_control の宣言 (明示) を優先する。
+                    Debug.LogWarning($"[ServoModel] joint '{servoJointName}' uses the effort command interface; ignoring its <servo_model>");
                     continue;
                 }
                 ArticulationBody jointBody = articulationBodyList[jointIndex];
@@ -2781,6 +2885,15 @@ public partial class SimulationControl : MonoBehaviour
     /// </remarks>
     private void ResetArticulationState(GameObject root)
     {
+        // effort 指令は「次の指令が来るまで保持」なので、リセット時に明示的に
+        // 破棄する。これをしないと jointForce をゼロにしても次の FixedUpdate で
+        // 保持中のトルクが書き戻される。
+        JointStateSub sub = root.GetComponent<JointStateSub>();
+        if (sub != null)
+        {
+            sub.ResetCommands();
+        }
+
         foreach (GameObject abObject in FindArticulationBodyObjectsInChildren(root))
         {
             ArticulationBody ab = abObject.GetComponent<ArticulationBody>();

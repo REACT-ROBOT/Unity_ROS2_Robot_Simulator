@@ -10,12 +10,22 @@ public class JointStateSub : MonoBehaviour
     // Optional per-joint servo model (friction/backlash). When present at an
     // index, commands are routed to the model instead of writing xDrive.
     public ServoJointModel[] servoModels;
+    // ros2_control の <command_interface name="effort"/> を宣言した関節。
+    // true の関節はドライブ (xDrive) ではなく jointForce でトルク指令する。
+    // スポーン時 (SimulationControl) に jointName と同順で設定される。null なら全関節従来どおり。
+    public bool[] effortModes;
+    // effort 指令のクランプ [N·m / N]。URDF の <limit effort> と
+    // command_interface の max パラメータの小さい方。
+    public float[] effortLimits;
     public string[] jointName;
     public string topicName = "/joint_states";
     public int jointLength = 19;
     private List<string> jointNameList;
     private ROSConnection ros;
     private bool unsubscribed;
+    // 最後に指令されたトルク。effort インターフェース流に、新しい指令が来るまで
+    // 保持して毎 FixedUpdate 適用し続ける (リセット時はゼロへ)。
+    private float[] commandedEfforts;
 
     // Set Parameters
     public float stiffness = 0F;
@@ -69,6 +79,49 @@ public class JointStateSub : MonoBehaviour
         DetachFromRos();
     }
 
+    /// <summary>保持中の effort 指令をゼロへ戻す。リセット時に呼ぶ。</summary>
+    public void ResetCommands()
+    {
+        if (commandedEfforts != null)
+        {
+            for (int i = 0; i < commandedEfforts.Length; i++)
+            {
+                commandedEfforts[i] = 0f;
+            }
+        }
+    }
+
+    /// <summary>この関節が effort 指令モードか (GUI のスライダ無効化用)。</summary>
+    public bool IsEffortJoint(string joint)
+    {
+        if (effortModes == null || jointNameList == null)
+            return false;
+        int index = jointNameList.IndexOf(joint);
+        return index >= 0 && index < effortModes.Length && effortModes[index];
+    }
+
+    void FixedUpdate()
+    {
+        // effort モードの関節へ、保持中のトルクを毎ステップ適用する。
+        // jointForce は縮約座標系の一般化力 [N·m / N] で、xDrive の度単位とは
+        // 無関係。リセット (ResetArticulationState) が jointForce をゼロに
+        // 書くので、指令が残っている限りここで書き直す。
+        if (effortModes == null || commandedEfforts == null || articulationBodies == null)
+            return;
+
+        for (int i = 0; i < articulationBodies.Length && i < effortModes.Length; i++)
+        {
+            if (!effortModes[i])
+                continue;
+            ArticulationBody body = articulationBodies[i];
+            if (body == null || body.dofCount != 1)
+                continue;
+            var force = body.jointForce;
+            force[0] = commandedEfforts[i];
+            body.jointForce = force;
+        }
+    }
+
     void Callback(JointStateMsg msg)
     {
         // 解除済み / 破棄途中のインスタンスは何もしない。ここで例外を投げると
@@ -83,6 +136,25 @@ public class JointStateSub : MonoBehaviour
             index = jointNameList.IndexOf(msg.name[i]);
             if (index == -1 || index >= articulationBodies.Length)
                 continue;
+
+            // effort モードの関節はトルク指令だけを受け取り、position/velocity は
+            // 無視する (ドライブは無効化済みなので書いても意味がない)。
+            if (effortModes != null && index < effortModes.Length && effortModes[index])
+            {
+                if (i < msg.effort.Length)
+                {
+                    float tau = (float)msg.effort[i];
+                    if (effortLimits != null && index < effortLimits.Length
+                        && !float.IsInfinity(effortLimits[index]))
+                    {
+                        tau = Mathf.Clamp(tau, -effortLimits[index], effortLimits[index]);
+                    }
+                    if (commandedEfforts == null)
+                        commandedEfforts = new float[articulationBodies.Length];
+                    commandedEfforts[index] = tau;
+                }
+                continue;
+            }
 
             ServoJointModel servo = (servoModels != null && index < servoModels.Length)
                 ? servoModels[index] : null;

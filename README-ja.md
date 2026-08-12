@@ -204,6 +204,26 @@ GNSS 受信機は他のセンサ (imu, lidar, camera, contact など) と同様�
 優先されます (後から別の原点を指定すると警告を出して既存の原点を使います)。測位結果は
 `sensor_msgs/NavSatFix` として `/<ロボット名>/<リンク名>/fix` に配信されます。
 
+### 関節の指令モード (effort 制御)
+
+関節指令はロボットの指令トピック (`<ros2_control><hardware>` の
+`joint_commands_topic`) に `sensor_msgs/JointState` で届きます。既定では PD ドライブ
+駆動で、`position[]` が目標位置、`velocity[]` が目標速度になります。
+
+`<ros2_control><joint>` に `<command_interface name="effort"/>` を宣言した関節
+(position/velocity の宣言なし) は**トルク制御**に切り替わります: PD ドライブは
+無効化され、指令メッセージの `effort[]` がそのまま関節の一般化力 (N·m、直動は N)
+として毎物理ステップ適用されます。次の指令が来るまで保持されます。値は URDF の
+`<limit effort>` と、あれば command_interface の `<param name="max">` でクランプ
+されます。`reset_simulation` で保持トルクはゼロに戻ります。配信される joint_states
+の `effort[]` は適用中のトルクを返します (PD 駆動の関節は従来どおりドライブ力)。
+effort 関節の `<servo_model>` は警告して無視され、GUI のスライダは現在位置の
+表示専用になります。
+
+また、URDF の `<limit velocity>` が全関節の PhysX 関節速度上限へ反映されるように
+なりました。未反映だと PhysX 既定値 (約 12.6 rad/s) が高速な車輪やトルク駆動の
+関節を黙って頭打ちにします。
+
 ## 既知の制約
 
 意図的に保留にしている項目と、設計として受け入れている制約は

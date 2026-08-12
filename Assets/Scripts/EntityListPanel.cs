@@ -1125,14 +1125,23 @@ public class EntityListPanel : MonoBehaviour
             Mathf.Clamp(currentSi * toDisplay, row.minDisplay, row.maxDisplay));
         UpdateRowLabel(row, currentSi * toDisplay);
 
-        slider.onValueChanged.AddListener(value =>
+        if (joint.isEffortMode)
         {
-            // ユーザー操作 (またはコード側の SetValue) で呼ばれる。表示追従は
-            // SetValueWithoutNotify を使うので、ここに来るのは指令のときだけ。
-            float si = prismatic ? value : value * Mathf.Deg2Rad;
-            CommandJoint(row.joint, si);
-            UpdateRowLabel(row, value);
-        });
+            // effort 指令の関節は位置スライダでは指令できない。現在位置の
+            // 表示器として残し、操作は受け付けない (指令は ROS のトルクのみ)。
+            slider.interactable = false;
+        }
+        else
+        {
+            slider.onValueChanged.AddListener(value =>
+            {
+                // ユーザー操作 (またはコード側の SetValue) で呼ばれる。表示追従は
+                // SetValueWithoutNotify を使うので、ここに来るのは指令のときだけ。
+                float si = prismatic ? value : value * Mathf.Deg2Rad;
+                CommandJoint(row.joint, si);
+                UpdateRowLabel(row, value);
+            });
+        }
 
         return row;
     }

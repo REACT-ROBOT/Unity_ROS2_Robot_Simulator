@@ -69,7 +69,11 @@ public class JointStatePub : MonoBehaviour
         {
             position[i] = articulationBodies[i].jointPosition[0];
             velocity[i] = articulationBodies[i].jointVelocity[0];
-            effort[i] = articulationBodies[i].driveForce[0];
+            // driveForce は xDrive が出した力、jointForce は effort 指令で
+            // 直接与えた一般化力。各関節でどちらか一方しか使われないので、
+            // 和を取ればモードを知らずに済む。
+            effort[i] = articulationBodies[i].driveForce[0]
+                + articulationBodies[i].jointForce[0];
         }
 
         // Update pre-allocated message (no new allocations)

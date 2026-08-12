@@ -38,6 +38,9 @@ public partial class SimulationControl
         public bool hasLimits;
         public float lowerLimit; // rad / m
         public float upperLimit; // rad / m
+        // ros2_control で effort 指令を宣言した関節。位置スライダでは指令
+        // できないので、GUI では表示専用にする。
+        public bool isEffortMode;
     }
 
     void Awake()
@@ -82,6 +85,8 @@ public partial class SimulationControl
             return;
         }
 
+        JointStateSub jointStateSub = entity.GetComponent<JointStateSub>();
+
         foreach (UrdfJoint urdfJoint in entity.GetComponentsInChildren<UrdfJoint>())
         {
             GuiJointKind kind;
@@ -114,6 +119,7 @@ public partial class SimulationControl
                 body = body,
                 servo = urdfJoint.GetComponent<ServoJointModel>(),
                 kind = kind,
+                isEffortMode = jointStateSub != null && jointStateSub.IsEffortJoint(urdfJoint.jointName),
             };
 
             if (kind != GuiJointKind.Continuous)

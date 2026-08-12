@@ -206,6 +206,27 @@ scene-wide geodetic origin shared by every robot: the first spawned robot that d
 sensor wins, and later robots that request a different origin get a warning and use the existing
 one. The fix is published as `sensor_msgs/NavSatFix` on `/<robot>/<link>/fix`.
 
+### Joint command modes (effort control)
+
+Joint commands arrive as `sensor_msgs/JointState` on the robot's command topic
+(`joint_commands_topic` in `<ros2_control><hardware>`). By default a joint is driven by a
+PD drive: `position[]` sets the drive target and `velocity[]` the target velocity.
+
+A joint whose `<ros2_control><joint>` entry declares
+`<command_interface name="effort"/>` (and no position/velocity interface) switches to
+**torque control**: the PD drive is disabled and the `effort[]` field of the command
+message is applied directly as the joint's generalized force (N·m, or N for prismatic
+joints), every physics step, until the next command. The value is clamped to the URDF
+`<limit effort>` and, if present, the `<param name="max">` of the command interface.
+`reset_simulation` zeroes the held torque. The `effort[]` field of the published joint
+states echoes the applied torque (for PD-driven joints it reports the drive force as
+before). A `<servo_model>` on an effort joint is ignored with a warning, and the GUI
+slider for such a joint becomes a read-only position indicator.
+
+The URDF `<limit velocity>` is now applied to every joint as the PhysX joint-velocity
+cap; without it, PhysX's default (~12.6 rad/s) silently limits fast wheels and
+torque-driven joints.
+
 ## Known limitations
 
 Work that is deliberately deferred, and the limits accepted as part of the design, are
