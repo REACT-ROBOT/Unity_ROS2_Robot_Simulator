@@ -19,8 +19,27 @@ public static class BuildLinuxPlayer
 {
     public static void Build()
     {
-        string output = GetArg("-buildOutput")
-            ?? "Builds/Linux/Unity_ROS2_Robot_Simulator.x86_64";
+        // -buildTarget Windows64 で Windows (Mono) のクロスビルド。既定は Linux。
+        // Windows ビルドには PlaybackEngines/WindowsStandaloneSupport が要る
+        // (Linux エディタでは Mac 向け .pkg として配布されるモジュールを展開して置く)。
+        string targetArg = GetArg("-playerTarget") ?? "Linux64";
+        BuildTarget target;
+        string defaultOutput;
+        switch (targetArg)
+        {
+            case "Windows64":
+                target = BuildTarget.StandaloneWindows64;
+                defaultOutput = "Builds/Windows/Unity_ROS2_Robot_Simulator.exe";
+                break;
+            case "Linux64":
+                target = BuildTarget.StandaloneLinux64;
+                defaultOutput = "Builds/Linux/Unity_ROS2_Robot_Simulator.x86_64";
+                break;
+            default:
+                throw new Exception($"Unknown -playerTarget '{targetArg}' (Linux64 | Windows64)");
+        }
+
+        string output = GetArg("-buildOutput") ?? defaultOutput;
 
         string[] scenes = EditorBuildSettings.scenes
             .Where(scene => scene.enabled)
@@ -36,7 +55,7 @@ public static class BuildLinuxPlayer
         {
             scenes = scenes,
             locationPathName = output,
-            target = BuildTarget.StandaloneLinux64,
+            target = target,
             targetGroup = BuildTargetGroup.Standalone,
             options = BuildOptions.None,
         };
