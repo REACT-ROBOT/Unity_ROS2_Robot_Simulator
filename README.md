@@ -183,7 +183,8 @@ See [docs/Service-Conformance-Test.md](docs/Service-Conformance-Test.md) for det
 
 ## Writing test scenarios (pytest)
 
-The companion repository ships `sim_test_utils`, a pytest plugin that wraps the
+The [simulation_ros2_utils](https://github.com/REACT-ROBOT/simulation_ros2_utils)
+repository (a submodule of the companion workspace) ships `sim_test_utils`, a pytest plugin that wraps the
 simulator services for scenario tests against a running simulator + endpoint:
 
 ```python
@@ -199,7 +200,7 @@ def test_avoidance(sim):                       # the `sim` fixture connects & cl
 Build `simulation_extra_interfaces` and `sim_test_utils`
 (`colcon build --packages-select simulation_extra_interfaces sim_test_utils`),
 restart the endpoint (services register when Unity connects), then run
-`python3 -m pytest src/sim_test_utils/examples -v`. The fixture deletes spawned
+`python3 -m pytest src/simulation_ros2_utils/sim_test_utils/examples -v`. The fixture deletes spawned
 entities, stops the simulation and resets time after every test. For
 reproducible physics, spawn while paused and advance with `sim.step()` only.
 

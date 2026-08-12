@@ -181,7 +181,8 @@ cd ~/colcon_ws && ./scripts/service_conformance_test.sh
 
 ## テストシナリオの書き方 (pytest)
 
-サンプルリポジトリに、シミュレータのサービス群を pytest から使う
+[simulation_ros2_utils](https://github.com/REACT-ROBOT/simulation_ros2_utils)
+リポジトリ (サンプルワークスペースのサブモジュール) に、シミュレータのサービス群を pytest から使う
 `sim_test_utils` プラグインがあります (シミュレータ+エンドポイントの起動が前提):
 
 ```python
@@ -196,7 +197,7 @@ def test_avoidance(sim):                       # sim フィクスチャが接続
 
 `colcon build --packages-select simulation_extra_interfaces sim_test_utils` で
 ビルドし、エンドポイントを再起動 (サービスは Unity 接続時に登録される) してから
-`python3 -m pytest src/sim_test_utils/examples -v` を実行します。フィクスチャは
+`python3 -m pytest src/simulation_ros2_utils/sim_test_utils/examples -v` を実行します。フィクスチャは
 テストごとにスポーンしたエンティティの削除・停止・時刻リセットを行います。
 再現性が要るテストは一時停止中にスポーンし、`sim.step()` だけで進めてください。
 
