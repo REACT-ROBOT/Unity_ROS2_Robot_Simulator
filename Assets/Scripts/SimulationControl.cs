@@ -2066,20 +2066,53 @@ public partial class SimulationControl : MonoBehaviour
     /// </summary>
     // 指定リンク配下のコライダーを接触センサへ登録する。子リンク (UrdfLink) の
     // 配下は別リンクの接触なので除外する。
+    //
+    // 登録には 2 つの意味がある。
+    //  - このリンクの接触として数える対象を決める (RegisterOwnCollider)
+    //  - コライダー側の GameObject にも中継を置く (RegisterCollider)
+    // 加えて、リンク自身が ArticulationBody を持たない場合は直近の祖先ボディへ中継を
+    // 張る。fixed 関節のリンクは親と剛結合なのでボディを持たず、コライダーは祖先の
+    // ボディに属する。Unity は衝突コールバックをボディを持つ GameObject にしか送らない
+    // ため、これが無いとセンサに何も届かない。祖先へ張ると車体全体の接触が入ってくるが、
+    // 上の RegisterOwnCollider で自分の板に当たったものだけに絞られる。
     private static void RegisterLinkCollidersToContactSensor(Transform node, ContactSensor sensor, bool isRoot)
     {
+        if (isRoot)
+        {
+            AttachContactSensorToOwningBody(node, sensor);
+        }
         if (!isRoot && node.GetComponent<UrdfLink>() != null)
         {
             return;
         }
         foreach (Collider collider in node.GetComponents<Collider>())
         {
+            sensor.RegisterOwnCollider(collider);
             sensor.RegisterCollider(collider);
         }
         for (int i = 0; i < node.childCount; i++)
         {
             RegisterLinkCollidersToContactSensor(node.GetChild(i), sensor, false);
         }
+    }
+
+    // センサの載ったリンクがボディを持たないとき、直近の祖先ボディへ中継を張る。
+    private static void AttachContactSensorToOwningBody(Transform link, ContactSensor sensor)
+    {
+        if (link.GetComponent<ArticulationBody>() != null || link.GetComponent<Rigidbody>() != null)
+        {
+            return;
+        }
+        for (Transform t = link.parent; t != null; t = t.parent)
+        {
+            if (t.GetComponent<ArticulationBody>() != null || t.GetComponent<Rigidbody>() != null)
+            {
+                sensor.RegisterBodyRelay(t.gameObject);
+                return;
+            }
+        }
+        Debug.LogWarning($"contact sensor on {link.name} has no body above it; " +
+                         "it will not report anything.");
     }
 
     // 測地原点 (GeoCoordinateSystem) はシーン全体で 1 つを共有する。既にあれば
