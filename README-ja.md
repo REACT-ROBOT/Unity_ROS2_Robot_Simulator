@@ -295,6 +295,35 @@ effort 関節の `<servo_model>` は警告して無視され、GUI のスライ�
 途絶すると速度目標と保持トルクをゼロへ落とし (位置目標はサーボ同様保持)、指令が
 再開すれば復帰します。既定は無効で、従来どおり最終指令を保持し続けます。
 
+### 関節状態と ground_truth の publisher
+
+関節状態の publisher/subscriber は `<ros2_control>` を持つ URDF にだけ付きます。
+ground_truth (`geometry_msgs/PoseStamped` と `/tf`) の publisher は、さらに
+`<ros2_control><hardware>` に `ground_truth_topic` を書いたときにだけ付きます。
+
+```xml
+<ros2_control name="${name}" type="system">
+  <hardware>
+    <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
+    <param name="joint_commands_topic">/${name}/joint_command</param>
+    <param name="joint_states_topic">/${name}/joint_states</param>
+    <param name="ground_truth_topic">/${name}/ground_truth</param>
+  </hardware>
+  ...
+</ros2_control>
+```
+
+投擲物や小道具のように `<ros2_control>` を持たない URDF には publisher が付きません。
+以前は URDF の中身に関わらず無条件に付けていましたが、既定のトピック名は実体を
+またいで共通なので、そうした実体を多数スポーンすると全部が同じ `/ground_truth`・
+`/tf`・`/joint_states` へ publish し、ROS-TCP の送信キュー (トピックごと) を埋めて
+ロボット側の状態まで巻き添えで捨てられていました (実測: 20 個で毎秒 1400 件超の
+ドロップ)。
+
+`ground_truth_topic` の指定は名前空間の衝突を避けるためでもあります。省略時の
+既定名は全ロボット共通なので、複数体を同時にスポーンすると同じトピックに乗ります。
+ロボット名で分けてください。
+
 ## 既知の制約
 
 意図的に保留にしている項目と、設計として受け入れている制約は

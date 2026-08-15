@@ -305,6 +305,35 @@ arrives for that many seconds, velocity targets and held torques are zeroed (pos
 targets stay, matching servo behaviour) until commands resume. Off by default — without
 the parameter the simulator keeps the last command forever, as before.
 
+### Joint state and ground truth publishers
+
+Joint state publishers/subscribers are attached only to URDFs that carry a
+`<ros2_control>` tag. The ground truth publisher (`geometry_msgs/PoseStamped` plus
+`/tf`) is attached only when `<ros2_control><hardware>` also declares
+`ground_truth_topic`:
+
+```xml
+<ros2_control name="${name}" type="system">
+  <hardware>
+    <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
+    <param name="joint_commands_topic">/${name}/joint_command</param>
+    <param name="joint_states_topic">/${name}/joint_states</param>
+    <param name="ground_truth_topic">/${name}/ground_truth</param>
+  </hardware>
+  ...
+</ros2_control>
+```
+
+URDFs without `<ros2_control>` — projectiles, props — get no publishers. These used to
+be attached regardless of what the URDF contained, but the default topic names are
+shared across entities, so spawning many such entities made all of them publish to the
+same `/ground_truth`, `/tf` and `/joint_states`. That filled the per-topic ROS-TCP
+outgoing queue and the drops took the robot's own state down with them (measured: over
+1400 dropped messages per second with 20 such entities).
+
+Declaring `ground_truth_topic` also keeps names apart. The default is shared by every
+robot, so spawning several at once puts them all on one topic — give each its own.
+
 ## Known limitations
 
 Work that is deliberately deferred, and the limits accepted as part of the design, are

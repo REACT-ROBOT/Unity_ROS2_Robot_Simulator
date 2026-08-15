@@ -885,10 +885,39 @@ public partial class SimulationControl : MonoBehaviour
         // 衝突記録: 全リンクへ ContactReporter を取り付ける (SimulationContacts.cs)
         AttachContactReporters(robotObject);
 
-        // JointState 用の Publisher/Subscriber の設定
-        JointStatePub jointStatePub = robotObject.AddComponent<JointStatePub>();
-        JointStateSub jointStateSub = robotObject.AddComponent<JointStateSub>();
-        GroundTruthPub groundTruthPub = robotObject.AddComponent<GroundTruthPub>();
+        // JointState 用の Publisher/Subscriber の設定。
+        //
+        // 以前は URDF の中身に関わらず無条件で付けていたが、それだと ros2_control を
+        // 持たない実体 (投擲物・小道具など) にも publisher が付いてしまう。既定の
+        // トピック名は実体をまたいで共通なので、そういう実体を多数スポーンすると
+        // 全部が同じ /joint_states・/ground_truth・/tf へ publish することになり、
+        // ROS-TCP の送信キュー (トピックごと) を埋めてロボット側の状態まで
+        // 巻き添えで捨てられる。必要な実体だけが名乗り出る形にする。
+        //
+        //   JointStatePub/Sub … ros2_control タグがあるとき
+        //   GroundTruthPub    … ros2_control/hardware に ground_truth_topic があるとき
+        //
+        // ground_truth を出したい実体は param を明示すること。既定名のままだと
+        // 名前がぶつかるので、明示を必須にしておく方が事故が少ない。
+        XmlNode ros2ControlNode = xmlDoc.SelectSingleNode("//robot/ros2_control");
+        XmlNode groundTruthParam = xmlDoc.SelectSingleNode(
+            "//robot/ros2_control/hardware/param[@name='ground_truth_topic']");
+        JointStatePub jointStatePub =
+            ros2ControlNode != null ? robotObject.AddComponent<JointStatePub>() : null;
+        JointStateSub jointStateSub =
+            ros2ControlNode != null ? robotObject.AddComponent<JointStateSub>() : null;
+        GroundTruthPub groundTruthPub =
+            groundTruthParam != null ? robotObject.AddComponent<GroundTruthPub>() : null;
+        if (ros2ControlNode == null)
+        {
+            Debug.Log($"'{robotObject.name}' has no <ros2_control>; " +
+                      "skipping joint state publisher/subscriber and ground truth");
+        }
+        else if (groundTruthParam == null)
+        {
+            Debug.Log($"'{robotObject.name}' has no 'ground_truth_topic' param; " +
+                      "skipping ground truth publisher");
+        }
         List<GameObject> childObjectsWithArticulationBody = FindArticulationBodyObjectsInChildren(robotObject);
         List<ArticulationBody> articulationBodyList = new List<ArticulationBody>();
         List<string> jointNameList = new List<string>();
@@ -916,36 +945,42 @@ public partial class SimulationControl : MonoBehaviour
             }
         }
 
-        jointStatePub.articulationBodies = articulationBodyList.ToArray();
-        jointStatePub.jointName = jointNameList.ToArray();
-        jointStatePub.jointLength = articulationBodyList.Count;
-        XmlNode jointStateParam = xmlDoc.SelectSingleNode("//robot/ros2_control/hardware/param[@name='joint_states_topic']");
-        if (jointStateParam != null)
+        if (jointStatePub != null)
         {
-            jointStatePub.topicName = jointStateParam.InnerText;
+            jointStatePub.articulationBodies = articulationBodyList.ToArray();
+            jointStatePub.jointName = jointNameList.ToArray();
+            jointStatePub.jointLength = articulationBodyList.Count;
+            XmlNode jointStateParam = xmlDoc.SelectSingleNode("//robot/ros2_control/hardware/param[@name='joint_states_topic']");
+            if (jointStateParam != null)
+            {
+                jointStatePub.topicName = jointStateParam.InnerText;
+            }
+            // URDF 指定が無ければ既定値のままなので、確定してから控える。
+            // TrackPublishedTopic は名前空間を適用した名前を返すので必ず代入し直すこと
+            // (代入を忘れると publisher だけ名前空間なしのまま登録され、解除対象の
+            // 名前ともずれる)。
+            jointStatePub.topicName =
+                TrackPublishedTopic(robotObject.name, entityNamespace, jointStatePub.topicName);
         }
-        // URDF 指定が無ければ既定値のままなので、確定してから控える。
-        // TrackPublishedTopic は名前空間を適用した名前を返すので必ず代入し直すこと
-        // (代入を忘れると publisher だけ名前空間なしのまま登録され、解除対象の
-        // 名前ともずれる)。
-        jointStatePub.topicName =
-            TrackPublishedTopic(robotObject.name, entityNamespace, jointStatePub.topicName);
 
-        jointStateSub.articulationBodies = articulationBodyList.ToArray();
-        jointStateSub.jointName = jointNameList.ToArray();
-        jointStateSub.jointLength = articulationBodyList.Count;
-        XmlNode jointCommandParam = xmlDoc.SelectSingleNode("//robot/ros2_control/hardware/param[@name='joint_commands_topic']");
-        if (jointCommandParam != null)
+        if (jointStateSub != null)
         {
-            jointStateSub.topicName = jointCommandParam.InnerText;
-        }
-        jointStateSub.topicName = ApplyNamespace(entityNamespace, jointStateSub.topicName);
+            jointStateSub.articulationBodies = articulationBodyList.ToArray();
+            jointStateSub.jointName = jointNameList.ToArray();
+            jointStateSub.jointLength = articulationBodyList.Count;
+            XmlNode jointCommandParam = xmlDoc.SelectSingleNode("//robot/ros2_control/hardware/param[@name='joint_commands_topic']");
+            if (jointCommandParam != null)
+            {
+                jointStateSub.topicName = jointCommandParam.InnerText;
+            }
+            jointStateSub.topicName = ApplyNamespace(entityNamespace, jointStateSub.topicName);
 
-        // 通信途絶ウォッチドッグ (実機モータドライバのバス断自動停止の再現)。
-        // 既定は無効 = 従来どおり最終指令を保持。
-        XmlNode commandTimeoutParam = xmlDoc.SelectSingleNode(
-            "//robot/ros2_control/hardware/param[@name='command_timeout']");
-        jointStateSub.commandTimeout = TryParseFloat(commandTimeoutParam?.InnerText, 0f);
+            // 通信途絶ウォッチドッグ (実機モータドライバのバス断自動停止の再現)。
+            // 既定は無効 = 従来どおり最終指令を保持。
+            XmlNode commandTimeoutParam = xmlDoc.SelectSingleNode(
+                "//robot/ros2_control/hardware/param[@name='command_timeout']");
+            jointStateSub.commandTimeout = TryParseFloat(commandTimeoutParam?.InnerText, 0f);
+        }
 
         // ros2_control の <joint><command_interface> を関節ごとに読む。
         // "effort" を宣言した関節はトルク指令モード: xDrive を無効化し、
@@ -1026,25 +1061,24 @@ public partial class SimulationControl : MonoBehaviour
                 Debug.Log($"[EffortMode] joint '{rcJointName}': torque command via jointForce"
                     + (float.IsInfinity(interfaceLimit) ? " (no limit)" : $" (|tau| <= {interfaceLimit})"));
             }
-            if (anyEffortJoint)
+            if (anyEffortJoint && jointStateSub != null)
             {
                 jointStateSub.effortModes = effortModes;
                 jointStateSub.effortLimits = effortLimits;
             }
         }
 
-        groundTruthPub.targetObject = childObjectsWithUrdfLink[0];
-        XmlNode groundTruthParam = xmlDoc.SelectSingleNode("//robot/ros2_control/hardware/param[@name='ground_truth_topic']");
-        if (groundTruthParam != null)
+        if (groundTruthPub != null)
         {
+            groundTruthPub.targetObject = childObjectsWithUrdfLink[0];
+            // groundTruthParam があるときだけ publisher を作っているので、ここは必ず通る。
             groundTruthPub.topicName = groundTruthParam.InnerText;
+            // ground_truth と tf は参照数で管理するので、素直に両方控えておけばよい。
+            groundTruthPub.topicName =
+                TrackPublishedTopic(robotObject.name, entityNamespace, groundTruthPub.topicName);
+            groundTruthPub.tfTopicName =
+                TrackPublishedTopic(robotObject.name, entityNamespace, groundTruthPub.tfTopicName);
         }
-        // ground_truth と tf は既定では全ロボット共通の名前になる。参照数で管理するので
-        // ここでは素直に両方控えておけばよい。
-        groundTruthPub.topicName =
-            TrackPublishedTopic(robotObject.name, entityNamespace, groundTruthPub.topicName);
-        groundTruthPub.tfTopicName =
-            TrackPublishedTopic(robotObject.name, entityNamespace, groundTruthPub.tfTopicName);
 
         string directoryPath = Path.GetDirectoryName(filePath);
         int assetsIndex = directoryPath.IndexOf("Assets");
