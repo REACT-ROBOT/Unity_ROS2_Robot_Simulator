@@ -4,3 +4,8 @@ Library/
 Temp/
 Build/
 Obj/
+
+# BuildLinuxPlayer.Build の出力先。既存の Build/ は単数形で、こちらには当たらない。
+Builds/
+# リリース用にまとめた zip とリリースノート
+Release/
