@@ -411,10 +411,25 @@ public partial class SimulationControl : MonoBehaviour
             return response;
         }
 
+        // リセット中に物理が進むと、姿勢を書き戻している途中でソルバが回る。
+        // いったん止めて作業し、終わったら呼ばれる前の実行状態へ戻す。
+        //
+        // 以前はここで STATE_STOPPED に落としきりだった。そうすると再生中に
+        // リセットしたあと誰かが明示的に play を呼ぶまで物理が止まったままで、
+        // 「リセットしたら試合が再開しない」ことになる。
+        //
+        // simulation_interfaces は ResetSimulation と実行状態の関係を規定して
+        // いない。SimulationState.msg にあるのは STATE_STOPPED が「一時停止 +
+        // リセット」に等しいという定義だけで、その逆 (リセットしたら停止する)
+        // は書かれていない。参照実装である Gazebo (ros_gz) の reset_simulation は
+        //     gz_request.set_pause(this->gz_proxy_->Paused());
+        // と現在の一時停止状態をそのまま載せ直していて、リセットでは再生/一時停止を
+        // 変えない。gz-sim の WorldControl でも pause と reset は独立したフィールドで、
+        // Gazebo Classic でも reset_world と pause_physics は別サービスだった。
+        // リセットと再生/停止は直交した操作、という扱いに合わせる。
         CancelStepping();
-        m_SimulationState = SimulationStateMsg.STATE_STOPPED;
+        byte stateBeforeReset = m_SimulationState;
         Time.timeScale = 0f;
-        SetPlayStopIcon(playIcon);
 
         if (request.scope == ResetSimulationRequest.SCOPE_DEFAULT)
         {
@@ -439,7 +454,31 @@ public partial class SimulationControl : MonoBehaviour
             DespawnAllEntities();
         }
 
+        RestoreSimulationState(stateBeforeReset);
         return response;
+    }
+
+    /// <summary>
+    /// リセット前の実行状態へ戻す。
+    /// </summary>
+    /// <remarks>
+    /// ApplySimulationState は使えない。あちらの STATE_STOPPED は仕様どおり
+    /// DespawnAllEntities を伴うので、リセット後の復元に使うとスポーン済みの
+    /// エンティティまで消えてしまう。ここが必要なのは timeScale とアイコンだけ。
+    /// </remarks>
+    private void RestoreSimulationState(byte state)
+    {
+        m_SimulationState = state;
+        if (state == SimulationStateMsg.STATE_PLAYING)
+        {
+            Time.timeScale = ConfiguredTimeScale;
+            SetPlayStopIcon(stopIcon);
+        }
+        else
+        {
+            Time.timeScale = 0f;
+            SetPlayStopIcon(playIcon);
+        }
     }
 
     /// <summary>
