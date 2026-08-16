@@ -2046,6 +2046,74 @@ public partial class SimulationControl : MonoBehaviour
                                     thruster.topicName = ApplyNamespace(entityNamespace, commandTopic);
                                 }
                                 break;
+                            case "body_twist_drive":
+                                Debug.Log("sensor type 'body_twist_drive' found");
+                                // 車体速度で直接動かす駆動要素。オムニホイールの
+                                // 置き換え用で、車輪リンクを持たない機体に付ける。
+                                // 力は連結全体を動かすので、根の ArticulationBody を
+                                // 対象にする (name はコンポーネントの置き場所を
+                                // 決めるだけ)。
+                                ArticulationBody driveRoot = GetEntityRootBody(robotObject);
+                                if (driveRoot == null)
+                                {
+                                    Debug.LogWarning(
+                                        "body_twist_drive: ArticulationBody が見つからないので付けない");
+                                    break;
+                                }
+
+                                GameObject driveObject = new GameObject(sensorLinkName + "_body_twist_drive");
+                                driveObject.transform.SetParent(targetObject.transform, false);
+
+                                BodyTwistDrive drive = driveObject.AddComponent<BodyTwistDrive>();
+                                drive.targetBody = driveRoot;
+
+                                // 既定のトピック名はセンサと同じ /<エンティティ名>/... 形式に
+                                // する。spawn_entity は entity_namespace を空で投げてくるので、
+                                // LinkThruster のように command_topic をそのまま使うと、
+                                // 同じ URDF から作った全機体が 1 本のトピックを共有して
+                                // しまい、8 台が一斉に同じ指令で動く。
+                                XmlNode driveTopicNode = sensor.SelectSingleNode("command_topic");
+                                drive.topicName = driveTopicNode != null
+                                    ? ApplyNamespace(entityNamespace, driveTopicNode.InnerText)
+                                    : "/" + robotObject.name + "/cmd_vel";
+
+                                XmlNode maxLinVelNode = sensor.SelectSingleNode("max_linear_velocity");
+                                if (maxLinVelNode != null)
+                                {
+                                    drive.maxLinearVelocity =
+                                        TryParseFloat(maxLinVelNode.InnerText, drive.maxLinearVelocity);
+                                }
+                                XmlNode maxAngVelNode = sensor.SelectSingleNode("max_angular_velocity");
+                                if (maxAngVelNode != null)
+                                {
+                                    drive.maxAngularVelocity =
+                                        TryParseFloat(maxAngVelNode.InnerText, drive.maxAngularVelocity);
+                                }
+                                XmlNode maxLinAccNode = sensor.SelectSingleNode("max_linear_acceleration");
+                                if (maxLinAccNode != null)
+                                {
+                                    drive.maxLinearAcceleration =
+                                        TryParseFloat(maxLinAccNode.InnerText, drive.maxLinearAcceleration);
+                                }
+                                XmlNode maxAngAccNode = sensor.SelectSingleNode("max_angular_acceleration");
+                                if (maxAngAccNode != null)
+                                {
+                                    drive.maxAngularAcceleration =
+                                        TryParseFloat(maxAngAccNode.InnerText, drive.maxAngularAcceleration);
+                                }
+                                XmlNode driveTimeoutNode = sensor.SelectSingleNode("command_timeout");
+                                if (driveTimeoutNode != null)
+                                {
+                                    drive.commandTimeout =
+                                        TryParseFloat(driveTimeoutNode.InnerText, drive.commandTimeout);
+                                }
+                                XmlNode driveDebugNode = sensor.SelectSingleNode("debug_interval");
+                                if (driveDebugNode != null)
+                                {
+                                    drive.debugInterval =
+                                        TryParseFloat(driveDebugNode.InnerText, drive.debugInterval);
+                                }
+                                break;
                             default:
                                 Debug.Log("undefined sensor type found");
                                 break;
@@ -3152,6 +3220,10 @@ public partial class SimulationControl : MonoBehaviour
         foreach (LinkThruster thruster in entity.GetComponentsInChildren<LinkThruster>(true))
         {
             thruster.DetachFromRos();
+        }
+        foreach (BodyTwistDrive drive in entity.GetComponentsInChildren<BodyTwistDrive>(true))
+        {
+            drive.DetachFromRos();
         }
         // publisher 側も解除する。こちらは購読と違いコンポーネントに解除 API が無い
         // (センサ系は UnitySensors のクラス) ため、スポーン時に控えたトピック名で外す。

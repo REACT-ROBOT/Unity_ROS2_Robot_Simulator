@@ -89,7 +89,12 @@ public class RtfDisplay : MonoBehaviour
         {
             Debug.LogError("RtfDisplay: rtfText がアサインされていません。");
             enabled = false;
+            return;
         }
+        // FPS 表示と同じ見た目にする。背景板はラベルの兄弟として作るので、
+        // Bootstrap の Instantiate では複製されない (複製元にもまだ無い)。
+        // ここで複製したラベルぶんを自分で付ける。
+        OverlayLabelStyle.Apply(rtfText);
     }
 
     void Update()

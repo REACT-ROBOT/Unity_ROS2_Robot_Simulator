@@ -23,6 +23,8 @@ public class FpsDisplayTMP : MonoBehaviour
             enabled = false;
             return;
         }
+        // 明るい床や白いロボットの上でも読めるように、縁取りと背景板を付ける。
+        OverlayLabelStyle.Apply(fpsText);
         timeLeft = updateInterval;
     }
 
