@@ -1587,13 +1587,11 @@ public partial class SimulationControl : MonoBehaviour
                                     next_display_number++;
                                 }
                                 CameraInfoMsgPublisher cameraInfoPublisher = targetObject.AddComponent<CameraInfoMsgPublisher>();
-                                ImageMsgPublisher cameraImagePublisher = targetObject.AddComponent<ImageMsgPublisher>();
-                                // Set publisher update rate to match sensor
+                                float cameraUpdateRate = updateRateNode != null
+                                    ? TryParseFloat(updateRateNode.InnerText) : 0.0f;
                                 if (updateRateNode != null)
                                 {
-                                    float updateRate = TryParseFloat(updateRateNode.InnerText);
-                                    SetPublisherUpdateRate(cameraInfoPublisher, updateRate, "CameraInfo:" + sensorLinkName);
-                                    SetPublisherUpdateRate(cameraImagePublisher, updateRate, "CameraImage:" + sensorLinkName);
+                                    SetPublisherUpdateRate(cameraInfoPublisher, cameraUpdateRate, "CameraInfo:" + sensorLinkName);
                                 }
                                 // Use public API instead of Reflection
                                 var cameraInfoHeader = new HeaderSerializer();
@@ -1603,12 +1601,44 @@ public partial class SimulationControl : MonoBehaviour
                                 cameraInfoPublisher.serializer = cameraInfoSerializer;
                                 cameraInfoPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/camera_info");
 
+                                // 画像は生と JPEG のどちらか。既定は生 (従来どおり)。
+                                // 生画像は 720p で 1 枚 2.76 MB あり、ros_tcp_endpoint への
+                                // 1 本の TCP がこれで詰まる。台数を積む構成では jpeg を選ぶ。
                                 var cameraImageHeader = new HeaderSerializer();
                                 cameraImageHeader.Configure(cameraSensor, sensorLinkName);
-                                var cameraImageSerializer = new ImageMsgSerializer();
-                                cameraImageSerializer.Configure(cameraSensor, cameraImageHeader, 0, 0); // Texture0, RGB8
-                                cameraImagePublisher.serializer = cameraImageSerializer;
-                                cameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/image_raw");
+                                string cameraFormat = TryParseTextNode(sensor.SelectSingleNode("image/format"), "raw");
+                                if (cameraFormat == "jpeg")
+                                {
+                                    int jpegQuality = Mathf.Clamp(
+                                        TryParseIntNode(sensor.SelectSingleNode("image/quality"), 75), 1, 100);
+                                    CompressedImageMsgPublisher cameraJpegPublisher = targetObject.AddComponent<CompressedImageMsgPublisher>();
+                                    if (updateRateNode != null)
+                                    {
+                                        SetPublisherUpdateRate(cameraJpegPublisher, cameraUpdateRate, "CameraJpeg:" + sensorLinkName);
+                                    }
+                                    var cameraJpegSerializer = new CompressedImageMsgSerializer();
+                                    cameraJpegSerializer.Configure(cameraSensor, cameraImageHeader, 0, jpegQuality); // Texture0
+                                    cameraJpegPublisher.serializer = cameraJpegSerializer;
+                                    // image_transport の慣習に合わせて <生画像のトピック>/compressed
+                                    cameraJpegPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/image_raw/compressed");
+                                    Debug.Log($"Camera {sensorLinkName} publishes JPEG (quality {jpegQuality})");
+                                }
+                                else
+                                {
+                                    if (cameraFormat != "raw")
+                                    {
+                                        Debug.LogWarning($"Unknown image format '{cameraFormat}'; using raw");
+                                    }
+                                    ImageMsgPublisher cameraImagePublisher = targetObject.AddComponent<ImageMsgPublisher>();
+                                    if (updateRateNode != null)
+                                    {
+                                        SetPublisherUpdateRate(cameraImagePublisher, cameraUpdateRate, "CameraImage:" + sensorLinkName);
+                                    }
+                                    var cameraImageSerializer = new ImageMsgSerializer();
+                                    cameraImageSerializer.Configure(cameraSensor, cameraImageHeader, 0, 0); // Texture0, RGB8
+                                    cameraImagePublisher.serializer = cameraImageSerializer;
+                                    cameraImagePublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/image_raw");
+                                }
                                 break;
                             case "wideanglecamera":
                                 Debug.Log("sensor type 'wideanglecamera' found");
@@ -2373,6 +2403,29 @@ public partial class SimulationControl : MonoBehaviour
         if (text.Equals("false", System.StringComparison.OrdinalIgnoreCase) || text == "0") return false;
 
         Debug.LogWarning($"Cannot read '{text}' as a boolean; using {defaultValue}");
+        return defaultValue;
+    }
+
+    /// <summary>
+    /// URDF の文字列ノードを読む。空白は落とし、大小文字は無視して小文字で返す。
+    /// ノードが無ければ既定値。
+    /// </summary>
+    private static string TryParseTextNode(System.Xml.XmlNode node, string defaultValue)
+    {
+        if (node == null) return defaultValue;
+        string text = node.InnerText.Trim().ToLowerInvariant();
+        return text.Length == 0 ? defaultValue : text;
+    }
+
+    /// <summary>
+    /// URDF の整数ノードを読む。読めない値は既定値に倒したうえで警告する。
+    /// </summary>
+    private static int TryParseIntNode(System.Xml.XmlNode node, int defaultValue)
+    {
+        if (node == null) return defaultValue;
+        if (int.TryParse(node.InnerText.Trim(), out int value)) return value;
+
+        Debug.LogWarning($"Cannot read '{node.InnerText.Trim()}' as an integer; using {defaultValue}");
         return defaultValue;
     }
 
