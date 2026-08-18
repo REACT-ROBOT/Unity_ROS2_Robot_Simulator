@@ -1212,6 +1212,41 @@ public class ObjectSpawner : MonoBehaviour
     }
 
     /// <summary>
+    /// LODGroup の LOD1 以降に割り当てられた、表示用の代替メッシュを集める。
+    /// </summary>
+    /// <remarks>
+    /// これらに当たり判定を付けてはいけない。SetupLODForLargeMesh が作る LOD1 / LOD2 は
+    /// 頂点クラスタリングで間引いたメッシュで、頂点をグリッドへ吸着させる都合上、
+    /// 元の形状よりセル寸法ぶん外側へ膨らむ。遠距離でしか描画されないので、
+    /// 近くで見ると「何も無いのに通れない」ようにしか見えない。
+    ///
+    /// SetupLODForLargeMesh は SetupMeshColliders より先に走り、LOD1 / LOD2 を
+    /// MeshFilter 付きの子として足す。SetupMeshColliders は MeshFilter を総なめするので、
+    /// 明示的に除かないとそのまま当たり判定になる。実測では 21845 三角形の
+    /// ステージ断片が LOD1 で 15 三角形まで潰れており、機体がフィールド中央へ
+    /// 進入できなくなっていた。
+    /// </remarks>
+    private HashSet<GameObject> CollectLodSubstitutes(GameObject obj)
+    {
+        var substitutes = new HashSet<GameObject>();
+        foreach (LODGroup group in obj.GetComponentsInChildren<LODGroup>(true))
+        {
+            LOD[] lods = group.GetLODs();
+            for (int level = 1; level < lods.Length; level++)
+            {
+                foreach (Renderer renderer in lods[level].renderers)
+                {
+                    if (renderer != null)
+                    {
+                        substitutes.Add(renderer.gameObject);
+                    }
+                }
+            }
+        }
+        return substitutes;
+    }
+
+    /// <summary>
     /// MeshFilterを持つすべての子オブジェクトにMeshColliderを設定する
     /// 大規模メッシュは自動的に簡略化してパフォーマンスを改善
     /// </summary>
@@ -1219,12 +1254,22 @@ public class ObjectSpawner : MonoBehaviour
     {
         Debug.Log($"SetupMeshColliders called for: {obj.name}");
 
+        // LOD1 / LOD2 は表示用の代替メッシュなので、当たり判定にしてはいけない。
+        HashSet<GameObject> lodSubstitutes = CollectLodSubstitutes(obj);
+
         // 既存のMeshColliderを処理（MeshImporterが追加した場合）
         MeshCollider[] existingColliders = obj.GetComponentsInChildren<MeshCollider>();
         Debug.Log($"Found {existingColliders.Length} existing MeshColliders");
 
         foreach (MeshCollider meshCollider in existingColliders)
         {
+            if (lodSubstitutes.Contains(meshCollider.gameObject))
+            {
+                Debug.Log($"Removing MeshCollider from LOD substitute: {meshCollider.gameObject.name}");
+                Destroy(meshCollider);
+                continue;
+            }
+
             MeshFilter meshFilter = meshCollider.gameObject.GetComponent<MeshFilter>();
             if (meshFilter == null)
             {
@@ -1242,13 +1287,14 @@ public class ObjectSpawner : MonoBehaviour
             int triangleCount = mesh.triangles.Length / 3;
             Debug.Log($"Processing {meshCollider.gameObject.name}, mesh: {mesh.name}, triangles: {triangleCount}");
 
-            // 大規模メッシュは簡略化してコリジョン用メッシュを生成
+            // 形状はそのまま使う。ワールドのメッシュは静止しているので、非凸の
+            // まま MeshCollider に載せられる (凸である必要があるのは動く剛体だけ)。
+            //
+            // 以前はここで頂点をグリッドへ吸着させて間引いていたが、あの方式は
+            // 形状をセル寸法ぶん外側へ膨らませる。表示は元のメッシュのままなので、
+            // 見た目には何も無い平らな床に、見えない壁ができる。209112 三角形の
+            // ステージで実際に起きていて、ロボットが平面上で動けなくなっていた。
             Mesh collisionMesh = mesh;
-            if (triangleCount > MAX_COLLISION_TRIANGLES)
-            {
-                Debug.Log($"Large mesh detected. Creating simplified collision mesh (target: {MAX_COLLISION_TRIANGLES} triangles)");
-                collisionMesh = CreateSimplifiedCollisionMesh(mesh, (int)(triangleCount * COLLISION_RATIO));
-            }
 
             meshCollider.sharedMesh = null;
             meshCollider.sharedMesh = collisionMesh;
@@ -1261,6 +1307,12 @@ public class ObjectSpawner : MonoBehaviour
 
         foreach (MeshFilter meshFilter in meshFilters)
         {
+            if (lodSubstitutes.Contains(meshFilter.gameObject))
+            {
+                Debug.Log($"Skipping LOD substitute: {meshFilter.gameObject.name}");
+                continue;
+            }
+
             Mesh mesh = meshFilter.sharedMesh;
             if (mesh == null)
             {
@@ -1280,13 +1332,8 @@ public class ObjectSpawner : MonoBehaviour
 
             MeshCollider meshCollider = meshFilter.gameObject.AddComponent<MeshCollider>();
 
-            // 大規模メッシュは簡略化
+            // 上と同じ理由で、形状はそのまま使う。
             Mesh collisionMesh = mesh;
-            if (triangleCount > MAX_COLLISION_TRIANGLES)
-            {
-                Debug.Log($"Large mesh detected. Creating simplified collision mesh (target: {MAX_COLLISION_TRIANGLES} triangles)");
-                collisionMesh = CreateSimplifiedCollisionMesh(mesh, MAX_COLLISION_TRIANGLES);
-            }
 
             meshCollider.sharedMesh = collisionMesh;
             Debug.Log($"MeshCollider added: {meshFilter.gameObject.name}, collision triangles: {collisionMesh.triangles.Length / 3}");
