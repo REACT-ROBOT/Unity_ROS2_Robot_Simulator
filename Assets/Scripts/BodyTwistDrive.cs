@@ -65,6 +65,21 @@ public class BodyTwistDrive : MonoBehaviour
 
     private float m_LastDebugTime = float.NegativeInfinity;
 
+    // --- 診断用 -----------------------------------------------------------
+    // 「指令どおりに動かない」を見たとき、指令がそもそも届いているのかを
+    // 最初に確かめるためのもの。FixedUpdate 側のログは vx=0.000 としか出ないので、
+    // 「コールバックが呼ばれていない」のか「呼ばれているが指令切れ扱い」なのかを
+    // 区別できない。実際これが無かったせいで、届いている指令を届いていないと
+    // 思い込み、受信経路を長く疑って遠回りした。
+    //
+    // 数えるのは m_Unsubscribed の判定より手前。破棄された到達も記録される。
+    // 加算だけなので debugInterval が 0 でも常に動かしてよい (文字列は作らない)。
+    private int m_CmdCount;                 // OnCommand に入った回数
+    private int m_CmdCountAtLastDebug;
+    private int m_CmdDroppedUnsubscribed;   // 購読解除済みとして捨てた回数
+    private int m_CmdThreadId;              // 直近の呼び出しスレッド
+    private volatile float m_RawVx, m_RawVy, m_RawWz;  // 直近に届いた生の値
+
     // 指令 (ROS 座標系・車体基準)。ROS スレッドから書かれ FixedUpdate から読まれる。
     private volatile float m_CmdVx;
     private volatile float m_CmdVy;
@@ -265,8 +280,18 @@ public class BodyTwistDrive : MonoBehaviour
         {
             m_LastDebugTime = Time.fixedTime;
             Transform t = targetBody.transform;
+            int cmdCount = m_CmdCount;
+            int cmdDelta = cmdCount - m_CmdCountAtLastDebug;
+            m_CmdCountAtLastDebug = cmdCount;
+            float sinceCmd = Time.fixedTime - m_LastCommandTime;
             Debug.Log(
                 $"[BodyTwistDrive] {topicName}\n" +
+                $"  受信 累計={cmdCount} 直近{debugInterval:F2}s={cmdDelta} " +
+                $"生値=({m_RawVx:F3},{m_RawVy:F3},{m_RawWz:F3}) " +
+                $"スレッド={m_CmdThreadId} 解除済破棄={m_CmdDroppedUnsubscribed}\n" +
+                $"  指令切れ判定 active={active} hasCmd={m_HasCommand} " +
+                $"unsub={m_Unsubscribed} 最終受信から={sinceCmd:F2}s (timeout={commandTimeout:F2}s) " +
+                $"保持値=({m_CmdVx:F3},{m_CmdVy:F3},{m_CmdWz:F3})\n" +
                 $"  指令(ROS体)   vx={vx:F3} vy={vy:F3} wz={wz:F3}\n" +
                 $"  目標(U体)     {targetLocal}\n" +
                 $"  目標(Uワールド) {targetWorld}  現在 {current}\n" +
@@ -318,8 +343,18 @@ public class BodyTwistDrive : MonoBehaviour
 
     private void OnCommand(TwistMsg msg)
     {
+        // 診断: 到達そのものを、どの分岐より先に数える。ここが増えなければ
+        // 問題は ROSConnection より手前 (受信経路)、増えるのに動かなければ
+        // 問題はこの下 (指令の保持か FixedUpdate 側) と切り分けられる。
+        System.Threading.Interlocked.Increment(ref m_CmdCount);
+        m_CmdThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+        m_RawVx = (float)msg.linear.x;
+        m_RawVy = (float)msg.linear.y;
+        m_RawWz = (float)msg.angular.z;
+
         if (m_Unsubscribed)
         {
+            m_CmdDroppedUnsubscribed++;
             return;
         }
         m_CmdVx = (float)msg.linear.x;
