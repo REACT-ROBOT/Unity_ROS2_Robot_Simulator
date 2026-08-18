@@ -1957,31 +1957,52 @@ public partial class SimulationControl : MonoBehaviour
                                     SetSensorUpdateRate(contactSensor, updateRate, "Contact:" + sensorLinkName);
                                 }
 
-                                // バンパー的な接触有無 (std_msgs/Bool)
-                                BoolMsgPublisher contactBoolPublisher = targetObject.AddComponent<BoolMsgPublisher>();
-                                if (contactUpdateRateNode != null)
-                                {
-                                    float updateRate = TryParseFloat(contactUpdateRateNode.InnerText);
-                                    SetPublisherUpdateRate(contactBoolPublisher, updateRate, "Contact:" + sensorLinkName);
-                                }
-                                var contactBoolSerializer = new BoolMsgSerializer();
-                                contactBoolSerializer.Configure(contactSensor);
-                                contactBoolPublisher.serializer = contactBoolSerializer;
-                                contactBoolPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/contact");
+                                float contactUpdateRate = contactUpdateRateNode != null
+                                    ? TryParseFloat(contactUpdateRateNode.InnerText) : 0.0f;
 
-                                // 正味の接触レンチ (geometry_msgs/WrenchStamped, センサリンク系)
-                                WrenchStampedMsgPublisher contactWrenchPublisher = targetObject.AddComponent<WrenchStampedMsgPublisher>();
+                                // 接触開始の回数 (std_msgs/Int32)。publish のたびに値が確定する
+                                // Bool と違い、累積値なので途中の通が落ちても次の 1 通で追いつく。
+                                // 送信キューが溢れる構成 (カメラを多数積む等) ではこちらが頼りになる。
+                                Int32MsgPublisher contactCountPublisher = targetObject.AddComponent<Int32MsgPublisher>();
                                 if (contactUpdateRateNode != null)
                                 {
-                                    float updateRate = TryParseFloat(contactUpdateRateNode.InnerText);
-                                    SetPublisherUpdateRate(contactWrenchPublisher, updateRate, "Contact:" + sensorLinkName);
+                                    SetPublisherUpdateRate(contactCountPublisher, contactUpdateRate, "ContactCount:" + sensorLinkName);
                                 }
-                                var contactHeader = new HeaderSerializer();
-                                contactHeader.Configure(contactSensor, sensorLinkName);
-                                var contactWrenchSerializer = new WrenchStampedMsgSerializer();
-                                contactWrenchSerializer.Configure(contactSensor, contactHeader);
-                                contactWrenchPublisher.serializer = contactWrenchSerializer;
-                                contactWrenchPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/contact/wrench");
+                                var contactCountSerializer = new Int32MsgSerializer();
+                                contactCountSerializer.Configure(contactSensor);
+                                contactCountPublisher.serializer = contactCountSerializer;
+                                contactCountPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/contact_count");
+
+                                // バンパー的な接触有無 (std_msgs/Bool)。既定は出す。
+                                if (TryParseBoolNode(sensor.SelectSingleNode("publish_state"), true))
+                                {
+                                    BoolMsgPublisher contactBoolPublisher = targetObject.AddComponent<BoolMsgPublisher>();
+                                    if (contactUpdateRateNode != null)
+                                    {
+                                        SetPublisherUpdateRate(contactBoolPublisher, contactUpdateRate, "Contact:" + sensorLinkName);
+                                    }
+                                    var contactBoolSerializer = new BoolMsgSerializer();
+                                    contactBoolSerializer.Configure(contactSensor);
+                                    contactBoolPublisher.serializer = contactBoolSerializer;
+                                    contactBoolPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/contact");
+                                }
+
+                                // 正味の接触レンチ (geometry_msgs/WrenchStamped, センサリンク系)。
+                                // 力を見ない用途では丸ごと無駄なので URDF で止められる。
+                                if (TryParseBoolNode(sensor.SelectSingleNode("publish_wrench"), true))
+                                {
+                                    WrenchStampedMsgPublisher contactWrenchPublisher = targetObject.AddComponent<WrenchStampedMsgPublisher>();
+                                    if (contactUpdateRateNode != null)
+                                    {
+                                        SetPublisherUpdateRate(contactWrenchPublisher, contactUpdateRate, "Contact:" + sensorLinkName);
+                                    }
+                                    var contactHeader = new HeaderSerializer();
+                                    contactHeader.Configure(contactSensor, sensorLinkName);
+                                    var contactWrenchSerializer = new WrenchStampedMsgSerializer();
+                                    contactWrenchSerializer.Configure(contactSensor, contactHeader);
+                                    contactWrenchPublisher.serializer = contactWrenchSerializer;
+                                    contactWrenchPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/contact/wrench");
+                                }
                                 break;
                             case "thruster":
                                 Debug.Log("sensor type 'thruster' found");
@@ -2334,6 +2355,27 @@ public partial class SimulationControl : MonoBehaviour
     /// <summary>
     /// RosMsgPublisherの更新レートを設定する（リフレクションを使用）
     /// </summary>
+    /// <summary>
+    /// URDF の真偽値ノードを読む。ノードが無いときは既定値をそのまま返すので、
+    /// 指定を書き足していない既存の記述は従来どおりの挙動になる。
+    /// </summary>
+    /// <remarks>
+    /// SDF/URDF では true/false と 1/0 のどちらも見かけるため両方受ける。
+    /// 解釈できない値は既定値に倒したうえで警告する。黙って false 扱いにすると
+    /// 綴り間違いでトピックが消え、原因が分かりにくいため。
+    /// </remarks>
+    private static bool TryParseBoolNode(System.Xml.XmlNode node, bool defaultValue)
+    {
+        if (node == null) return defaultValue;
+
+        string text = node.InnerText.Trim();
+        if (text.Equals("true", System.StringComparison.OrdinalIgnoreCase) || text == "1") return true;
+        if (text.Equals("false", System.StringComparison.OrdinalIgnoreCase) || text == "0") return false;
+
+        Debug.LogWarning($"Cannot read '{text}' as a boolean; using {defaultValue}");
+        return defaultValue;
+    }
+
     private static void SetPublisherUpdateRate(MonoBehaviour publisher, float updateRate, string publisherName)
     {
         Debug.Log($"Setting {publisherName} publisher update rate to: {updateRate} Hz");
