@@ -1,7 +1,7 @@
 {
   "dependencies": {
-    "com.frj.unity-sensors": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#e30069ba5eec9e13183b1672d4465cca4172e940",
-    "com.frj.unity-sensors-ros": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#e30069ba5eec9e13183b1672d4465cca4172e940",
+    "com.frj.unity-sensors": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensors#ff20ff5acac7cff8eaf0a3148e483629ab4c4c8a",
+    "com.frj.unity-sensors-ros": "https://github.com/hijimasa/UnitySensors.git?path=/Packages/UnitySensorsROS#ff20ff5acac7cff8eaf0a3148e483629ab4c4c8a",
     "com.naughtyattributes.waterbuoyancy": "https://github.com/hijimasa/NaughtyWaterBuoyancy.git?path=/Assets/NaughtyWaterBuoyancy#8a548cc3df504b4180d040797d3c5f40fd09d687",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.ai.navigation": "2.0.14",
