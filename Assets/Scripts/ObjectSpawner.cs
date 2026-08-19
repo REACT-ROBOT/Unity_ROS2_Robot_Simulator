@@ -1123,10 +1123,6 @@ public class ObjectSpawner : MonoBehaviour
         return null;
     }
 
-    // コリジョン用の簡略化メッシュの最大三角形数
-    private const int MAX_COLLISION_TRIANGLES = 50000;
-    private const float COLLISION_RATIO = 0.2f;
-
     // LOD用の閾値（この三角形数を超えるとLODを生成）
     // 非常に小さいメッシュ（100三角形未満）は対象外とする
     // それ以上のメッシュは画面占有率ベースでLODが切り替わる
@@ -1175,7 +1171,7 @@ public class ObjectSpawner : MonoBehaviour
             // Culled: 完全に非表示（非常に遠い）
 
             // LOD1用の簡略化メッシュを作成
-            Mesh lod1Mesh = CreateSimplifiedCollisionMesh(mesh, triangleCount / 10);
+            Mesh lod1Mesh = CreateSimplifiedLodMesh(mesh, triangleCount / 10);
             GameObject lod1Obj = new GameObject("LOD1");
             lod1Obj.transform.SetParent(meshObj.transform, false);
             MeshFilter lod1Filter = lod1Obj.AddComponent<MeshFilter>();
@@ -1184,7 +1180,7 @@ public class ObjectSpawner : MonoBehaviour
             lod1Renderer.sharedMaterials = originalRenderer.sharedMaterials;
 
             // LOD2用の簡略化メッシュを作成
-            Mesh lod2Mesh = CreateSimplifiedCollisionMesh(mesh, triangleCount / 100);
+            Mesh lod2Mesh = CreateSimplifiedLodMesh(mesh, triangleCount / 100);
             GameObject lod2Obj = new GameObject("LOD2");
             lod2Obj.transform.SetParent(meshObj.transform, false);
             MeshFilter lod2Filter = lod2Obj.AddComponent<MeshFilter>();
@@ -1341,10 +1337,19 @@ public class ObjectSpawner : MonoBehaviour
     }
 
     /// <summary>
-    /// メッシュを簡略化してLOD/コリジョン用の軽量メッシュを生成
-    /// 頂点クラスタリングアルゴリズムを使用して、穴のない連続した面を維持
+    /// 表示用の LOD メッシュを生成する。頂点クラスタリングで間引く。
     /// </summary>
-    private Mesh CreateSimplifiedCollisionMesh(Mesh originalMesh, int targetTriangles)
+    /// <remarks>
+    /// 当たり判定には使えない。頂点をグリッドへ吸着させる方式なので、形状が
+    /// セル寸法ぶん外側へ膨らむ。表示は元のメッシュのままなので、見た目には
+    /// 何も無い平らな床に見えない壁ができる。実際 SetupMeshColliders が
+    /// この結果を当たり判定にしていて、機体がフィールド中央へ進入できなく
+    /// なっていた (CollectLodSubstitutes の注記を参照)。
+    ///
+    /// 以前は名前が CreateSimplifiedCollisionMesh で、コリジョン用と読めた。
+    /// いまは LOD 生成専用。
+    /// </remarks>
+    private Mesh CreateSimplifiedLodMesh(Mesh originalMesh, int targetTriangles)
     {
         Vector3[] vertices = originalMesh.vertices;
         int[] triangles = originalMesh.triangles;
