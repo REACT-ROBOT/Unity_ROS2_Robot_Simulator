@@ -13,6 +13,11 @@ public class JointStatePub : MonoBehaviour
     public ArticulationBody[] articulationBodies;
     public string topicName = "/joint_states";
     public int jointLength = 19;
+    // Feedback publish rate [Hz]. Robot controllers poll their motor feedback at
+    // their own control cycle (BL26: 30 Hz) and get the LATEST joint state, so
+    // this bounds how stale that feedback can be. Values at or above the physics
+    // rate (1 / fixedDeltaTime) publish every physics step.
+    public float publishRateHz = 30f;
     private ROSConnection ros;
 
     float time;
@@ -33,6 +38,9 @@ public class JointStatePub : MonoBehaviour
     // 位置差分なら実機エンコーダと同じ算出で、姿勢差分由来の IMU とも整合する。
     private double[] _lastPosition;
     private bool _feedbackBaselineValid;
+    // Real time since the last publish, for the velocity difference above --
+    // kept separate from the schedule accumulator (which carries a remainder).
+    private float _elapsedSincePublish;
 
     void Start()
     {
@@ -79,9 +87,21 @@ public class JointStatePub : MonoBehaviour
     void FixedUpdate()
     {
         time += Time.deltaTime;
-        if (time<0.05f) return;
-        float dt = time;
-        time = 0.0f;
+        _elapsedSincePublish += Time.deltaTime;
+        float interval = (publishRateHz > 0f) ? (1f / publishRateHz) : 0.05f;
+        if (time < interval) return;
+        // dt is the REAL elapsed time since the last publish -- the position
+        // difference below must be divided by it. It is NOT the schedule
+        // accumulator: that one carries a remainder credit, and dividing by it
+        // scales the velocity feedback by real/dt (up to ~2x off), which the
+        // robot's wheel odometry then integrates into a distance error.
+        float dt = _elapsedSincePublish;
+        _elapsedSincePublish = 0f;
+        // Carry the remainder so the AVERAGE rate holds even when the interval
+        // is not a multiple of the physics step (50 Hz steps + 30 Hz target ->
+        // alternating 20/40 ms). Clamp the carry so a hitch cannot burst.
+        time -= interval;
+        if (time > interval) time = interval;
         var timestamp = new TimeStamp(Clock.Now);
 
         for (int i = 0; i < articulationBodies.Length; i++)
