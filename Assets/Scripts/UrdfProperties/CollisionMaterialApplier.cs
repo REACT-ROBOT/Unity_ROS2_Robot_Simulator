@@ -8,7 +8,8 @@ namespace UrdfProperties
 {
     /// <summary>
     /// URDF の独自要素 <c>&lt;collision_material&gt;</c> を読んで、対応するコライダへ
-    /// 摩擦係数と contact offset を設定する。
+    /// 摩擦係数と contact offset を設定する。<c>&lt;sensor_only&gt;</c> を持つ定義は
+    /// コライダをトリガ (接触応答なし) にする。
     /// </summary>
     /// <remarks>
     /// URDF Importer はこの要素を知らないので、インポート後にこちらで適用する。
@@ -19,6 +20,9 @@ namespace UrdfProperties
     ///   &lt;collision_material name="wheel"&gt;
     ///     &lt;friction static="1.0" dynamic="1.0" combine="maximum"/&gt;
     ///     &lt;contact_offset value="0.02"/&gt;
+    ///   &lt;/collision_material&gt;
+    ///   &lt;collision_material name="weed"&gt;
+    ///     &lt;sensor_only value="true"/&gt;   // LiDAR には映るが、触れても押し返さない
     ///   &lt;/collision_material&gt;
     ///   &lt;link name="wheel"&gt;
     ///     &lt;collision&gt;... &lt;collision_material name="wheel"/&gt;&lt;/collision&gt;
@@ -31,6 +35,12 @@ namespace UrdfProperties
     /// Maximum)。既定の Average では、床のマテリアルとの平均が実効値になるため
     /// <c>static="1.0"</c> と書いても 1.0 にはならない。相手によらず指定値を効かせたい
     /// 場合は <c>combine="maximum"</c> を指定すること。</para>
+    ///
+    /// <para><b>sensor_only について</b>: Unity の <c>Collider.isTrigger</c> を立てる。
+    /// トリガは物理接触を起こさないが、プロジェクト設定 <c>Queries Hit Triggers</c> が
+    /// 有効なのでレイキャスト (UnitySensors の LiDAR など) には当たる。雑草のように
+    /// 「センサには見えるが走行を妨げない」物体に使う。トリガにできるのは convex な
+    /// コライダだけなので、非 convex の MeshCollider は convex に変えてから立てる。</para>
     /// </remarks>
     public static class CollisionMaterialApplier
     {
@@ -43,6 +53,8 @@ namespace UrdfProperties
             public PhysicsMaterialCombine FrictionCombine = PhysicsMaterialCombine.Average;
             public bool HasContactOffset;
             public float ContactOffset;
+            /// <summary>true ならコライダをトリガにする (センサにだけ見える物体)。</summary>
+            public bool SensorOnly;
         }
 
         /// <summary>&lt;robot&gt; 直下の定義をすべて読む。</summary>
@@ -91,6 +103,13 @@ namespace UrdfProperties
                 {
                     definition.HasContactOffset = true;
                     definition.ContactOffset = ParseFloat(contactOffset.Attributes?["value"]?.Value, 0f);
+                }
+
+                XmlNode sensorOnly = node.SelectSingleNode("sensor_only");
+                if (sensorOnly != null)
+                {
+                    // 要素があれば true。value="false" で明示的に打ち消せる。
+                    definition.SensorOnly = ParseBool(sensorOnly.Attributes?["value"]?.Value, true);
                 }
 
                 definitions.Add(definition);
@@ -205,6 +224,10 @@ namespace UrdfProperties
                 {
                     collider.contactOffset = definition.ContactOffset;
                 }
+                if (definition.SensorOnly)
+                {
+                    MakeSensorOnly(collider, definition.Name, linkName);
+                }
                 applied++;
             }
 
@@ -218,9 +241,49 @@ namespace UrdfProperties
             {
                 Debug.Log($"[CollisionMaterial] Applied '{definition.Name}' to '{linkName}' " +
                           $"({applied} collider(s), static={definition.StaticFriction}, " +
-                          $"dynamic={definition.DynamicFriction}, combine={definition.FrictionCombine})");
+                          $"dynamic={definition.DynamicFriction}, combine={definition.FrictionCombine}" +
+                          (definition.SensorOnly ? ", sensor_only" : "") + ")");
             }
             return applied;
+        }
+
+        /// <summary>
+        /// コライダをトリガにする。Unity は非 convex の MeshCollider をトリガにできない
+        /// (設定しても効かず、エラーログが出る) ので、その場合は先に convex へ変える。
+        /// URDF Importer が作るコライダは通常 convex なので、ここに来るのは import 設定を
+        /// 変えたときだけ。
+        /// </summary>
+        static void MakeSensorOnly(Collider collider, string materialName, string linkName)
+        {
+            var meshCollider = collider as MeshCollider;
+            if (meshCollider != null && !meshCollider.convex)
+            {
+                Debug.LogWarning(
+                    $"[CollisionMaterial] link '{linkName}' の MeshCollider は convex でないため " +
+                    $"'{materialName}' (sensor_only) の適用にあたり convex に変更した。形状は凸包になる");
+                meshCollider.convex = true;
+            }
+            collider.isTrigger = true;
+        }
+
+        /// <summary>
+        /// ロボットのコライダがすべてトリガか (1 つも無い場合も true)。
+        /// 呼び出し側は、これが true でルートが immovable でなければ落下し続けるので警告する。
+        /// </summary>
+        public static bool AllCollidersAreSensorOnly(GameObject robotRoot)
+        {
+            if (robotRoot == null)
+            {
+                return true;
+            }
+            foreach (Collider collider in robotRoot.GetComponentsInChildren<Collider>(true))
+            {
+                if (!collider.isTrigger)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         static string MaterialNameOf(XmlNode collisionNode)
@@ -242,6 +305,19 @@ namespace UrdfProperties
                 default:
                     Debug.LogWarning($"[CollisionMaterial] 未知の combine '{value}'。average として扱う");
                     return PhysicsMaterialCombine.Average;
+            }
+        }
+
+        static bool ParseBool(string value, bool fallback)
+        {
+            switch (value?.Trim().ToLowerInvariant())
+            {
+                case "true": case "1": case "yes": return true;
+                case "false": case "0": case "no": return false;
+                case null: case "": return fallback;
+                default:
+                    Debug.LogWarning($"[CollisionMaterial] 真偽値として読めない '{value}'。{fallback} として扱う");
+                    return fallback;
             }
         }
 

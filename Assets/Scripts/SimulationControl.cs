@@ -1092,6 +1092,21 @@ public partial class SimulationControl : MonoBehaviour
         // インポート後にこちらで当てる (実装とテストは UrdfProperties アセンブリ)。
         CollisionMaterialApplier.Apply(robotObject, robotNode);
 
+        // sensor_only (トリガ) しか持たないエンティティは何にも支えられない。ルートが
+        // immovable (world リンク) でなければ床を抜けて落ち続けるので、黙って落とさず警告する。
+        // 雑草のような静的な物体は world リンクに fixed で吊るのが正しい書き方。
+        if (CollisionMaterialApplier.AllCollidersAreSensorOnly(robotObject))
+        {
+            ArticulationBody sensorOnlyRoot = GetEntityRootBody(robotObject);
+            if (sensorOnlyRoot != null && !sensorOnlyRoot.immovable && sensorOnlyRoot.useGravity)
+            {
+                Debug.LogWarning(
+                    $"[CollisionMaterial] entity '{robotObject.name}' has only sensor_only (trigger) " +
+                    "colliders and a movable root; it will fall through the floor. " +
+                    "Attach it to a 'world' link with a fixed joint to keep it in place.");
+            }
+        }
+
         // サーボモデル (摩擦・バックラッシ) の設定: <servo_model joint="..."> 要素
         if (robotNode != null)
         {

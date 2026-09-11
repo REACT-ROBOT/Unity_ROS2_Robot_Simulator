@@ -228,6 +228,116 @@ public class CollisionMaterialApplierTests
     }
 
     [Test]
+    public void Apply_SensorOnlyMakesEveryColliderATrigger()
+    {
+        // 雑草: LiDAR には映るが、触れても押し返さない。トリガなら物理接触は起きず
+        // レイキャストには当たる (Queries Hit Triggers は有効)。
+        robot = BuildLink("weeds_link", 1, collidersPerCollision: 2);
+        XmlNode node = RobotNode(@"
+            <robot name='weeds'>
+              <collision_material name='weed'><sensor_only value='true'/></collision_material>
+              <link name='weeds_link'><collision><collision_material name='weed'/></collision></link>
+            </robot>");
+
+        Assert.AreEqual(2, CollisionMaterialApplier.Apply(robot, node));
+        foreach (Collider collider in CollidersOf(robot))
+        {
+            Assert.IsTrue(collider.isTrigger, collider.name);
+        }
+        Assert.IsTrue(CollisionMaterialApplier.AllCollidersAreSensorOnly(robot));
+    }
+
+    [Test]
+    public void Apply_LeavesIsTriggerAloneWhenNotSpecified()
+    {
+        // 摩擦だけの定義で、うっかりトリガにしてはいけない (ロボットが床を抜ける)。
+        robot = BuildLink("wheel_link", 1);
+        XmlNode node = RobotNode(@"
+            <robot name='probe'>
+              <collision_material name='wheel'><friction static='1.0' dynamic='1.0'/></collision_material>
+              <link name='wheel_link'><collision><collision_material name='wheel'/></collision></link>
+            </robot>");
+
+        CollisionMaterialApplier.Apply(robot, node);
+
+        Assert.IsFalse(CollidersOf(robot)[0].isTrigger);
+        Assert.IsFalse(CollisionMaterialApplier.AllCollidersAreSensorOnly(robot));
+    }
+
+    [Test]
+    public void Apply_SensorOnlyAppliesOnlyToTheReferencingCollision()
+    {
+        // 同じリンクに「実体」と「雑草」が混在しても、参照した collision だけがトリガになる。
+        robot = BuildLink("mixed_link", 2);
+        XmlNode node = RobotNode(@"
+            <robot name='probe'>
+              <collision_material name='solid'><friction static='1.0' dynamic='1.0'/></collision_material>
+              <collision_material name='weed'><sensor_only/></collision_material>
+              <link name='mixed_link'>
+                <collision><collision_material name='solid'/></collision>
+                <collision><collision_material name='weed'/></collision>
+              </link>
+            </robot>");
+
+        Assert.AreEqual(2, CollisionMaterialApplier.Apply(robot, node));
+
+        Transform collisions = robot.transform.Find("Collisions");
+        Assert.IsFalse(collisions.GetChild(0).GetComponentInChildren<Collider>().isTrigger, "solid");
+        Assert.IsTrue(collisions.GetChild(1).GetComponentInChildren<Collider>().isTrigger, "weed");
+        Assert.IsFalse(CollisionMaterialApplier.AllCollidersAreSensorOnly(robot));
+    }
+
+    [Test]
+    public void Apply_SensorOnlyConvexifiesANonConvexMeshCollider()
+    {
+        // Unity は非 convex の MeshCollider をトリガにできない。黙って効かないより
+        // convex に変えて (警告付きで) トリガにする。
+        robot = new GameObject("weeds_link");
+        var collisions = new GameObject("Collisions");
+        collisions.transform.SetParent(robot.transform);
+        var unnamed = new GameObject("unnamed_0");
+        unnamed.transform.SetParent(collisions.transform);
+        var shape = new GameObject("Mesh_0");
+        shape.transform.SetParent(unnamed.transform);
+        var meshCollider = shape.AddComponent<MeshCollider>();
+        GameObject donor = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        meshCollider.sharedMesh = donor.GetComponent<MeshFilter>().sharedMesh;
+        Object.DestroyImmediate(donor);
+        meshCollider.convex = false;
+
+        XmlNode node = RobotNode(@"
+            <robot name='weeds'>
+              <collision_material name='weed'><sensor_only/></collision_material>
+              <link name='weeds_link'><collision><collision_material name='weed'/></collision></link>
+            </robot>");
+
+        LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("convex"));
+        Assert.AreEqual(1, CollisionMaterialApplier.Apply(robot, node));
+        Assert.IsTrue(meshCollider.convex, "convex にしてから");
+        Assert.IsTrue(meshCollider.isTrigger, "トリガにする");
+    }
+
+    [Test]
+    public void ParseDefinitions_ReadsSensorOnly()
+    {
+        XmlNode node = RobotNode(@"
+            <robot name='probe'>
+              <collision_material name='bare'><sensor_only/></collision_material>
+              <collision_material name='explicit'><sensor_only value='true'/></collision_material>
+              <collision_material name='negated'><sensor_only value='false'/></collision_material>
+              <collision_material name='absent'><friction static='0.1' dynamic='0.1'/></collision_material>
+            </robot>");
+
+        var definitions = CollisionMaterialApplier.ParseDefinitions(node);
+
+        Assert.AreEqual(4, definitions.Count);
+        Assert.IsTrue(definitions[0].SensorOnly, "要素だけで true");
+        Assert.IsTrue(definitions[1].SensorOnly, "value='true'");
+        Assert.IsFalse(definitions[2].SensorOnly, "value='false' で打ち消し");
+        Assert.IsFalse(definitions[3].SensorOnly, "要素が無ければ false");
+    }
+
+    [Test]
     public void ParseDefinitions_AcceptsTheDeprecatedElementName()
     {
         XmlNode node = RobotNode(@"

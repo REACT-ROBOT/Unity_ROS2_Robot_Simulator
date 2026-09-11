@@ -1,8 +1,8 @@
-# collision_material — URDF から摩擦を設定する
+# collision_material — URDF から摩擦と「センサ専用コライダ」を設定する
 
-URDF の標準要素には接触摩擦の指定がないので、このシミュレータは独自要素
-`<collision_material>` を読みます。URDF Importer はこの要素を知らないため、
-インポート後にシミュレータ側で当てています
+URDF の標準要素には接触摩擦の指定も「センサには見えるが押し返さない形状」の指定も
+ないので、このシミュレータは独自要素 `<collision_material>` を読みます。URDF Importer は
+この要素を知らないため、インポート後にシミュレータ側で当てています
 (`Assets/Scripts/UrdfProperties/CollisionMaterialApplier.cs`)。
 
 ## 書き方
@@ -31,12 +31,70 @@ URDF の標準要素には接触摩擦の指定がないので、このシミュ
 | `friction@dynamic` | 動摩擦係数 | 0 |
 | `friction@combine` | 接触相手との合成方法 (`average` / `minimum` / `multiply` / `maximum`) | `average` |
 | `contact_offset@value` | コライダの contact offset [m] | 触らない (Unity の既定 0.01) |
+| `sensor_only@value` | `true` でコライダをトリガにする。レイキャスト系センサ (LiDAR・深度カメラ) には当たるが接触は起こさない。要素だけ書けば `true` | トリガにしない |
 
 `<collision>` を 1 リンクに複数書いた場合、**i 番目の `<collision>` が i 番目の形状に**
 対応します。1 つの `<collision>` が複数のコライダに展開される場合 (サブメッシュなど) は
 そのすべてに当たります。
 
 旧称 `<physics_material>` も読めますが、警告が出ます。
+
+## センサにだけ見える物体 (雑草・草むら・垂れ下がった布など)
+
+LiDAR には映ってほしいが、ロボットを止めてはいけない物体があります。`<collision>` を
+書かないリンクでは**実現できません**。LiDAR は物理レイキャストでコライダにしか当たらないので、
+collision の無いリンクは単に見えなくなります。形状は普通に `<collision>` として書き、
+`sensor_only` を付けてください:
+
+```xml
+<robot name="weeds">
+  <collision_material name="weed">
+    <sensor_only value="true"/>
+  </collision_material>
+
+  <link name="world"/>                      <!-- その場に留めるため -->
+  <link name="weeds_link">
+    <collision>
+      <origin xyz="1.0 0.2 0.15"/>
+      <geometry><cylinder radius="0.05" length="0.3"/></geometry>
+      <collision_material name="weed"/>
+    </collision>
+    <collision>
+      <origin xyz="1.3 -0.1 0.15"/>
+      <geometry><cylinder radius="0.04" length="0.3"/></geometry>
+      <collision_material name="weed"/>
+    </collision>
+  </link>
+  <joint name="fix" type="fixed"><parent link="world"/><child link="weeds_link"/></joint>
+</robot>
+```
+
+仕組みと注意点:
+
+- `sensor_only` は Unity の `Collider.isTrigger` を立てます。トリガはレイキャストには
+  当たり (プロジェクト設定 *Queries Hit Triggers* が有効)、接触解決には一切参加しないので、
+  ロボットはすり抜け、`get_contact_events` にも記録されません。
+- **1 リンクに多数の `<collision>`** を書いてください (株ごとにリンクを切らない)。
+  リンクは ArticulationBody になり、PhysX は 1 つの articulation を 64 body までに制限
+  します。リンクあたりのコライダ数に制限はありません。
+- **`world` リンクに fixed ジョイントで吊ってください**。トリガしか持たないボディは何にも
+  支えられないので、ルートが動ける状態だと床を抜けて落ち続けます。sensor_only しか持たない
+  エンティティのルートが immovable でない場合、スポーン時に警告を出します。
+- トリガにできるのは convex なコライダだけです。プリミティブと URDF Importer が作る
+  メッシュは元から convex です。非 convex の MeshCollider は警告付きで convex
+  (最大 255 面の凸包) に変えてからトリガにします。
+- レイは最初のヒットで止まるので、sensor_only の形状はビーム単位では不透明です。
+  一部のビームを通したいなら、1 つの塊ではなく細い茎を疎らに置いてください。
+- intensity で点を区別することはできません (LiDAR の intensity は距離のみで決まります)。
+  「雑草の点」のラベル付けは既知の配置から消費側で行ってください。
+- それ以外は普通のエンティティです。`get_entities` に載り、`delete_entity` と
+  `reset_simulation` の `SCOPE_SPAWNED` で消え、`set_entity_info` でタグを付けられます。
+
+sensor_only のマテリアルはログ行の末尾に `sensor_only` が付きます:
+
+```
+[CollisionMaterial] Applied 'weed' to 'weeds_link' (2 collider(s), static=0, dynamic=0, combine=Average, sensor_only)
+```
 
 ## combine に注意
 
@@ -84,7 +142,16 @@ URDF の標準要素には接触摩擦の指定がないので、このシミュ
 
 - **単体テスト**: `Assets/Tests/UrdfPropertyTests/CollisionMaterialApplierTests.cs`。
   URDF の記述がコライダの `staticFriction` / `dynamicFriction` / `frictionCombine` /
-  `contactOffset` に届いているかを直接読んで検査します。
+  `contactOffset` / `isTrigger` に届いているかを直接読んで検査します。アセンブリが
+  全プラットフォーム対象なので、テストランナーでは PlayMode 扱いです:
+
+  ```bash
+  Unity -batchmode -nographics -projectPath <このリポジトリ> -runTests -testPlatform playmode \
+        -assemblyNames UrdfPropertyTests -testResults results.xml -logFile unity.log
+  ```
+- **シナリオテスト**: 併設ワークスペースの
+  `sim_test_utils/examples/test_sensor_only_collision.py` が sensor_only の雑草を置き、
+  箱を落として接触しないこと、LiDAR が想定距離に返りを出すことを確かめます。
 - **実機**: 起動中のシミュレータのログに、当たった分だけ次の行が出ます。
 
   ```

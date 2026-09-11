@@ -1,8 +1,8 @@
-# collision_material — setting friction from URDF
+# collision_material — friction and sensor-only colliders from URDF
 
-URDF has no standard element for contact friction, so this simulator reads a custom
-`<collision_material>`. The URDF Importer does not know the element, so the simulator
-applies it after import
+URDF has no standard element for contact friction, nor for "this shape is seen by sensors
+but does not push back", so this simulator reads a custom `<collision_material>`. The URDF
+Importer does not know the element, so the simulator applies it after import
 (`Assets/Scripts/UrdfProperties/CollisionMaterialApplier.cs`).
 
 ## Syntax
@@ -31,12 +31,70 @@ Definitions go directly under `<robot>` and are referenced by name from each `<c
 | `friction@dynamic` | Dynamic friction coefficient | 0 |
 | `friction@combine` | How to combine with the other surface (`average` / `minimum` / `multiply` / `maximum`) | `average` |
 | `contact_offset@value` | Collider contact offset [m] | left alone (Unity's 0.01) |
+| `sensor_only@value` | `true` makes the collider a trigger: it is hit by raycast sensors (lidar, depth camera) but produces no contact. The element alone means `true` | not a trigger |
 
 With several `<collision>` elements on one link, **the i-th `<collision>` maps to the i-th
 shape**. If one `<collision>` expands into several colliders (submeshes, say), all of them
 get the material.
 
 The old name `<physics_material>` still parses, with a warning.
+
+## Sensor-only objects (weeds, tall grass, hanging cloth)
+
+Some things must show up in a lidar scan without stopping the robot. A link without
+`<collision>` does **not** do this: the lidar is a physics raycast and only sees colliders,
+so a collision-less link is simply invisible. Declare the shapes as normal `<collision>`
+elements and mark them `sensor_only` instead:
+
+```xml
+<robot name="weeds">
+  <collision_material name="weed">
+    <sensor_only value="true"/>
+  </collision_material>
+
+  <link name="world"/>                      <!-- keeps the entity in place -->
+  <link name="weeds_link">
+    <collision>
+      <origin xyz="1.0 0.2 0.15"/>
+      <geometry><cylinder radius="0.05" length="0.3"/></geometry>
+      <collision_material name="weed"/>
+    </collision>
+    <collision>
+      <origin xyz="1.3 -0.1 0.15"/>
+      <geometry><cylinder radius="0.04" length="0.3"/></geometry>
+      <collision_material name="weed"/>
+    </collision>
+  </link>
+  <joint name="fix" type="fixed"><parent link="world"/><child link="weeds_link"/></joint>
+</robot>
+```
+
+What this does, and what to keep in mind:
+
+- `sensor_only` sets Unity's `Collider.isTrigger`. Triggers take part in raycasts (the project
+  has *Queries Hit Triggers* on) but never in contact resolution, so the robot drives through
+  them and `get_contact_events` does not record them.
+- **Put one link with many `<collision>` shapes**, not one link per plant. Every link is an
+  articulation body and PhysX caps an articulation at 64 bodies; colliders per link are not
+  limited.
+- **Hang the link from a `world` link** with a fixed joint. Nothing supports a trigger-only
+  body, so a movable root falls through the floor forever. The simulator logs a warning at
+  spawn when an entity has only sensor-only colliders and a movable root.
+- Triggers must be convex. Primitive shapes and the meshes the URDF Importer produces already
+  are; a non-convex mesh collider is switched to convex (a convex hull of at most 255 faces)
+  with a warning.
+- A ray stops at the first hit, so a sensor-only shape is opaque per beam. To let some beams
+  pass, make the plants thin and sparse rather than one solid block.
+- Intensity does not mark the points: the lidar reports a range-only intensity. Label
+  "weed" points on the consumer side from the known layout.
+- Everything else about the entity is unchanged: it is listed by `get_entities`, removed by
+  `delete_entity` and `reset_simulation` with `SCOPE_SPAWNED`, and `set_entity_info` can tag it.
+
+The log line for a sensor-only material ends with `sensor_only`:
+
+```
+[CollisionMaterial] Applied 'weed' to 'weeds_link' (2 collider(s), static=0, dynamic=0, combine=Average, sensor_only)
+```
 
 ## Watch the combine mode
 
@@ -84,8 +142,17 @@ Options:
 ## Checking that the settings took
 
 - **Unit tests**: `Assets/Tests/UrdfPropertyTests/CollisionMaterialApplierTests.cs` reads the
-  colliders' `staticFriction` / `dynamicFriction` / `frictionCombine` / `contactOffset` back
-  and checks them against the URDF.
+  colliders' `staticFriction` / `dynamicFriction` / `frictionCombine` / `contactOffset` /
+  `isTrigger` back and checks them against the URDF. The assembly targets all platforms, so
+  the test runner treats it as PlayMode:
+
+  ```bash
+  Unity -batchmode -nographics -projectPath <this repo> -runTests -testPlatform playmode \
+        -assemblyNames UrdfPropertyTests -testResults results.xml -logFile unity.log
+  ```
+- **Scenario test**: `sim_test_utils/examples/test_sensor_only_collision.py` in the
+  companion workspace spawns a sensor-only weed, drops a box through it (no contact) and
+  checks that a lidar returns it at the expected range.
 - **On a running simulator**: one line per application appears in the log.
 
   ```

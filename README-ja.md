@@ -247,8 +247,10 @@ def test_avoidance(sim):                       # sim フィクスチャが接続
 
 ## URDF の拡張要素
 
-摩擦係数は URDF の独自要素 `<collision_material>` で設定します。書き方、`combine` の
-落とし穴、速度を上げたときに滑る理由と実測値は
+摩擦係数は URDF の独自要素 `<collision_material>` で設定します。同じ要素の
+`<sensor_only/>` で collision 形状をトリガ (LiDAR には映るがロボットを押し返さない。
+雑草・草むら用) にできます。書き方、`combine` の落とし穴、sensor_only の決まり、
+速度を上げたときに滑る理由と実測値は
 [docs/URDF-Collision-Material-ja.md](docs/URDF-Collision-Material-ja.md) にまとめてあります。
 
 GNSS 受信機は他のセンサ (imu, lidar, camera, contact など) と同様に `<simulation>` 内で

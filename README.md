@@ -255,8 +255,10 @@ waypoint so repeated test runs see the same phase.
 
 ## URDF extensions
 
-Friction is set through the custom `<collision_material>` element. Syntax, the `combine`
-pitfall, and why a robot slides at speed (with measurements) are in
+Friction is set through the custom `<collision_material>` element. The same element's
+`<sensor_only/>` makes a collision shape a trigger: seen by the lidar, but never pushing the
+robot back (weeds, tall grass). Syntax, the `combine` pitfall, the sensor-only rules, and why
+a robot slides at speed (with measurements) are in
 [docs/URDF-Collision-Material.md](docs/URDF-Collision-Material.md).
 
 A GNSS receiver is declared like the other sensors (imu, lidar, camera, contact, …) inside
