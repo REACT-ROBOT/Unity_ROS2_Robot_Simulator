@@ -43,6 +43,26 @@ public class SimulationSettingsConfig
     /// solver_iterations だけ指定した場合は GUI と同じ clamp(iter/4, 1, 8)。
     /// </summary>
     public int solver_velocity_iterations;
+
+    /// <summary>
+    /// GUI カメラの初期姿勢 (任意)。ROS 世界座標 [m] (x 前, y 左, z 上)。
+    /// 未指定ならシーンの既定 (原点の 10 m 手前、高さ 1 m、+x を向く)。
+    /// デモや録画のように「決まった場所を映したい」ときに使う。
+    /// </summary>
+    public CameraViewConfig camera;
+}
+
+[Serializable]
+public class CameraViewConfig
+{
+    public float[] position;  // {x, y, z} [m]
+    public float[] look_at;   // {x, y, z} [m]。省略時は向きを変えない
+
+    public bool HasPosition => position != null && position.Length == 3;
+    public bool HasLookAt => look_at != null && look_at.Length == 3;
+
+    /// <summary>ROS (x 前, y 左, z 上) → Unity (x 右, y 上, z 前)。</summary>
+    public static Vector3 RosToUnity(float[] v) => new Vector3(-v[1], v[2], v[0]);
 }
 
 /// <summary>

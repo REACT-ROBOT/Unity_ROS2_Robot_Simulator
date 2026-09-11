@@ -165,6 +165,17 @@ Pacing comes from `simulation_resources.json` (`SIMULATION_RESOURCES_CONFIG`):
   simulation and drive it with `step_simulation` / `simulate_steps`; with the settings above,
   stepping runs an order of magnitude faster than real time (CPU permitting).
 
+- `camera` (optional) places the GUI camera at start, in ROS world coordinates
+  (`{ "camera": { "position": [x, y, z], "look_at": [x, y, z] } }`), for demos and
+  recordings that need a fixed framing. The mouse still moves it afterwards.
+
+- Recording: with `SIM_RECORD_DIR=<dir>` the player writes every rendered frame as
+  `frame_000000.jpg`, … (`SIM_RECORD_FPS`, default 30; `SIM_RECORD_QUALITY`, default 85).
+  It works in a window or with `-batchmode` alone, but not with `-nographics`. Assemble with
+  `ffmpeg -framerate 30 -i <dir>/frame_%06d.jpg -c:v libx264 -pix_fmt yuv420p out.mp4`.
+  This is the way to get a video under WSLg or a remote desktop, where grabbing the X
+  display yields nothing.
+
 The conformance suite (below) accepts `--headless` to launch the simulator with
 `-batchmode -nographics`, which is how to run it on a machine with no display at all.
 

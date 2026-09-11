@@ -13,6 +13,33 @@ public class CameraController : MonoBehaviour
     void Start()
     {
         cam = Camera.main;
+        ApplyConfiguredView();
+    }
+
+    /// <summary>
+    /// simulation_resources.json の settings.camera があればカメラをそこへ置く。
+    /// マウス操作はその後も従来どおり効く。
+    /// </summary>
+    private void ApplyConfiguredView()
+    {
+        CameraViewConfig view = SimulationResources.Settings?.camera;
+        if (view == null)
+        {
+            return;
+        }
+        if (view.HasPosition)
+        {
+            transform.position = CameraViewConfig.RosToUnity(view.position);
+        }
+        if (view.HasLookAt)
+        {
+            transform.LookAt(CameraViewConfig.RosToUnity(view.look_at), Vector3.up);
+        }
+        if (view.HasPosition || view.HasLookAt)
+        {
+            Debug.Log($"[SimulationSettings] camera: position={transform.position:F2} " +
+                      $"euler={transform.eulerAngles:F1} (from settings.camera)");
+        }
     }
 
     void Update()

@@ -162,6 +162,15 @@ physics 設定・plugin は読み飛ばして応答に報告します。`get_ava
   `step_simulation` の意味は変わりません — 壁時計上の速度だけが変わります。強化学習では
   一時停止して `step_simulation` / `simulate_steps` で回すのが基本で、上の設定なら
   実時間の 10 倍程度でステップできます (CPU 性能次第)。
+- `camera` (任意) は起動時の GUI カメラの位置を ROS 世界座標で指定します
+  (`{ "camera": { "position": [x, y, z], "look_at": [x, y, z] } }`)。デモや録画で
+  決まった構図が欲しいときに使います。その後もマウスで動かせます。
+- 録画: `SIM_RECORD_DIR=<dir>` を付けて起動すると、描画した各フレームを
+  `frame_000000.jpg`, … として書き出します (`SIM_RECORD_FPS` 既定 30、`SIM_RECORD_QUALITY`
+  既定 85)。ウィンドウ付きでも `-batchmode` 単独でも動きますが `-nographics` では動きません。
+  `ffmpeg -framerate 30 -i <dir>/frame_%06d.jpg -c:v libx264 -pix_fmt yuv420p out.mp4` で
+  動画にします。WSLg やリモートデスクトップのように X の画面を掴んでも絵が取れない環境で
+  動画を残す手段です。
 
 適合性テスト (下記) は `--headless` を付けると `-batchmode -nographics` で
 シミュレータを起動するので、ディスプレイの無いマシンでもそのまま実行できます。
