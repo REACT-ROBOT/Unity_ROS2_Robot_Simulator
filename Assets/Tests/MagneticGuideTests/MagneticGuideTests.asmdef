@@ -1,10 +1,9 @@
 {
-    "name": "UrdfPropertyTests",
+    "name": "MagneticGuideTests",
     "rootNamespace": "",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
-        "UrdfProperties",
         "UnitySensorsRuntime"
     ],
     "includePlatforms": [],

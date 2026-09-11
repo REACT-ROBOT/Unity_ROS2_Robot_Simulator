@@ -261,6 +261,10 @@ robot back (weeds, tall grass). Syntax, the `combine` pitfall, the sensor-only r
 a robot slides at speed (with measurements) are in
 [docs/URDF-Collision-Material.md](docs/URDF-Collision-Material.md).
 
+A magnetic guide (line) sensor of the AGV kind and the magnetic tape it follows are
+described in [docs/Magnetic-Guide-Sensor.md](docs/Magnetic-Guide-Sensor.md)
+(`<sensor type="magnetic_guide">`, `<magnetic_tape polarity="track|marker"/>`).
+
 A GNSS receiver is declared like the other sensors (imu, lidar, camera, contact, …) inside
 `<simulation>`:
 

@@ -7,6 +7,7 @@ using System.Xml;
 using System.Threading.Tasks;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
@@ -17,6 +18,8 @@ using UnitySensors.Sensor.LiDAR;
 using UnitySensors.Sensor.IMU;
 using UnitySensors.Sensor.Contact;
 using UnitySensors.Sensor.GNSS;
+using UnitySensors.Sensor.MagneticGuide;
+using UnitySensors.DataType.Sensor;
 using UnitySensors.DataType.LiDAR;
 using UnitySensors.DataType.Geometry;
 using UnitySensors.ROS.Publisher.Camera;
@@ -116,6 +119,12 @@ public partial class SimulationControl : MonoBehaviour
     private List<GameObject> m_EntityList = new List<GameObject>();
     // Entityの初期位置姿勢を保持する辞書
     private Dictionary<string, Vector3> m_EntityInitialPose = new Dictionary<string, Vector3>();
+    /// <summary>
+    /// root ArticulationBody ごとの、エンティティのルート GameObject 基準のスポーン時相対姿勢。
+    /// reset_simulation で world 直下の複数 root (fixed 吊り) を含めて元の場所へ戻すために使う。
+    /// </summary>
+    private readonly Dictionary<ArticulationBody, (Vector3 localPosition, Quaternion localRotation)> m_RootBodyLocalPose =
+        new Dictionary<ArticulationBody, (Vector3 localPosition, Quaternion localRotation)>();
     private Dictionary<string, Quaternion> m_EntityInitialRotation = new Dictionary<string, Quaternion>();
 
     // Entity ごとに、そのスポーンで publisher 登録したトピック名。
@@ -845,31 +854,10 @@ public partial class SimulationControl : MonoBehaviour
         // URDF から作ったものは ros2_control 相当のトピックを持つので「ロボット」扱い。
         RegisterEntityInfo(robotObject.name, EntityCategoryMsg.CATEGORY_ROBOT, "Spawned from " + resourceUri);
 
-        // 最初に見つかった UrdfLink に対してベースリンク設定と固定フラグを適用
+        // ベースリンクの設定と、全 root ボディのスポーン姿勢への配置 (world 直下に
+        // fixed で吊った URDF では world にボディが無く、子がそれぞれ root になる)。
+        PlaceEntityRootBodies(robotObject, newPosition, newRotation, false);
         List<GameObject> childObjectsWithUrdfLink = GetChildObjectsWithComponent<UrdfLink>(robotObject);
-        foreach (GameObject child in childObjectsWithUrdfLink)
-        {
-            UrdfLink link = child.GetComponent<UrdfLink>();
-            link.IsBaseLink = true;
-
-            ArticulationBody body = child.GetComponent<ArticulationBody>();
-            if (body != null)
-            {
-                body.TeleportRoot(newPosition, newRotation);
-                body.PublishTransform();
-                if (link.name == "world")
-                {
-                    // world link の場合は immovable を true にする
-                    body.immovable = true;
-                }
-                else
-                {
-                    // それ以外のリンクは immovable を false にする
-                    body.immovable = false;
-                }
-            }
-            break;
-        }
 
         // スポーン直後の関節状態を明示的にゼロへリセットする。
         // ランタイム構築中や TeleportRoot によるルート回転 (spawn yaw) は
@@ -1984,6 +1972,54 @@ public partial class SimulationControl : MonoBehaviour
                                 gnssMsgPublisher.serializer = gnssSerializer;
                                 gnssMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/fix");
                                 break;
+                            case "magnetic_guide":
+                                {
+                                    Debug.Log("sensor type 'magnetic_guide' found");
+                                    // 磁気誘導センサ (MGS1600 / UDS-1213 相当)。リンクの原点がセンサ
+                                    // 面の中心、リンク +y が左、-z 方向へレイを打ってテープを探す。
+                                    MagneticGuideSensor magneticSensor = targetObject.AddComponent<MagneticGuideSensor>();
+
+                                    float magneticWidth = TryParseFloat(sensor.SelectSingleNode("width")?.InnerText, 0.16f);
+                                    float magneticPitch = TryParseFloat(sensor.SelectSingleNode("pitch")?.InnerText, 0.001f);
+                                    float magneticMinHeight = TryParseFloat(sensor.SelectSingleNode("min_height")?.InnerText, 0.01f);
+                                    float magneticMaxHeight = TryParseFloat(sensor.SelectSingleNode("max_height")?.InnerText, 0.06f);
+                                    float magneticNoise = TryParseFloat(sensor.SelectSingleNode("noise/stddev")?.InnerText, 0.0f);
+                                    MagneticForkSelection magneticFork;
+                                    switch (TryParseTextNode(sensor.SelectSingleNode("fork"), "nearest"))
+                                    {
+                                        case "left": magneticFork = MagneticForkSelection.Left; break;
+                                        case "right": magneticFork = MagneticForkSelection.Right; break;
+                                        case "nearest": magneticFork = MagneticForkSelection.Nearest; break;
+                                        default:
+                                            Debug.LogWarning($"magnetic_guide '{sensorLinkName}': unknown <fork>, using nearest");
+                                            magneticFork = MagneticForkSelection.Nearest;
+                                            break;
+                                    }
+                                    magneticSensor.Configure(magneticWidth, magneticPitch, magneticMinHeight,
+                                        magneticMaxHeight, magneticFork, magneticNoise);
+
+                                    var magneticUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                    float magneticUpdateRate = magneticUpdateRateNode != null
+                                        ? TryParseFloat(magneticUpdateRateNode.InnerText) : 0.0f;
+                                    if (magneticUpdateRateNode != null)
+                                    {
+                                        SetSensorUpdateRate(magneticSensor, magneticUpdateRate, "MagneticGuide:" + sensorLinkName);
+                                    }
+
+                                    MagneticGuideMsgPublisher magneticPublisher = targetObject.AddComponent<MagneticGuideMsgPublisher>();
+                                    if (magneticUpdateRateNode != null)
+                                    {
+                                        SetPublisherUpdateRate(magneticPublisher, magneticUpdateRate, "MagneticGuide:" + sensorLinkName);
+                                    }
+                                    var magneticHeader = new HeaderSerializer();
+                                    magneticHeader.Configure(magneticSensor, sensorLinkName);
+                                    var magneticSerializer = new MagneticGuideMsgSerializer();
+                                    magneticSerializer.Configure(magneticSensor, magneticHeader);
+                                    magneticPublisher.serializer = magneticSerializer;
+                                    magneticPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace,
+                                        "/" + robotObject.name + "/" + sensorLinkName + "/magnetic_guide");
+                                }
+                                break;
                             case "contact":
                                 Debug.Log("sensor type 'contact' found");
                                 // 接触センサはリンクの ArticulationBody と同じ GameObject に
@@ -2245,6 +2281,81 @@ public partial class SimulationControl : MonoBehaviour
                 objectsWithComponent.Add(child.gameObject);
         }
         return objectsWithComponent;
+    }
+
+    /// <summary>
+    /// エンティティのルート GameObject を (position, rotation) に置き、配下の
+    /// root ArticulationBody をすべてそこへテレポートする。
+    /// </summary>
+    /// <remarks>
+    /// ArticulationBody の姿勢はソルバが持つので、ルートの transform を書いても
+    /// ボディは動かない。以前は「最初の UrdfLink のボディ」だけをテレポートしていたが、
+    /// URDF のルートが <c>world</c> リンク (inertial も joint も無い) のときは world に
+    /// ボディが付かず、fixed で吊られた子リンクがそれぞれ独立した root ボディになる。
+    /// その場合は何もテレポートされず、initial_pose が黙って無視されて全部が原点に
+    /// 残っていた (雑草・磁気テープのコース・固定センサ台など、world 固定の
+    /// エンティティを原点以外に置けなかった)。
+    ///
+    /// ここでは root ボディ (<see cref="ArticulationBody.isRoot"/>) を全部集め、ルート
+    /// GameObject を動かした直後の transform (階層で連動して動いている) をそのまま
+    /// 物理側へ写す。ルート GameObject からの相対姿勢 (fixed joint の origin) が保たれる。
+    /// world 直下の fixed リンクは immovable にして床へ落ちないようにする。
+    /// それ以外の root (通常のロボットの base_link) は immovable=false。
+    /// </remarks>
+    private void PlaceEntityRootBodies(GameObject entity, Vector3 position, Quaternion rotation, bool zeroVelocity)
+    {
+        entity.transform.SetPositionAndRotation(position, rotation);
+
+        List<GameObject> links = GetChildObjectsWithComponent<UrdfLink>(entity);
+        UrdfLink baseLink = links.Count > 0 ? links[0].GetComponent<UrdfLink>() : null;
+        if (baseLink != null)
+        {
+            baseLink.IsBaseLink = true;
+        }
+        bool worldRooted = baseLink != null && baseLink.name == "world";
+
+        // デスポーン済みのボディの記録を捨てる。
+        m_RootBodyLocalPose.Keys.Where(b => b == null).ToList().ForEach(b => m_RootBodyLocalPose.Remove(b));
+
+        foreach (ArticulationBody body in entity.GetComponentsInChildren<ArticulationBody>(true))
+        {
+            if (!body.isRoot)
+            {
+                continue;
+            }
+            // 目標姿勢 = ルート GameObject 基準の「スポーン時の相対姿勢」。物理が動いた
+            // 後の transform はボディの現在地 (床に落ちた後など) を指しているので、
+            // リセットではそれを使ってはいけない。初回 (スポーン時) はまだ物理が
+            // 動いていないので、階層で連動した transform がそのまま URDF どおりの
+            // 相対姿勢になる。それを記録し、以後はそこへ戻す。
+            (Vector3 localPosition, Quaternion localRotation) localPose;
+            if (!m_RootBodyLocalPose.TryGetValue(body, out localPose))
+            {
+                localPose = (entity.transform.InverseTransformPoint(body.transform.position),
+                             Quaternion.Inverse(entity.transform.rotation) * body.transform.rotation);
+                m_RootBodyLocalPose[body] = localPose;
+            }
+            Vector3 targetPosition = entity.transform.TransformPoint(localPose.localPosition);
+            Quaternion targetRotation = entity.transform.rotation * localPose.localRotation;
+            body.TeleportRoot(targetPosition, targetRotation);
+            if (zeroVelocity)
+            {
+                // TeleportRoot はルートの速度を消さない。残すとテレポート直後に
+                // そのまま走り出して初期位置から離れてしまう。
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+            }
+            body.PublishTransform();
+
+            bool fixedToWorld = body.name == "world";
+            if (worldRooted)
+            {
+                // world の直下 (root ボディ) に fixed で吊られたリンクは世界に固定。
+                UrdfJoint joint = body.GetComponent<UrdfJoint>();
+                fixedToWorld |= joint == null || joint.JointType == UrdfJoint.JointTypes.Fixed;
+            }
+            body.immovable = fixedToWorld;
+        }
     }
 
     // 子孫オブジェクトから ArticulationBody を再帰的に検索
@@ -3278,27 +3389,7 @@ public partial class SimulationControl : MonoBehaviour
             // その 1 ステップ分だけ関節が動いた状態でソルバが回る。
             ResetArticulationState(entity);
 
-            entity.transform.position = initialPosition;
-            entity.transform.rotation = initialRotation;
-
-            List<GameObject> childObjectsWithUrdfLink = GetChildObjectsWithComponent<UrdfLink>(entity);
-            foreach (GameObject child in childObjectsWithUrdfLink)
-            {
-                UrdfLink link = child.GetComponent<UrdfLink>();
-                link.IsBaseLink = true;
-
-                ArticulationBody body = child.GetComponent<ArticulationBody>();
-                if (body != null)
-                {
-                    body.TeleportRoot(initialPosition, initialRotation);
-                    // TeleportRoot はルートの速度を消さない。残すとテレポート直後に
-                    // そのまま走り出して初期位置から離れてしまう。
-                    body.linearVelocity = Vector3.zero;
-                    body.angularVelocity = Vector3.zero;
-                    body.PublishTransform();
-                }
-                break;
-            }
+            PlaceEntityRootBodies(entity, initialPosition, initialRotation, true);
         }
     }
 

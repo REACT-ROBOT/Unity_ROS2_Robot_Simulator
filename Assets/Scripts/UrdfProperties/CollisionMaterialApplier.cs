@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Xml;
 using UnityEngine;
+using UnitySensors.DataType.Sensor;
+using UnitySensors.Sensor.MagneticGuide;
 
 namespace UrdfProperties
 {
@@ -41,6 +43,11 @@ namespace UrdfProperties
     /// 有効なのでレイキャスト (UnitySensors の LiDAR など) には当たる。雑草のように
     /// 「センサには見えるが走行を妨げない」物体に使う。トリガにできるのは convex な
     /// コライダだけなので、非 convex の MeshCollider は convex に変えてから立てる。</para>
+    ///
+    /// <para><b>magnetic_tape について</b>: <c>&lt;magnetic_tape polarity="track|marker"/&gt;</c>
+    /// はコライダに <see cref="MagneticTape"/> を付け、磁気誘導センサ
+    /// (<see cref="MagneticGuideSensor"/>) から見える磁気テープにする。テープは踏んで走る
+    /// ものなので sensor_only も含意する (トリガになる)。</para>
     /// </remarks>
     public static class CollisionMaterialApplier
     {
@@ -55,6 +62,9 @@ namespace UrdfProperties
             public float ContactOffset;
             /// <summary>true ならコライダをトリガにする (センサにだけ見える物体)。</summary>
             public bool SensorOnly;
+            /// <summary>true なら磁気テープ。<see cref="TapePolarity"/> が極性。sensor_only を含意する。</summary>
+            public bool IsMagneticTape;
+            public MagneticPolarity TapePolarity = MagneticPolarity.Track;
         }
 
         /// <summary>&lt;robot&gt; 直下の定義をすべて読む。</summary>
@@ -110,6 +120,14 @@ namespace UrdfProperties
                 {
                     // 要素があれば true。value="false" で明示的に打ち消せる。
                     definition.SensorOnly = ParseBool(sensorOnly.Attributes?["value"]?.Value, true);
+                }
+
+                XmlNode magneticTape = node.SelectSingleNode("magnetic_tape");
+                if (magneticTape != null)
+                {
+                    definition.IsMagneticTape = true;
+                    definition.SensorOnly = true;
+                    definition.TapePolarity = ParsePolarity(magneticTape.Attributes?["polarity"]?.Value);
                 }
 
                 definitions.Add(definition);
@@ -228,6 +246,12 @@ namespace UrdfProperties
                 {
                     MakeSensorOnly(collider, definition.Name, linkName);
                 }
+                if (definition.IsMagneticTape)
+                {
+                    MagneticTape tape = collider.gameObject.GetComponent<MagneticTape>()
+                                        ?? collider.gameObject.AddComponent<MagneticTape>();
+                    tape.polarity = definition.TapePolarity;
+                }
                 applied++;
             }
 
@@ -242,7 +266,8 @@ namespace UrdfProperties
                 Debug.Log($"[CollisionMaterial] Applied '{definition.Name}' to '{linkName}' " +
                           $"({applied} collider(s), static={definition.StaticFriction}, " +
                           $"dynamic={definition.DynamicFriction}, combine={definition.FrictionCombine}" +
-                          (definition.SensorOnly ? ", sensor_only" : "") + ")");
+                          (definition.SensorOnly ? ", sensor_only" : "") +
+                          (definition.IsMagneticTape ? ", magnetic_tape=" + definition.TapePolarity : "") + ")");
             }
             return applied;
         }
@@ -305,6 +330,18 @@ namespace UrdfProperties
                 default:
                     Debug.LogWarning($"[CollisionMaterial] 未知の combine '{value}'。average として扱う");
                     return PhysicsMaterialCombine.Average;
+            }
+        }
+
+        static MagneticPolarity ParsePolarity(string value)
+        {
+            switch (value?.Trim().ToLowerInvariant())
+            {
+                case "marker": return MagneticPolarity.Marker;
+                case "track": case null: case "": return MagneticPolarity.Track;
+                default:
+                    Debug.LogWarning($"[CollisionMaterial] 未知の polarity '{value}'。track として扱う");
+                    return MagneticPolarity.Track;
             }
         }
 

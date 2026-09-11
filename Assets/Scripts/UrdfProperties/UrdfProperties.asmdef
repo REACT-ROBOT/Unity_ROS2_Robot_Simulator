@@ -1,7 +1,9 @@
 {
     "name": "UrdfProperties",
     "rootNamespace": "",
-    "references": [],
+    "references": [
+        "UnitySensorsRuntime"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

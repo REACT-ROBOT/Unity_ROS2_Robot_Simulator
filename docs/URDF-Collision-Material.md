@@ -32,6 +32,7 @@ Definitions go directly under `<robot>` and are referenced by name from each `<c
 | `friction@combine` | How to combine with the other surface (`average` / `minimum` / `multiply` / `maximum`) | `average` |
 | `contact_offset@value` | Collider contact offset [m] | left alone (Unity's 0.01) |
 | `sensor_only@value` | `true` makes the collider a trigger: it is hit by raycast sensors (lidar, depth camera) but produces no contact. The element alone means `true` | not a trigger |
+| `magnetic_tape@polarity` | marks the shape as magnetic tape for the magnetic guide sensor (`track` or `marker`); implies `sensor_only`. See [Magnetic-Guide-Sensor.md](Magnetic-Guide-Sensor.md) | not tape |
 
 With several `<collision>` elements on one link, **the i-th `<collision>` maps to the i-th
 shape**. If one `<collision>` expands into several colliders (submeshes, say), all of them

@@ -253,6 +253,10 @@ def test_avoidance(sim):                       # sim フィクスチャが接続
 速度を上げたときに滑る理由と実測値は
 [docs/URDF-Collision-Material-ja.md](docs/URDF-Collision-Material-ja.md) にまとめてあります。
 
+AGV 用の磁気誘導 (ライン) センサと、それが追う磁気テープは
+[docs/Magnetic-Guide-Sensor-ja.md](docs/Magnetic-Guide-Sensor-ja.md) にまとめてあります
+(`<sensor type="magnetic_guide">`、`<magnetic_tape polarity="track|marker"/>`)。
+
 GNSS 受信機は他のセンサ (imu, lidar, camera, contact など) と同様に `<simulation>` 内で
 宣言します:
 

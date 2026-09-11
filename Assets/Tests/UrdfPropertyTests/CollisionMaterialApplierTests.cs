@@ -3,6 +3,8 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
 using UrdfProperties;
+using UnitySensors.DataType.Sensor;
+using UnitySensors.Sensor.MagneticGuide;
 
 /// <summary>
 /// URDF に書いた摩擦係数が、実際にコライダへ届いているかを見る。
@@ -315,6 +317,48 @@ public class CollisionMaterialApplierTests
         Assert.AreEqual(1, CollisionMaterialApplier.Apply(robot, node));
         Assert.IsTrue(meshCollider.convex, "convex にしてから");
         Assert.IsTrue(meshCollider.isTrigger, "トリガにする");
+    }
+
+    [Test]
+    public void Apply_MagneticTapeAddsTheComponentAndImpliesTrigger()
+    {
+        // 磁気テープ: 磁気誘導センサだけが見る。踏んで走るのでトリガ。
+        robot = BuildLink("course_link", 2);
+        XmlNode node = RobotNode(@"
+            <robot name='course'>
+              <collision_material name='track'><magnetic_tape polarity='track'/></collision_material>
+              <collision_material name='marker'><magnetic_tape polarity='marker'/></collision_material>
+              <link name='course_link'>
+                <collision><collision_material name='track'/></collision>
+                <collision><collision_material name='marker'/></collision>
+              </link>
+            </robot>");
+
+        Assert.AreEqual(2, CollisionMaterialApplier.Apply(robot, node));
+
+        Transform collisions = robot.transform.Find("Collisions");
+        Collider track = collisions.GetChild(0).GetComponentInChildren<Collider>();
+        Collider marker = collisions.GetChild(1).GetComponentInChildren<Collider>();
+        Assert.IsTrue(track.isTrigger, "テープはトリガ");
+        Assert.AreEqual(MagneticPolarity.Track, track.GetComponent<MagneticTape>().polarity);
+        Assert.AreEqual(MagneticPolarity.Marker, marker.GetComponent<MagneticTape>().polarity);
+    }
+
+    [Test]
+    public void ParseDefinitions_MagneticTapeDefaultsToTrack()
+    {
+        XmlNode node = RobotNode(@"
+            <robot name='probe'>
+              <collision_material name='t'><magnetic_tape/></collision_material>
+              <collision_material name='m'><magnetic_tape polarity='marker'/></collision_material>
+            </robot>");
+
+        var definitions = CollisionMaterialApplier.ParseDefinitions(node);
+
+        Assert.IsTrue(definitions[0].IsMagneticTape);
+        Assert.IsTrue(definitions[0].SensorOnly, "テープは sensor_only を含意");
+        Assert.AreEqual(MagneticPolarity.Track, definitions[0].TapePolarity);
+        Assert.AreEqual(MagneticPolarity.Marker, definitions[1].TapePolarity);
     }
 
     [Test]

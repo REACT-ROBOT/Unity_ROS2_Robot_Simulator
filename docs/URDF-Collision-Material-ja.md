@@ -32,6 +32,7 @@ URDF の標準要素には接触摩擦の指定も「センサには見えるが
 | `friction@combine` | 接触相手との合成方法 (`average` / `minimum` / `multiply` / `maximum`) | `average` |
 | `contact_offset@value` | コライダの contact offset [m] | 触らない (Unity の既定 0.01) |
 | `sensor_only@value` | `true` でコライダをトリガにする。レイキャスト系センサ (LiDAR・深度カメラ) には当たるが接触は起こさない。要素だけ書けば `true` | トリガにしない |
+| `magnetic_tape@polarity` | 形状を磁気誘導センサ用の磁気テープにする (`track` か `marker`)。`sensor_only` を含意する。[Magnetic-Guide-Sensor-ja.md](Magnetic-Guide-Sensor-ja.md) 参照 | テープにしない |
 
 `<collision>` を 1 リンクに複数書いた場合、**i 番目の `<collision>` が i 番目の形状に**
 対応します。1 つの `<collision>` が複数のコライダに展開される場合 (サブメッシュなど) は
