@@ -1991,6 +1991,18 @@ public partial class SimulationControl : MonoBehaviour
                                     skyViewSensor.Configure(skySatellites, skyMaskDeg, skySeed, skyRayDistance, ~0,
                                         skyHitTriggers ? QueryTriggerInteraction.Collide : QueryTriggerInteraction.Ignore);
 
+                                    // 1 バウンス反射 (NLOS) の探索。上半球を掃いたレイの
+                                    // 当たり面から「その経路ならどの衛星から来たか」を逆算
+                                    // する方式なので、面を事前に特定する必要はない。間隔を
+                                    // 半分にするとレイ数は 4 倍になる。
+                                    bool skyReflections = TryParseBoolNode(sensor.SelectSingleNode("reflections"), true);
+                                    float skyReflectionSpacing =
+                                        TryParseFloat(sensor.SelectSingleNode("reflection_spacing")?.InnerText, 2.5f);
+                                    float skyReflectionLoss =
+                                        TryParseFloat(sensor.SelectSingleNode("reflection_loss_db")?.InnerText, -13.0f);
+                                    skyViewSensor.ConfigureReflections(skyReflections, skyReflectionSpacing,
+                                        skyReflectionLoss);
+
                                     var skyUpdateRateNode = sensor.SelectSingleNode("update_rate");
                                     float skyUpdateRate = skyUpdateRateNode != null
                                         ? TryParseFloat(skyUpdateRateNode.InnerText) : 0.0f;

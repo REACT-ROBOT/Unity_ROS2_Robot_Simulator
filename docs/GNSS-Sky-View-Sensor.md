@@ -23,6 +23,9 @@ emits it as NMEA.
   <max_range>500.0</max_range>
   <seed>1</seed>
   <hit_triggers>false</hit_triggers>
+  <reflections>true</reflections>
+  <reflection_spacing>2.5</reflection_spacing>
+  <reflection_loss_db>-13.0</reflection_loss_db>
 </sensor>
 ```
 
@@ -33,12 +36,33 @@ emits it as NMEA.
 | `max_range` | 500.0 | Ray length [m]; make it cover the scene |
 | `seed` | 1 | Constellation seed; the same seed is the same sky |
 | `hit_triggers` | false | Whether trigger colliders shadow a satellite |
+| `reflections` | true | Search for one-bounce (NLOS) paths |
+| `reflection_spacing` | 2.5 | Angular spacing of the reflection sweep [deg]; **halving it quadruples the rays** |
+| `reflection_loss_db` | -13.0 | Loss along a reflected path [dB] |
 
 `name` is the link the sensor rides. **The antenna's height and placement decide the
 result** — on top of a mast the robot body casts no shadow.
 
 The topic is `/<robot>/<link>/sky_view`, of type
 `simulation_extra_interfaces/GnssSkyView`.
+
+## Reflections (NLOS)
+
+For a satellite whose direct path is blocked, the sensor sweeps the upper
+hemisphere and works backwards from each hit: the Householder reflection is its
+own inverse, so the launch direction u and the hit normal n give the satellite
+that path would have come from as `s = u - 2(u.n)n`, with no surface identified
+in advance. A second ray from the reflection point confirms that satellite is
+visible from there, and the extra path length is `d(1 - u.s)`.
+
+The excess path scales with the distance to the reflector -- `2*d*cos(elevation)^2`
+for a vertical wall -- so a 3 m alley gives a couple of metres while a 10 m
+street gives around ten.
+
+The lower hemisphere is not swept. A vertical wall leaves the elevation
+unchanged, so a satellite above the horizon can only be reached by a ray above
+the horizon; ground bounce is a different mechanism and one the antenna's ground
+plane is built to suppress.
 
 ## Things to know
 
@@ -60,6 +84,12 @@ The topic is `/<robot>/<link>/sky_view`, of type
 
 ## Cost
 
-One ray per satellite per update (24 by default), which is nothing next to the
-LiDARs' tens of thousands per frame. Reflected (NLOS) paths will need thousands of
-rays; that stage will want the `RaycastCommand` batch API.
+The direct pass is one ray per satellite (24 by default). The reflection sweep is
+`2*pi/spacing^2` rays -- about 3300 at the default 2.5 degrees -- and the confirm
+pass only the best four candidates per satellite, so about a hundred.
+
+**The reflection search yields on its job handles rather than blocking.** Blocking
+starves the main thread: the base class folds the update time back into the
+period, so as soon as one update takes longer than the period the sensor runs
+back to back, and the ROS services sharing that thread time out. This was not
+theoretical -- it made the simulator unresponsive.
