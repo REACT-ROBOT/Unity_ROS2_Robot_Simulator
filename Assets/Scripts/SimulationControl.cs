@@ -1972,6 +1972,47 @@ public partial class SimulationControl : MonoBehaviour
                                 gnssMsgPublisher.serializer = gnssSerializer;
                                 gnssMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/fix");
                                 break;
+                            case "gnss_sky_view":
+                                {
+                                    Debug.Log("sensor type 'gnss_sky_view' found");
+                                    // アンテナ位置から衛星ごとにレイを打ち、遮蔽されていない衛星の
+                                    // 数と DOP を出す。測位解 (Fix/Float) や誤差はここでは作らない。
+                                    // それらは受信機の振る舞いに依存し、シミュレータを再ビルドせずに
+                                    // 調整・単体テストしたいので ROS 側 (gps_emulator) の担当。
+                                    GnssSkyViewSensor skyViewSensor = targetObject.AddComponent<GnssSkyViewSensor>();
+
+                                    int skySatellites = TryParseIntNode(sensor.SelectSingleNode("satellite_count"), 24);
+                                    float skyMaskDeg = TryParseFloat(sensor.SelectSingleNode("elevation_mask")?.InnerText, 15.0f);
+                                    int skySeed = TryParseIntNode(sensor.SelectSingleNode("seed"), 1);
+                                    float skyRayDistance = TryParseFloat(sensor.SelectSingleNode("max_range")?.InnerText, 500.0f);
+                                    // 雑草や磁気テープはトリガコライダで表現されており、衛星を遮って
+                                    // よいものではないので既定では無視する。
+                                    bool skyHitTriggers = TryParseBoolNode(sensor.SelectSingleNode("hit_triggers"), false);
+                                    skyViewSensor.Configure(skySatellites, skyMaskDeg, skySeed, skyRayDistance, ~0,
+                                        skyHitTriggers ? QueryTriggerInteraction.Collide : QueryTriggerInteraction.Ignore);
+
+                                    var skyUpdateRateNode = sensor.SelectSingleNode("update_rate");
+                                    float skyUpdateRate = skyUpdateRateNode != null
+                                        ? TryParseFloat(skyUpdateRateNode.InnerText) : 0.0f;
+                                    if (skyUpdateRateNode != null)
+                                    {
+                                        SetSensorUpdateRate(skyViewSensor, skyUpdateRate, "GnssSkyView:" + sensorLinkName);
+                                    }
+
+                                    GnssSkyViewMsgPublisher skyPublisher = targetObject.AddComponent<GnssSkyViewMsgPublisher>();
+                                    if (skyUpdateRateNode != null)
+                                    {
+                                        SetPublisherUpdateRate(skyPublisher, skyUpdateRate, "GnssSkyView:" + sensorLinkName);
+                                    }
+                                    var skyHeader = new HeaderSerializer();
+                                    skyHeader.Configure(skyViewSensor, sensorLinkName);
+                                    var skySerializer = new GnssSkyViewMsgSerializer();
+                                    skySerializer.Configure(skyViewSensor, skyHeader);
+                                    skyPublisher.serializer = skySerializer;
+                                    skyPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace,
+                                        "/" + robotObject.name + "/" + sensorLinkName + "/sky_view");
+                                }
+                                break;
                             case "magnetic_guide":
                                 {
                                     Debug.Log("sensor type 'magnetic_guide' found");
