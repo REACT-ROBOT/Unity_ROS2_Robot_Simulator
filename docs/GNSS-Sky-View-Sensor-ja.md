@@ -7,8 +7,12 @@
 再ビルドせずに調整・単体テストしたいからです。シミュレータでしか分からないのは
 「建物が何を遮るか」であり、このセンサはそこだけを担当します。
 
-併設ワークスペースでは `hardware_emulator/gps_emulator` がこのトピックを購読し、
-RTK Fix / Float / Single の判定と位置誤差の生成を行って NMEA として出します。
+このセンサを**同じリンクの `<sensor type="gnss">` が受信機モデルの入力として使います**。
+受信機は劣化込みの `sensor_msgs/NavSatFix` と、NavSatFix が表現できない情報
+（RTK Fix と Float の区別、誤差の内訳、wrong fix）を載せた
+`simulation_extra_interfaces/GnssSolution` を publish します。
+ROS ユーザは**ロボットを spawn するだけ**で、追加ノードなしに劣化入りの測位を得られます。
+詳細は [GNSS-Receiver-ja.md](GNSS-Receiver-ja.md)。
 
 ## URDF
 

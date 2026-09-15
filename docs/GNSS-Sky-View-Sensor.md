@@ -9,9 +9,12 @@ behaviour that is far easier to tune and unit-test outside the simulator. What
 cannot be known outside the simulator is what the buildings block, and that is all
 this sensor does.
 
-In the companion workspace, `hardware_emulator/gps_emulator` subscribes to this
-topic, decides RTK fix / float / single, generates the matching position error and
-emits it as NMEA.
+The `<sensor type="gnss">` on the same link consumes this as the input to its
+receiver model. That receiver publishes a degraded `sensor_msgs/NavSatFix` plus a
+`simulation_extra_interfaces/GnssSolution` carrying what NavSatFix cannot express
+(RTK fix against float, the error breakdown, wrong fixes), so a ROS user gets a
+realistic fix by spawning a robot and nothing else. See
+[GNSS-Receiver.md](GNSS-Receiver.md).
 
 ## URDF
 

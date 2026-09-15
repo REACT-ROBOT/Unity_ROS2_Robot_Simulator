@@ -1964,13 +1964,58 @@ public partial class SimulationControl : MonoBehaviour
                                     SetPublisherUpdateRate(gnssMsgPublisher, updateRate, "GNSS:" + sensorLinkName);
                                 }
 
+                                // 受信機モデルはシミュレータ側に置いてある。ROS ユーザは
+                                // ロボットを spawn するだけで劣化込みの NavSatFix を得る。
+                                // 空の情報源 (gnss_sky_view) は同じリンクから遅延解決するので
+                                // URDF 内の記述順に依存しない。無ければ真値をそのまま報告する。
+                                gnssSensor.ConfigureReceiver(TryParseIntNode(sensor.SelectSingleNode("seed"), 20260914));
+                                var gnssReceiver = gnssSensor.model;
+                                gnssReceiver.reconvergenceSeconds =
+                                    TryParseFloat(sensor.SelectSingleNode("reconvergence_sec")?.InnerText,
+                                                  gnssReceiver.reconvergenceSeconds);
+                                gnssReceiver.lockSecondsForFix =
+                                    TryParseFloat(sensor.SelectSingleNode("lock_seconds_for_fix")?.InnerText,
+                                                  gnssReceiver.lockSecondsForFix);
+                                gnssReceiver.wrongFixProbability =
+                                    TryParseFloat(sensor.SelectSingleNode("wrong_fix_probability")?.InnerText,
+                                                  gnssReceiver.wrongFixProbability);
+                                gnssReceiver.startConverged =
+                                    TryParseBoolNode(sensor.SelectSingleNode("start_converged"),
+                                                     gnssReceiver.startConverged);
+                                // false にすると乱数由来の誤差が消え、幾何が生む誤差だけが残る
+                                // (同じ場所に戻れば同じ誤差になる)。回帰試験や実演向け。
+                                gnssReceiver.stochasticError =
+                                    TryParseBoolNode(sensor.SelectSingleNode("stochastic_error"),
+                                                     gnssReceiver.stochasticError);
+
                                 // Use public API instead of Reflection
                                 var gnssHeader = new HeaderSerializer();
                                 gnssHeader.Configure(gnssSensor, sensorLinkName);
                                 var gnssSerializer = new NavSatFixMsgSerializer();
                                 gnssSerializer.Configure(gnssSensor, gnssHeader);
+                                // status と position_covariance が測位品質に追従する。
+                                gnssSerializer.ConfigureSolution(gnssSensor);
                                 gnssMsgPublisher.serializer = gnssSerializer;
                                 gnssMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/fix");
+
+                                // NavSatFix の status は RTK Fix と Float を区別できない
+                                // (どちらも GBAS_FIX)。区別が要る consumer — GGA quality 4/5 を
+                                // 出す NMEA ブリッジや、品質で重み付けする localizer — のために
+                                // 誤差の内訳ごとこちらを併せて出す。
+                                GnssSolutionMsgPublisher gnssSolutionPublisher =
+                                    targetObject.AddComponent<GnssSolutionMsgPublisher>();
+                                if (gnssUpdateRateNode != null)
+                                {
+                                    SetPublisherUpdateRate(gnssSolutionPublisher,
+                                        TryParseFloat(gnssUpdateRateNode.InnerText), "GNSS:" + sensorLinkName);
+                                }
+                                var solutionHeader = new HeaderSerializer();
+                                solutionHeader.Configure(gnssSensor, sensorLinkName);
+                                var solutionSerializer = new GnssSolutionMsgSerializer();
+                                solutionSerializer.Configure(gnssSensor, solutionHeader);
+                                gnssSolutionPublisher.serializer = solutionSerializer;
+                                gnssSolutionPublisher.topicName = TrackPublishedTopic(robotObject.name,
+                                    entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/solution");
                                 break;
                             case "gnss_sky_view":
                                 {
