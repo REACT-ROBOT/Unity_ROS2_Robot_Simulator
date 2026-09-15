@@ -1999,31 +1999,46 @@ public partial class SimulationControl : MonoBehaviour
                                 gnssMsgPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/fix");
 
                                 // NavSatFix の status は RTK Fix と Float を区別できない
-                                // (どちらも GBAS_FIX)。区別が要る consumer — GGA quality 4/5 を
-                                // 出す NMEA ブリッジや、品質で重み付けする localizer — のために
-                                // 誤差の内訳ごとこちらを併せて出す。
-                                GnssSolutionMsgPublisher gnssSolutionPublisher =
-                                    targetObject.AddComponent<GnssSolutionMsgPublisher>();
+                                // (どちらも GBAS_FIX)。gps_msgs/GPSFix の GPSStatus は
+                                // STATUS_RTK_FIX / STATUS_RTK_FLOAT を持っているので、
+                                // 区別も衛星配置も DOP もこちらで足りる。独自メッセージは不要。
+                                GpsFixMsgPublisher gnssExtendedPublisher =
+                                    targetObject.AddComponent<GpsFixMsgPublisher>();
                                 if (gnssUpdateRateNode != null)
                                 {
-                                    SetPublisherUpdateRate(gnssSolutionPublisher,
+                                    SetPublisherUpdateRate(gnssExtendedPublisher,
                                         TryParseFloat(gnssUpdateRateNode.InnerText), "GNSS:" + sensorLinkName);
                                 }
-                                var solutionHeader = new HeaderSerializer();
-                                solutionHeader.Configure(gnssSensor, sensorLinkName);
-                                var solutionSerializer = new GnssSolutionMsgSerializer();
-                                solutionSerializer.Configure(gnssSensor, solutionHeader);
-                                gnssSolutionPublisher.serializer = solutionSerializer;
-                                gnssSolutionPublisher.topicName = TrackPublishedTopic(robotObject.name,
-                                    entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/solution");
+                                var gnssExtendedHeader = new HeaderSerializer();
+                                gnssExtendedHeader.Configure(gnssSensor, sensorLinkName);
+                                var gnssExtendedSerializer = new GpsFixMsgSerializer();
+                                gnssExtendedSerializer.Configure(gnssSensor, gnssExtendedHeader);
+                                gnssExtendedPublisher.serializer = gnssExtendedSerializer;
+                                gnssExtendedPublisher.topicName = TrackPublishedTopic(robotObject.name,
+                                    entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/extended_fix");
+
+                                // 実機で使っている NMEA ドライバをそのまま向けられるように
+                                // 生の文も出す。HILS 経路の gps_emulator はこれを pty に流すだけ。
+                                if (TryParseBoolNode(sensor.SelectSingleNode("publish_nmea"), true))
+                                {
+                                    GnssNmeaPublisher gnssNmeaPublisher =
+                                        targetObject.AddComponent<GnssNmeaPublisher>();
+                                    gnssNmeaPublisher.Configure(gnssSensor, sensorLinkName);
+                                    if (gnssUpdateRateNode != null)
+                                    {
+                                        gnssNmeaPublisher.frequency = TryParseFloat(gnssUpdateRateNode.InnerText);
+                                    }
+                                    gnssNmeaPublisher.topicName = TrackPublishedTopic(robotObject.name,
+                                        entityNamespace, "/" + robotObject.name + "/" + sensorLinkName + "/nmea");
+                                }
                                 break;
                             case "gnss_sky_view":
                                 {
                                     Debug.Log("sensor type 'gnss_sky_view' found");
-                                    // アンテナ位置から衛星ごとにレイを打ち、遮蔽されていない衛星の
-                                    // 数と DOP を出す。測位解 (Fix/Float) や誤差はここでは作らない。
-                                    // それらは受信機の振る舞いに依存し、シミュレータを再ビルドせずに
-                                    // 調整・単体テストしたいので ROS 側 (gps_emulator) の担当。
+                                    // アンテナ位置から衛星ごとにレイを打ち、直達 / 反射 / 遮蔽を
+                                    // 判定する。ROS へは publish しない: 同じリンクの
+                                    // <sensor type="gnss"> が受信機モデルの入力として直接読み、
+                                    // 衛星の見え方は gps_msgs/GPSFix の GPSStatus に載って出る。
                                     GnssSkyViewSensor skyViewSensor = targetObject.AddComponent<GnssSkyViewSensor>();
 
                                     int skySatellites = TryParseIntNode(sensor.SelectSingleNode("satellite_count"), 24);
@@ -2055,19 +2070,6 @@ public partial class SimulationControl : MonoBehaviour
                                     {
                                         SetSensorUpdateRate(skyViewSensor, skyUpdateRate, "GnssSkyView:" + sensorLinkName);
                                     }
-
-                                    GnssSkyViewMsgPublisher skyPublisher = targetObject.AddComponent<GnssSkyViewMsgPublisher>();
-                                    if (skyUpdateRateNode != null)
-                                    {
-                                        SetPublisherUpdateRate(skyPublisher, skyUpdateRate, "GnssSkyView:" + sensorLinkName);
-                                    }
-                                    var skyHeader = new HeaderSerializer();
-                                    skyHeader.Configure(skyViewSensor, sensorLinkName);
-                                    var skySerializer = new GnssSkyViewMsgSerializer();
-                                    skySerializer.Configure(skyViewSensor, skyHeader);
-                                    skyPublisher.serializer = skySerializer;
-                                    skyPublisher.topicName = TrackPublishedTopic(robotObject.name, entityNamespace,
-                                        "/" + robotObject.name + "/" + sensorLinkName + "/sky_view");
                                 }
                                 break;
                             case "magnetic_guide":

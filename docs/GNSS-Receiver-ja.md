@@ -9,21 +9,30 @@
 
 ## 出すトピック
 
+**シミュレータ固有のメッセージは使いません。** すべて既存の GNSS パッケージの型です。
+
 | トピック | 型 | 内容 |
 |---|---|---|
 | `/<robot>/<link>/fix` | `sensor_msgs/NavSatFix` | 劣化込みの測位。status と position_covariance が品質に追従 |
-| `/<robot>/<link>/solution` | `simulation_extra_interfaces/GnssSolution` | NavSatFix が表現できないもの |
+| `/<robot>/<link>/extended_fix` | `gps_msgs/GPSFix` | **RTK Fix / Float の区別**、衛星ごとの方位・仰角・SNR、各種 DOP |
+| `/<robot>/<link>/nmea` | `nmea_msgs/Sentence` | GGA / RMC。実機で使っている NMEA ドライバをそのまま向けられる |
 
-**`NavSatFix` の `status` は RTK Fix と Float を区別できません。**
-`NO_FIX` / `FIX` / `SBAS_FIX` / `GBAS_FIX` の 4 値しかなく、Fix も Float も `GBAS_FIX` に潰れます。
-これはこのセンサの制約ではなくメッセージの制約で、実機のどのドライバでも同じです。
-そのため**品質は `position_covariance` で伝えます**（`robot_localization` の
-`navsat_transform_node` が実際に読むのもここです）。グレード別の 1σ から作っており、
-`COVARIANCE_TYPE_DIAGONAL_KNOWN` で出します。
+`NavSatFix` の `status` は 4 値（`NO_FIX`/`FIX`/`SBAS_FIX`/`GBAS_FIX`）しかなく
+**RTK Fix と Float を区別できません**。これはメッセージ側の制約で、実機のどのドライバでも同じです。
+NavSatFix では品質を `position_covariance` で伝えます（`robot_localization` の
+`navsat_transform_node` が読むのもここ。グレード別の 1σ から作り
+`COVARIANCE_TYPE_DIAGONAL_KNOWN` で出します）。
 
-区別が必要な consumer（GGA quality 4/5 を出す NMEA ブリッジ、品質で重み付けする localizer）は
-`GnssSolution` を読んでください。誤差の内訳（確率的なバイアス / 反射由来 / wrong fix）も
-入っているので、評価では推定ではなく**厳密な誤差**が使えます。
+**区別が必要なら `gps_msgs/GPSFix` を読んでください。** その `GPSStatus` は
+`STATUS_RTK_FIX` (19) と `STATUS_RTK_FLOAT` (20) を持っています。
+
+衛星の対応付けは実機の受信機と同じ意味になっています:
+
+| 経路 | GPSStatus での扱い |
+|---|---|
+| 直達 | `satellite_used_prn` かつ `satellite_visible_*`（SNR は基準値 45 dB-Hz） |
+| 反射 (NLOS) | `satellite_visible_*` のみ（`used` ではない）。**SNR が反射損失ぶん低い** |
+| 遮蔽 | どちらにも入らない |
 
 ## URDF
 

@@ -44,8 +44,9 @@ ROS ユーザは**ロボットを spawn するだけ**で、追加ノードな�
 `name` はセンサを載せるリンク名です。**アンテナの高さと位置がそのまま結果を左右します**
 (マストの上なら車体は影を作らない)。
 
-publish されるトピックは `/<robot>/<link>/sky_view`、型は
-`simulation_extra_interfaces/GnssSkyView` です。
+**このセンサは ROS へ publish しません。** 同じリンクの `<sensor type="gnss">` が
+受信機モデルの入力として直接読み、衛星の見え方は `gps_msgs/GPSFix` の `GPSStatus`
+（used / visible / SNR）に載って出ます。
 
 ## 反射 (NLOS)
 

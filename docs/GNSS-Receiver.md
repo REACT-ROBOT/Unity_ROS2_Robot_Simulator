@@ -10,23 +10,33 @@ spawning a robot, with nothing extra to launch.
 
 ## Topics
 
+**No simulator-specific messages.** Everything is a type an existing GNSS package
+already defines.
+
 | Topic | Type | Contents |
 |---|---|---|
 | `/<robot>/<link>/fix` | `sensor_msgs/NavSatFix` | The degraded fix; status and position_covariance follow the grade |
-| `/<robot>/<link>/solution` | `simulation_extra_interfaces/GnssSolution` | What NavSatFix cannot express |
+| `/<robot>/<link>/extended_fix` | `gps_msgs/GPSFix` | **RTK fixed against float**, per-satellite azimuth/elevation/SNR, every DOP |
+| `/<robot>/<link>/nmea` | `nmea_msgs/Sentence` | GGA / RMC, so the NMEA driver you run on hardware works here unchanged |
 
-**`NavSatFix.status` cannot separate an RTK fix from an RTK float.** It has four
-values (`NO_FIX`, `FIX`, `SBAS_FIX`, `GBAS_FIX`) and both RTK grades are
-ground-based augmentation. That is a limitation of the message, not of this
-sensor, and every real driver has it. The quality therefore travels in
-`position_covariance` -- which is what consumers such as `robot_localization`'s
-`navsat_transform_node` actually read. It is built from the grade's own sigma and
-published as `COVARIANCE_TYPE_DIAGONAL_KNOWN`.
+`NavSatFix.status` has four values (`NO_FIX`, `FIX`, `SBAS_FIX`, `GBAS_FIX`) and
+**cannot separate an RTK fix from an RTK float** -- both are ground-based
+augmentation. That is a limitation of the message, not of this sensor, and every
+real driver has it. On NavSatFix the quality therefore travels in
+`position_covariance`, which is what `robot_localization`'s `navsat_transform_node`
+reads; it comes from the grade's own sigma, published as
+`COVARIANCE_TYPE_DIAGONAL_KNOWN`.
 
-Consumers that need the distinction -- an NMEA bridge emitting GGA quality 4
-against 5, a localiser weighting by grade -- read `GnssSolution`. It also carries
-the error broken down (stochastic bias, reflection-driven, wrong fix), so an
-evaluation can use the exact error instead of inferring it.
+**For the distinction, read `gps_msgs/GPSFix`**: its `GPSStatus` has
+`STATUS_RTK_FIX` (19) and `STATUS_RTK_FLOAT` (20).
+
+Satellites are reported the way a real receiver reports them:
+
+| Path | In GPSStatus |
+|---|---|
+| Direct | in `satellite_used_prn` and `satellite_visible_*` (SNR at the clean 45 dB-Hz) |
+| Reflected (NLOS) | in `satellite_visible_*` only, not used -- and **weaker, by the reflection loss** |
+| Blocked | in neither |
 
 ## URDF
 

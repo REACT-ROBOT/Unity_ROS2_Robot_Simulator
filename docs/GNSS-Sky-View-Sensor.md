@@ -46,8 +46,9 @@ realistic fix by spawning a robot and nothing else. See
 `name` is the link the sensor rides. **The antenna's height and placement decide the
 result** — on top of a mast the robot body casts no shadow.
 
-The topic is `/<robot>/<link>/sky_view`, of type
-`simulation_extra_interfaces/GnssSkyView`.
+**This sensor publishes nothing to ROS.** The `<sensor type="gnss">` on the same
+link reads it in process as the input to its receiver model, and the satellite
+view reaches ROS inside `gps_msgs/GPSFix`'s `GPSStatus` (used / visible / SNR).
 
 ## Reflections (NLOS)
 
