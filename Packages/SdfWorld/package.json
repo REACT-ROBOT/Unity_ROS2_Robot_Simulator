@@ -1,0 +1,11 @@
+{
+  "name": "com.react-robot.sdf-world",
+  "displayName": "SDF World Importer",
+  "version": "1.0.0",
+  "unity": "6000.0",
+  "description": "Loads Gazebo SDF worlds (models, meshes, poses) into a Unity scene at runtime.",
+  "author": { "name": "REACT-ROBOT", "url": "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator" },
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "keywords": ["robotics", "simulation", "ros2", "unity"]
+}

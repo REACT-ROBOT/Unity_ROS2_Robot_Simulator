@@ -1,0 +1,11 @@
+{
+  "name": "com.react-robot.urdf-properties",
+  "displayName": "URDF Properties",
+  "version": "1.0.0",
+  "unity": "6000.0",
+  "description": "Applies URDF extension elements (collision materials, magnetic guide tape, ...) to imported robots.",
+  "author": { "name": "REACT-ROBOT", "url": "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator" },
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "keywords": ["robotics", "simulation", "ros2", "unity"]
+}

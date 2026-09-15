@@ -26,6 +26,36 @@
       "dependencies": {},
       "hash": "8a548cc3df504b4180d040797d3c5f40fd09d687"
     },
+    "com.react-robot.aerodynamics": {
+      "version": "file:Aerodynamics",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.react-robot.hydrodynamics": {
+      "version": "file:Hydrodynamics",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.react-robot.sdf-world": {
+      "version": "file:SdfWorld",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.react-robot.servo-model": {
+      "version": "file:ServoModel",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
+    "com.react-robot.urdf-properties": {
+      "version": "file:UrdfProperties",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
     "com.unity.2d.sprite": {
       "version": "1.0.0",
       "depth": 0,

@@ -105,7 +105,7 @@
 
 ## 検証
 
-単振子による検証結果 (プロット・数値つき) は [サーボモデル検証レポート](Servo-Model-Validation-ja.md) にまとまっています。テスト本体は `Assets/Tests/ServoModelTests/` にあります:
+単振子による検証結果 (プロット・数値つき) は [サーボモデル検証レポート](Servo-Model-Validation-ja.md) にまとまっています。テスト本体は `Packages/ServoModel/Tests/Runtime/` にあります:
 
 - **Hysteresis** — 無重力+負荷摩擦下の低速三角波指令で、指令-応答平面にガタ幅相当のヒステリシスループが現れること
 - **GravityCrossing** — 振子が最下点を跨ぐとき (指令は単調のまま負荷トルクの符号が反転)、伝達たわみ Δ が −b から +b へ遷移すること

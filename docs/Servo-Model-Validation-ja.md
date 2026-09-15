@@ -1,6 +1,6 @@
 # サーボモデル検証レポート (単振子)
 
-`ServoJointModel` (摩擦・バックラッシモデル) の物理的妥当性を、単振子で検証した結果のまとめです。テスト本体は `Assets/Tests/ServoModelTests/ServoPendulumTests.cs` にあり、いつでも再実行できます。
+`ServoJointModel` (摩擦・バックラッシモデル) の物理的妥当性を、単振子で検証した結果のまとめです。テスト本体は `Packages/ServoModel/Tests/Runtime/ServoPendulumTests.cs` にあり、いつでも再実行できます。
 
 ## 検証環境
 
@@ -239,7 +239,7 @@ K = 400 はどの窓からも外れており、さらに離散安定限界 (K �
 検出していましたが、同じ 2 秒間の関節位置はビット単位で不動でした (素のドライブでも
 同じ 0.08 が出ます)。判定は位置の有限差分で行います。
 
-これらは `Assets/Tests/ServoModelTests/ServoEnvironmentProbe.cs` の診断テストで
+これらは `Packages/ServoModel/Tests/Runtime/ServoEnvironmentProbe.cs` の診断テストで
 いつでも再測定できます。ビルド済みプレイヤー側の挙動は
 [サービス適合性テスト](Service-Conformance-Test-ja.md) の servo_demo プロファイルで
 継続的に検証しています。

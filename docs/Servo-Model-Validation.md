@@ -1,6 +1,6 @@
 # Servo Model Validation Report (single pendulum)
 
-Summary of the physical validation of `ServoJointModel` (friction & backlash model) using a single pendulum. The tests live in `Assets/Tests/ServoModelTests/ServoPendulumTests.cs` and can be re-run any time.
+Summary of the physical validation of `ServoJointModel` (friction & backlash model) using a single pendulum. The tests live in `Packages/ServoModel/Tests/Runtime/ServoPendulumTests.cs` and can be re-run any time.
 
 ## Setup
 
@@ -253,7 +253,7 @@ while the joint position was bit-identical across the same two seconds (a plain 
 model reports the same 0.08). It now measures a position finite difference.
 
 All of this can be re-measured with the diagnostic probes in
-`Assets/Tests/ServoModelTests/ServoEnvironmentProbe.cs`. Behaviour of the built player is
+`Packages/ServoModel/Tests/Runtime/ServoEnvironmentProbe.cs`. Behaviour of the built player is
 covered continuously by the servo_demo profile of the
 [service conformance suite](Service-Conformance-Test.md).
 

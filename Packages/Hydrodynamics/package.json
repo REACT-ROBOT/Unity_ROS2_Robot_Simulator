@@ -1,0 +1,11 @@
+{
+  "name": "com.react-robot.hydrodynamics",
+  "displayName": "Hydrodynamics",
+  "version": "1.0.0",
+  "unity": "6000.0",
+  "description": "Volume-based buoyancy and drag for ArticulationBody links, on top of NaughtyWaterBuoyancy.",
+  "author": { "name": "REACT-ROBOT", "url": "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator" },
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "keywords": ["robotics", "simulation", "ros2", "unity"]
+}

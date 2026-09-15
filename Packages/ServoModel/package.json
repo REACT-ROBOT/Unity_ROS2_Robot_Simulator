@@ -1,0 +1,11 @@
+{
+  "name": "com.react-robot.servo-model",
+  "displayName": "Servo Joint Model",
+  "version": "1.0.0",
+  "unity": "6000.0",
+  "description": "Friction, backlash and transmission model for ArticulationBody joints, tuned against hobby servos.",
+  "author": { "name": "REACT-ROBOT", "url": "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator" },
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "keywords": ["robotics", "simulation", "ros2", "unity"]
+}

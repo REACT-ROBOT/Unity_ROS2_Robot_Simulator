@@ -3,7 +3,7 @@
 URDF has no standard element for contact friction, nor for "this shape is seen by sensors
 but does not push back", so this simulator reads a custom `<collision_material>`. The URDF
 Importer does not know the element, so the simulator applies it after import
-(`Assets/Scripts/UrdfProperties/CollisionMaterialApplier.cs`).
+(`Packages/UrdfProperties/Runtime/CollisionMaterialApplier.cs`).
 
 ## Syntax
 
@@ -142,7 +142,7 @@ Options:
 
 ## Checking that the settings took
 
-- **Unit tests**: `Assets/Tests/UrdfPropertyTests/CollisionMaterialApplierTests.cs` reads the
+- **Unit tests**: `Packages/UrdfProperties/Tests/Runtime/CollisionMaterialApplierTests.cs` reads the
   colliders' `staticFriction` / `dynamicFriction` / `frictionCombine` / `contactOffset` /
   `isTrigger` back and checks them against the URDF. The assembly targets all platforms, so
   the test runner treats it as PlayMode:

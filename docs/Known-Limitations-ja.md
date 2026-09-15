@@ -28,7 +28,7 @@ PhysX 側の挙動です。「サービスを実装する」ような形で消�
 - リミット面での固着は、リミット手前で止める運用で回避するのか、エンジン側の挙動を
   回避する実装を入れるのか
 
-再測定は `Assets/Tests/ServoModelTests/ServoEnvironmentProbe.cs` の診断テストで行えます。
+再測定は `Packages/ServoModel/Tests/Runtime/ServoEnvironmentProbe.cs` の診断テストで行えます。
 
 ### 2. `humble` ブランチに新しい検証が入っていない
 

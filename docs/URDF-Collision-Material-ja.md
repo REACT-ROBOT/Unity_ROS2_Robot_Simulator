@@ -3,7 +3,7 @@
 URDF の標準要素には接触摩擦の指定も「センサには見えるが押し返さない形状」の指定も
 ないので、このシミュレータは独自要素 `<collision_material>` を読みます。URDF Importer は
 この要素を知らないため、インポート後にシミュレータ側で当てています
-(`Assets/Scripts/UrdfProperties/CollisionMaterialApplier.cs`)。
+(`Packages/UrdfProperties/Runtime/CollisionMaterialApplier.cs`)。
 
 ## 書き方
 
@@ -141,7 +141,7 @@ sensor_only のマテリアルはログ行の末尾に `sensor_only` が付き�
 
 ## 設定が効いているかを確かめる
 
-- **単体テスト**: `Assets/Tests/UrdfPropertyTests/CollisionMaterialApplierTests.cs`。
+- **単体テスト**: `Packages/UrdfProperties/Tests/Runtime/CollisionMaterialApplierTests.cs`。
   URDF の記述がコライダの `staticFriction` / `dynamicFriction` / `frictionCombine` /
   `contactOffset` / `isTrigger` に届いているかを直接読んで検査します。アセンブリが
   全プラットフォーム対象なので、テストランナーでは PlayMode 扱いです:

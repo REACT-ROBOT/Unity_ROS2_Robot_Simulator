@@ -339,6 +339,36 @@ ground_truth (`geometry_msgs/PoseStamped` と `/tf`) の publisher は、さら�
 既定名は全ロボット共通なので、複数体を同時にスポーンすると同じトピックに乗ります。
 ロボット名で分けてください。
 
+## シミュレータのモジュールを流用する (UPM パッケージ)
+
+物理と読み込みのモジュールは `Packages/` 配下の埋め込み UPM パッケージになっているので、
+別の Unity プロジェクトからコードをコピーせずに参照できます。参照側の
+`Packages/manifest.json` にコミットを固定して書きます:
+
+```json
+"com.react-robot.servo-model":     "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/ServoModel#<commit>",
+"com.react-robot.sdf-world":       "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/SdfWorld#<commit>",
+"com.react-robot.urdf-properties": "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/UrdfProperties#<commit>",
+"com.react-robot.hydrodynamics":   "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/Hydrodynamics#<commit>",
+"com.react-robot.aerodynamics":    "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/Aerodynamics#<commit>"
+```
+
+| パッケージ | 内容 | 同じ manifest に必要なもの |
+|---|---|---|
+| `com.react-robot.servo-model` | `ServoJointModel` (摩擦・バックラッシ・伝達系) | - |
+| `com.react-robot.sdf-world` | `SdfWorldImporter` | - |
+| `com.react-robot.urdf-properties` | `CollisionMaterialApplier` (URDF 拡張要素) | UnitySensors (hijimasa fork) |
+| `com.react-robot.hydrodynamics` | `HydrodynamicFloatingObject` | NaughtyWaterBuoyancy (hijimasa fork) |
+| `com.react-robot.aerodynamics` | `AeroSurface`、翼素理論プロペラ | `com.react-robot.hydrodynamics` |
+
+git 依存は `package.json` の中に書けないため、[必要条件](#必要条件) にある fork 群は
+参照側の manifest に手で追加してください。手元で同時に開発する場合は、このリポジトリを
+参照側の隣に clone して、git URL の代わりに
+`file:../Unity_ROS2_Robot_Simulator/Packages/ServoModel` と書けます。
+
+各パッケージの Play Mode テストは `Tests/Runtime` に同梱しており、このプロジェクトの
+`testables` に登録してあるので Test Runner には従来どおり表示されます。
+
 ## 既知の制約
 
 意図的に保留にしている項目と、設計として受け入れている制約は

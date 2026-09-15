@@ -351,6 +351,36 @@ outgoing queue and the drops took the robot's own state down with them (measured
 Declaring `ground_truth_topic` also keeps names apart. The default is shared by every
 robot, so spawning several at once puts them all on one topic — give each its own.
 
+## Reusing the simulator modules (UPM packages)
+
+The physics and import modules live under `Packages/` as embedded UPM packages, so
+another Unity project can pull them without copying code. Pin a commit in its
+`Packages/manifest.json`:
+
+```json
+"com.react-robot.servo-model":     "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/ServoModel#<commit>",
+"com.react-robot.sdf-world":       "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/SdfWorld#<commit>",
+"com.react-robot.urdf-properties": "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/UrdfProperties#<commit>",
+"com.react-robot.hydrodynamics":   "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/Hydrodynamics#<commit>",
+"com.react-robot.aerodynamics":    "https://github.com/REACT-ROBOT/Unity_ROS2_Robot_Simulator.git?path=/Packages/Aerodynamics#<commit>"
+```
+
+| Package | Contents | Also needs in the same manifest |
+|---|---|---|
+| `com.react-robot.servo-model` | `ServoJointModel` (friction / backlash / transmission) | - |
+| `com.react-robot.sdf-world` | `SdfWorldImporter` | - |
+| `com.react-robot.urdf-properties` | `CollisionMaterialApplier` (URDF extension elements) | UnitySensors (hijimasa fork) |
+| `com.react-robot.hydrodynamics` | `HydrodynamicFloatingObject` | NaughtyWaterBuoyancy (hijimasa fork) |
+| `com.react-robot.aerodynamics` | `AeroSurface`, blade-element propellers | `com.react-robot.hydrodynamics` |
+
+Git dependencies cannot be declared inside `package.json`, so the third-party forks listed
+in [Requirements](#requirements) must be added to the consuming manifest by hand.
+For local co-development, clone this repository next to the consumer and use a
+`file:../Unity_ROS2_Robot_Simulator/Packages/ServoModel` entry instead of the git URL.
+
+Each package carries its play-mode tests under `Tests/Runtime`; they are listed in this
+project's `testables`, so they appear in the Test Runner as before.
+
 ## Known limitations
 
 Work that is deliberately deferred, and the limits accepted as part of the design, are

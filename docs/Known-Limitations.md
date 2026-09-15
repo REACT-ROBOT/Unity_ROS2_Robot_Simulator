@@ -30,7 +30,7 @@ time, the other is PhysX behaviour. There is no "implement the service" style fi
 - whether limit-face sticking should be avoided operationally (stop short of the limit) or
   worked around in code
 
-Re-measure with the diagnostic test in `Assets/Tests/ServoModelTests/ServoEnvironmentProbe.cs`.
+Re-measure with the diagnostic test in `Packages/ServoModel/Tests/Runtime/ServoEnvironmentProbe.cs`.
 
 ### 2. The `humble` branch does not carry the newer checks
 

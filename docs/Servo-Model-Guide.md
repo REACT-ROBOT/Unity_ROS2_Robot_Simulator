@@ -96,7 +96,7 @@ the ×180/π compensation described below, so specify `p_gain`/`d_gain`/
 
 ## Validation
 
-Validation results with plots and numbers are collected in the [Servo Model Validation Report](Servo-Model-Validation.md). The tests live in `Assets/Tests/ServoModelTests/`:
+Validation results with plots and numbers are collected in the [Servo Model Validation Report](Servo-Model-Validation.md). The tests live in `Packages/ServoModel/Tests/Runtime/`:
 
 - **Hysteresis** — a slow triangle command under zero gravity with load friction must produce a hysteresis loop of about the gap width in the command-response plane
 - **GravityCrossing** — when the pendulum crosses its lowest point (load torque reverses while the command is monotonic), the transmission deflection Δ must traverse from −b to +b
