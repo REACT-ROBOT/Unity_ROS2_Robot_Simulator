@@ -167,6 +167,14 @@ public class JointStateSub : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// トピック経由と同じ規則で指令を適用する (step_and_observe サービスが使う)。
+    /// </summary>
+    public void ApplyCommand(JointStateMsg msg)
+    {
+        Callback(msg);
+    }
+
     void Callback(JointStateMsg msg)
     {
         // 解除済み / 破棄途中のインスタンスは何もしない。ここで例外を投げると

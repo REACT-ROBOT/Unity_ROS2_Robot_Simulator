@@ -17,7 +17,7 @@ This project enables robot simulation in Unity with ROS2 communication capabilit
 ## Requirements
 - Unity 6000.3.21f1 (verified). 6000.0.47f1 LTS or newer should work
 - ROS 2 Humble (Ubuntu 22.04) or Jazzy (Ubuntu 24.04) — both verified
-- [ROS-TCP-Connector (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Connector) — needs the publisher unregistration API
+- [ROS-TCP-Connector (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Connector) — needs the publisher unregistration API and the `TcpClient.NoDelay` fix (a Unity service round trip is 48 ms without it, 10 ms with it)
 - [ROS-TCP-Endpoint (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Endpoint) — **upstream will not work**: it does not implement `__remove_subscriber` and drops the TCP connection on receiving it
 - [URDF-Importer](https://github.com/Unity-Technologies/URDF-Importer)
 - [UnitySensors](https://github.com/Field-Robotics-Japan/UnitySensors)
@@ -175,6 +175,31 @@ Pacing comes from `simulation_resources.json` (`SIMULATION_RESOURCES_CONFIG`):
   `ffmpeg -framerate 30 -i <dir>/frame_%06d.jpg -c:v libx264 -pix_fmt yuv420p out.mp4`.
   This is the way to get a video under WSLg or a remote desktop, where grabbing the X
   display yields nothing.
+
+### One round trip per control step: `step_and_observe`
+
+A learning loop does the same three things every control step: send a joint command,
+advance the physics, read the joint state. Over the topics that is three round trips
+and the state it reads may belong to an earlier step. `step_and_observe`
+(`simulation_extra_interfaces/srv/StepAndObserve`) folds them into one service call:
+
+```
+entity: ServoDemo            # spawned entity name
+steps: 2                     # physics steps to run (0 = observe only)
+command: { name: [ideal_joint, cheap_joint], position: [0.5, 0.5] }   # optional
+---
+result, error_message
+joint_states                 # every joint of the entity after the steps
+sim_time                     # simulation time [s]
+```
+
+The simulation must be paused, exactly like `step_simulation`. The command follows
+the `joint_command` topic rules (matched by name, position/velocity for drives and
+servo models, effort for effort-mode joints). Velocity in the response is the position
+difference over the stepped time, the same convention as `joint_states`, and is zero
+on the first call after a spawn or `reset_simulation`. Nothing else changes: the
+`joint_states` topic keeps publishing at its own rate, and `step_simulation` /
+`simulate_steps` behave as before.
 
 The conformance suite (below) accepts `--headless` to launch the simulator with
 `-batchmode -nographics`, which is how to run it on a machine with no display at all.

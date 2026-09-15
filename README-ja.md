@@ -17,7 +17,7 @@ Unity をベースとした ROS2（Robot Operating System 2）と連携するロ
 ## 必要条件
 - Unity 6000.3.21f1 (検証済み)。6000.0.47f1 LTS 以降で動作します
 - ROS 2 Humble (Ubuntu 22.04) または Jazzy (Ubuntu 24.04) — どちらも検証済み
-- [ROS-TCP-Connector (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Connector) — publisher の登録解除 API が必要
+- [ROS-TCP-Connector (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Connector) — publisher の登録解除 API と `TcpClient.NoDelay` の修正が必要 (Unity 実装サービスの往復が無しで 48 ms、有りで 10 ms)
 - [ROS-TCP-Endpoint (hijimasa fork)](https://github.com/hijimasa/ROS-TCP-Endpoint) — **本家は不可**。`__remove_subscriber` が未実装で、受け取ると TCP 接続ごと落ちます
 - [URDF-Importer](https://github.com/Unity-Technologies/URDF-Importer)
 - [UnitySensors](https://github.com/Field-Robotics-Japan/UnitySensors)
@@ -171,6 +171,30 @@ physics 設定・plugin は読み飛ばして応答に報告します。`get_ava
   `ffmpeg -framerate 30 -i <dir>/frame_%06d.jpg -c:v libx264 -pix_fmt yuv420p out.mp4` で
   動画にします。WSLg やリモートデスクトップのように X の画面を掴んでも絵が取れない環境で
   動画を残す手段です。
+
+### 制御 1 周期を 1 往復で: `step_and_observe`
+
+学習ループは毎周期「関節指令を送る → 物理を進める → 関節状態を読む」を繰り返す。
+トピック経由だと往復が 3 本になり、読んだ状態がどのステップの結果かも配信の
+タイミング次第になる。`step_and_observe`
+(`simulation_extra_interfaces/srv/StepAndObserve`) はこの 3 つを 1 回のサービス呼び出しにまとめる:
+
+```
+entity: ServoDemo            # スポーン済みエンティティ名
+steps: 2                     # 進める物理ステップ数 (0 = 観測のみ)
+command: { name: [ideal_joint, cheap_joint], position: [0.5, 0.5] }   # 任意
+---
+result, error_message
+joint_states                 # ステップ後のエンティティ全関節
+sim_time                     # シミュレーション時刻 [s]
+```
+
+`step_simulation` と同じく一時停止中にだけ使える。指令は `joint_command` トピックと同じ
+規則 (名前で照合、ドライブ/サーボモデルには position/velocity、effort モードの関節には effort)。
+応答の velocity は進めた時間幅での位置差分で、`joint_states` と同じ流儀。スポーン直後と
+`reset_simulation` 直後の最初の呼び出しでは 0 になる。ほかは何も変わらない:
+`joint_states` トピックは従来どおりの周期で配信され、`step_simulation` / `simulate_steps` も
+そのまま。
 
 適合性テスト (下記) は `--headless` を付けると `-batchmode -nographics` で
 シミュレータを起動するので、ディスプレイの無いマシンでもそのまま実行できます。

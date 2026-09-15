@@ -217,6 +217,7 @@ public partial class SimulationControl : MonoBehaviour
         // 衝突記録 (SimulationContacts.cs)
         ImplementDisturbanceServices();
         ImplementContactServices();
+        ImplementLearningServices();
 
         // /clock の publisher。ロボット単位ではなくシミュレータ全体で 1 本の
         // グローバルトピックなので、スポーン時ではなくここで 1 度だけ取り付ける。
@@ -3410,6 +3411,8 @@ public partial class SimulationControl : MonoBehaviour
         {
             pub.ResetFeedback();
         }
+        // step_and_observe の速度差分も同じ理由で基準を捨てる。
+        ForgetStepObserveBaseline(root);
 
         // 外乱 (apply_link_wrench) の残りも同じ理由で破棄する。
         ClearActiveWrenches(root);
