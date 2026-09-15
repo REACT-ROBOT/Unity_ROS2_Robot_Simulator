@@ -46,6 +46,8 @@ public partial class SimulationControl
         ROSConnection.GetOrCreateInstance()
             .ImplementService<StepAndObserveRequest, StepAndObserveResponse>(
                 m_StepAndObserveServiceName, StepAndObserve);
+        // 直結 TCP サーバ (SimulationLearningServer.cs)。設定が無ければ何もしない。
+        StartLearningServerIfConfigured();
     }
 
     /// <summary>step_and_observe サービス。</summary>

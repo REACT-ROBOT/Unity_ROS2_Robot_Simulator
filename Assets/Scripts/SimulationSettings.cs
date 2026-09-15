@@ -29,6 +29,17 @@ public class SimulationSettingsConfig
     public float max_delta_time;
 
     /// <summary>
+    /// 学習用の直結 TCP ポート (SimulationLearningServer)。0 = 無効 (既定)。
+    /// 環境変数 SIM_LEARNING_PORT が優先。
+    /// </summary>
+    /// <remarks>
+    /// ROS 2 を通さずに「関節指令 → N ステップ → 関節状態」を 1 往復で行う。
+    /// 強化学習のように 1 秒に数百回以上ステップする用途向けで、ROS-TCP-Endpoint と
+    /// DDS の固定遅延 (数 ms〜10 ms) を外す。配備・sim2sim は従来どおり ROS 2 で行う。
+    /// </remarks>
+    public int learning_port;
+
+    /// <summary>
     /// Physics.defaultSolverIterations。0 = 未指定 (Unity 既定の 6)。
     /// </summary>
     /// <remarks>
