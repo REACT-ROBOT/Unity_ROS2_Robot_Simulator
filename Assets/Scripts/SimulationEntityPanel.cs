@@ -147,6 +147,7 @@ public partial class SimulationControl
         PointCloudXYZRGB, // RGBD カメラの色付き点群
         ImageTexture0,    // カメラ画像 (texture0)
         ImageTexture1,    // RGBD のカラー画像 (texture1)
+        GnssSkyView,      // GNSS の受信経路 (直達 / 反射 / 遮蔽)
     }
 
     /// <summary>
@@ -211,6 +212,15 @@ public partial class SimulationControl
                     label = link + " points",
                     sensor = sensor,
                     kind = GuiSensorVizKind.PointCloudXYZI,
+                });
+            }
+            else if (sensor is UnitySensors.Sensor.GNSS.GnssSkyViewSensor)
+            {
+                buffer.Add(new GuiSensorInfo
+                {
+                    label = link + " gnss rays",
+                    sensor = sensor,
+                    kind = GuiSensorVizKind.GnssSkyView,
                 });
             }
             else if (sensor is UnitySensors.Interface.Sensor.ITextureInterface)

@@ -67,6 +67,27 @@ sensor entries in the URDF does not matter.
 | Wrong fix | Wrong integers: **reported as a healthy RTK fix while sitting a decimetre or more out.** Nothing downstream can tell |
 | Cap while fixed | Carrier multipath cannot exceed a quarter wavelength (4.8 cm on L1). Geometry sets the direction, physics the bound |
 
+## Visualising the received paths
+
+The entity panel's `<link> gnss rays` toggle draws **how each satellite's signal
+actually reached the antenna**. Starting with `SIM_AUTO_SENSOR_VIZ=1` turns it on
+automatically for the first entity.
+
+| Colour | Meaning |
+|---|---|
+| Green (thin) | Direct line of sight; a usable signal |
+| **Amber (thick)** | **A reflected path (NLOS): antenna -> wall -> on towards the sky** |
+| Red (short, faint) | Blocked, nothing gets through |
+
+Only the reflected paths are drawn heavy. Among twenty clear signals it is the two
+or three that bounced which move the solution, and they are the only thing in the
+picture worth looking at. The kink itself is the detour the receiver measures as
+range.
+
+**A deep canyon cannot be seen into from the side.** Looking into a 10 m slot
+between 40 m walls means looking almost straight down. For a recording, use
+shallower walls (16 m apart, 14 m tall works well) and film along the street axis.
+
 ## Things to know
 
 - **Axis convention.** This simulator publishes its world as ROS ENU (east is

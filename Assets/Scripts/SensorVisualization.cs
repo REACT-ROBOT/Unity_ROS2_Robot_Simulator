@@ -65,6 +65,20 @@ public static class SensorVisualization
     /// </summary>
     public static Component AttachPointCloud(SimulationControl.GuiSensorInfo info)
     {
+        if (info.kind == SimulationControl.GuiSensorVizKind.GnssSkyView)
+        {
+            // 線描画はコンピュートバッファを使わないので -nographics でも安全。
+            // (可視化自体は画が無いので見えないが、落ちはしない)
+            var skyView = info.sensor as UnitySensors.Sensor.GNSS.GnssSkyViewSensor;
+            if (skyView == null)
+            {
+                return null;
+            }
+            var rays = skyView.gameObject.AddComponent<
+                UnitySensors.Visualization.Sensor.GnssSkyViewVisualizer>();
+            rays.Configure(skyView, Layer);
+            return rays;
+        }
         if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
         {
             // -nographics では描画できない (SIM_AUTO_SENSOR_VIZ をヘッドレスで
@@ -105,6 +119,10 @@ public static class SensorVisualization
         if (target == null)
         {
             return null;
+        }
+        if (info.kind == SimulationControl.GuiSensorVizKind.GnssSkyView)
+        {
+            return target.GetComponent<UnitySensors.Visualization.Sensor.GnssSkyViewVisualizer>();
         }
         switch (info.kind)
         {
