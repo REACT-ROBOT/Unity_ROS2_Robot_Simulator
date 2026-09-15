@@ -196,11 +196,11 @@
       }
     },
     "com.unity.robotics.ros-tcp-connector": {
-      "version": "https://github.com/hijimasa/ROS-TCP-Connector.git?path=/com.unity.robotics.ros-tcp-connector#ae5f1f3eeb3fe1d49b145812195e2eca5f5b6732",
+      "version": "https://github.com/hijimasa/ROS-TCP-Connector.git?path=/com.unity.robotics.ros-tcp-connector#d85ed998cf7aaa8cf32b1a9e24097c04db9ff629",
       "depth": 0,
       "source": "git",
       "dependencies": {},
-      "hash": "ae5f1f3eeb3fe1d49b145812195e2eca5f5b6732"
+      "hash": "d85ed998cf7aaa8cf32b1a9e24097c04db9ff629"
     },
     "com.unity.robotics.urdf-importer": {
       "version": "https://github.com/hijimasa/URDF-Importer.git?path=/com.unity.robotics.urdf-importer#dev-hijimasa",
