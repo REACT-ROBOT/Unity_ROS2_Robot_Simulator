@@ -32,7 +32,7 @@ using RosMessageTypes.Std;
 /// BuildObservation と、ROS 経路と同じ関数を使う。
 ///
 /// プロトコル (リトルエンディアン、1 フレーム = uint32 長 + 本文):
-///   要求: uint8 op (1=INFO, 2=RESET, 3=STEP, 4=PING)
+///   要求: uint8 op (1=INFO, 2=RESET, 3=STEP, 4=PING, 5=PAUSE)
 ///         uint16 n, n × 文字列 (uint16 長 + UTF-8) = エンティティ名
 ///         STEP のみ: uint32 steps, n × { uint16 m, m × { 文字列 関節名, float32 pos, vel, eff } }
 ///                    (pos/vel/eff は NaN で「指定しない」)
@@ -47,6 +47,7 @@ public partial class SimulationControl
     private const byte k_OpReset = 2;
     private const byte k_OpStep = 3;
     private const byte k_OpPing = 4;
+    private const byte k_OpPause = 5;  // set_simulation_state(PAUSED) と同じ遷移
     private const int k_MaxFrameBytes = 64 * 1024 * 1024;
 
     private class LearningRequest
@@ -261,7 +262,7 @@ public partial class SimulationControl
             error = $"malformed request: {e.Message}";
         }
 
-        if (error == null && op != k_OpInfo && op != k_OpReset && op != k_OpStep)
+        if (error == null && op != k_OpInfo && op != k_OpReset && op != k_OpStep && op != k_OpPause)
         {
             error = $"unknown op {op}";
         }
@@ -269,6 +270,45 @@ public partial class SimulationControl
         {
             error = "No world is loaded";
         }
+        if (error == null && op == k_OpPause)
+        {
+            // set_simulation_state(PAUSED) と同じ経路。学習クライアントが ROS 2 を
+            // 使わずに済むようにするための入口で、意味は同じ。
+            if (m_SimulationState != SimulationStateMsg.STATE_PAUSED)
+            {
+                CancelStepping();
+                try
+                {
+                    ApplySimulationState(SimulationStateMsg.STATE_PAUSED);
+                }
+                catch (Exception e)
+                {
+                    error = $"Failed to pause: {e.Message}";
+                }
+            }
+            req.response = error != null ? EncodeError(error) : new byte[] { 0, 0, 0 };  // OK, 0 entities
+            if (error == null)
+            {
+                // 空の観測 + sim_time の形にそろえる
+                using (var ms = new MemoryStream())
+                using (var w = new BinaryWriter(ms))
+                {
+                    w.Write((byte)0); w.Write((ushort)0); w.Write(Clock.Now);
+                    req.response = ms.ToArray();
+                }
+            }
+            req.done.Set();
+            yield break;
+        }
+        if (error == null && op != k_OpInfo && m_SimulationState != SimulationStateMsg.STATE_PAUSED)
+        {
+            error = $"Simulation must be paused; it is in state {m_SimulationState}";
+        }
+        if (error == null && m_Stepping)
+        {
+            error = "Another step is still running";
+        }
+
         var entities = new List<GameObject>();
         var pubs = new List<JointStatePub>();
         if (error == null)
