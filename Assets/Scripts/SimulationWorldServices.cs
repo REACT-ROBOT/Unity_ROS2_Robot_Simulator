@@ -564,9 +564,40 @@ public partial class SimulationControl
         // 代償はステップ速度の上限がフレームレートになること — RL 用途は
         // target_fps を上げれば従来どおりの速度が出る。
         m_MaxDeltaBeforeStepping = Time.maximumDeltaTime;
+
+        // チャンク進行 (settings.stepping_steps_per_frame > 1、feedback 不要のとき):
+        // Time.captureDeltaTime で 1 フレームの (unscaled の) 経過時間をちょうど k ステップ分に
+        // 固定する。maximumDeltaTime は fixedDeltaTime 未満に絞れない (Unity が切り上げる)
+        // ので、timeScale を上げる方法では実フレーム時間に応じて多く回ってしまう。
+        // captureDeltaTime は実フレーム時間に依らず同じ値を積むので、FixedUpdate は
+        // 1 フレームにちょうど k 回になる (浮動小数の丸めで稀に ±1)。フレーム末に
+        // FixedUpdate の回数を数えて残りを求め、最後の 1 ステップ以上は下の従来ループ
+        // (1 フレーム 1 ステップ、WaitForFixedUpdate) で刻む。止まる位置は従来と同じ。
+        int perFrame = ConfiguredStepsPerFrame;
+        ulong remaining = steps;
+        if (handle == null && perFrame > 1 && steps > 1)
+        {
+            m_CaptureBeforeStepping = Time.captureDeltaTime;
+            Time.timeScale = 1f;
+            ulong target = m_FixedStepsRun + steps;
+            while (remaining > 1)
+            {
+                // 残り 1 ステップは必ず従来ループに残す (丸めで 1 回多く回っても
+                // 要求を超えないようにする)。
+                ulong chunk = System.Math.Min((ulong)perFrame, remaining - 1);
+                float chunkTime = chunk * Time.fixedDeltaTime;
+                Time.maximumDeltaTime = chunkTime;
+                Time.captureDeltaTime = chunkTime;
+                yield return null;  // 次フレームの FixedUpdate 群が回った後 (Update 段) で再開
+                remaining = target > m_FixedStepsRun ? target - m_FixedStepsRun : 0;
+            }
+            Time.captureDeltaTime = m_CaptureBeforeStepping;
+            m_CaptureBeforeStepping = 0f;
+        }
+
         Time.maximumDeltaTime = Time.fixedDeltaTime / Mathf.Max(ConfiguredTimeScale, 1f);
         Time.timeScale = ConfiguredTimeScale;
-        for (ulong i = 0; i < steps; i++)
+        for (ulong i = steps - remaining; i < steps; i++)
         {
             // WaitForFixedUpdate はその回の物理ステップが終わってから再開するので、
             // これを steps 回まわすとちょうど steps ステップ進んだところで止まる。
@@ -596,6 +627,8 @@ public partial class SimulationControl
     // StepRoutine が絞った maximumDeltaTime の復元用。コルーチンは中断され得る
     // (CancelStepping) ので、正常終了と中断の両方から呼ぶ。
     private float m_MaxDeltaBeforeStepping = -1f;
+    // チャンク進行が使う captureDeltaTime の復元用 (通常 0)。中断時も戻す。
+    private float m_CaptureBeforeStepping;
 
     private void RestoreMaxDeltaAfterStepping()
     {
@@ -604,6 +637,11 @@ public partial class SimulationControl
             Time.maximumDeltaTime = m_MaxDeltaBeforeStepping;
             m_MaxDeltaBeforeStepping = -1f;
         }
+        if (Time.captureDeltaTime != m_CaptureBeforeStepping)
+        {
+            Time.captureDeltaTime = m_CaptureBeforeStepping;
+        }
+        m_CaptureBeforeStepping = 0f;
     }
 
     /// <summary>

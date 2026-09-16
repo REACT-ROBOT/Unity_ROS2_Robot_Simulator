@@ -53,6 +53,7 @@ public partial class SimulationControl
     /// </remarks>
     private void FixedUpdate()
     {
+        m_FixedStepsRun++;
         float dt = Time.fixedDeltaTime;
         if (dt <= 0f)
         {

@@ -40,6 +40,20 @@ public class SimulationSettingsConfig
     public int learning_port;
 
     /// <summary>
+    /// step_simulation / step_and_observe / 学習サーバでステップ中に、1 フレームで進める
+    /// 物理ステップ数の上限。0 か 1 = 従来どおり 1 フレーム 1 ステップ (既定)。
+    /// </summary>
+    /// <remarks>
+    /// 1 フレーム 1 ステップは「要求どおりの回数で必ず止まる」ための設計で、代償は
+    /// ステップ速度の上限がフレームレートになること。学習のように 1 往復で数ステップ
+    /// 進める用途では、ここを上げるとフレーム待ちが減る。最後の数ステップは従来どおり
+    /// 1 フレーム 1 ステップで刻むので、止まる位置の正確さは変わらない。
+    /// FixedUpdate 依存のコンポーネント (サーボモデル、外乱、センサ) はステップごとに
+    /// 従来どおり呼ばれる。simulate_steps アクション (ステップごとの feedback) には適用しない。
+    /// </remarks>
+    public int stepping_steps_per_frame;
+
+    /// <summary>
     /// Physics.defaultSolverIterations。0 = 未指定 (Unity 既定の 6)。
     /// </summary>
     /// <remarks>
@@ -148,6 +162,11 @@ public class SimulationSettingsApplier : MonoBehaviour
             int fps = Mathf.Clamp(settings.target_fps, MinTargetFps, MaxTargetFps);
             Application.targetFrameRate = fps;
             Debug.Log($"[SimulationSettings] target_fps = {fps}");
+        }
+        if (settings.stepping_steps_per_frame > 1)
+        {
+            SimulationControl.ConfiguredStepsPerFrame = Mathf.Clamp(settings.stepping_steps_per_frame, 1, 1000);
+            Debug.Log($"[SimulationSettings] stepping_steps_per_frame = {SimulationControl.ConfiguredStepsPerFrame}");
         }
 
         if (settings.time_scale > 0f)

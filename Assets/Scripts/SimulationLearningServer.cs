@@ -37,8 +37,7 @@ using RosMessageTypes.Std;
 ///         STEP のみ: uint32 steps, n × { uint16 m, m × { 文字列 関節名, float32 pos, vel, eff } }
 ///                    (pos/vel/eff は NaN で「指定しない」)
 ///   応答: uint8 status (0=OK), status != 0 なら 文字列 error
-///         OK なら uint16 n, n × { uint16 k, k × { 文字列 関節名, float64 pos, vel, eff } }, float64 sim_time
-/// </remarks>
+///         OK なら uint16 n, n × { uint16 k, k × { 文字列 関節名, float64 pos, vel, eff } }, /// </remarks>
 public partial class SimulationControl
 {
     public const string LearningPortEnvVar = "SIM_LEARNING_PORT";
@@ -403,7 +402,8 @@ public partial class SimulationControl
                         w.Write(js.effort[j]);
                     }
                 }
-                w.Write(Clock.Now);
+                // 物理時間 (FixedUpdate の積算)。ステップ数 × fixedDeltaTime とちょうど一致する。
+                w.Write(Time.fixedTimeAsDouble);
                 response = ms.ToArray();
             }
         }

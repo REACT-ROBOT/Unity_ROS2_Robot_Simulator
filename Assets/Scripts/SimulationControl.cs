@@ -67,6 +67,13 @@ public partial class SimulationControl : MonoBehaviour
     /// 1 = 実時間。ステップ数や物理の刻みは変わらず、壁時計に対する速度だけが変わる。
     /// </summary>
     public static float ConfiguredTimeScale = 1f;
+    /// <summary>
+    /// ステップ中に 1 フレームで進める物理ステップ数の上限 (settings.stepping_steps_per_frame)。
+    /// 1 = 従来どおり。StepRoutine 参照。
+    /// </summary>
+    public static int ConfiguredStepsPerFrame = 1;
+    /// <summary>これまでに回った FixedUpdate の回数。StepRoutine がチャンク進行の進捗に使う。</summary>
+    private ulong m_FixedStepsRun;
 
     string m_StepSimulationServiceName = "step_simulation";
     [SerializeField]
